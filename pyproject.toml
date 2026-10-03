@@ -1,0 +1,17 @@
+[project]
+name = "ghosttown-dev"
+version = "0.1.0"
+description = "Development environment for the GhostTown Blender extension"
+requires-python = "==3.13.*"
+dependencies = []
+
+[dependency-groups]
+dev = ["numpy==2.3.4", "shapely==2.1.2", "pytest>=8", "pytest-socket>=0.7"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests/fetch"]
+pythonpath = ["ghosttown", "tests/fetch"]
+addopts = "--disable-socket -q"

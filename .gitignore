@@ -1,0 +1,20 @@
+# Python / tools
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.cache-record/
+# Build products
+ghosttown/wheels/
+dist/
+spike/
+*.blend1
+# Local planning notes and agent workspaces
+docs/
+.superpowers/
+.claude/
+# Editors / OS / logs
+.DS_Store
+.idea/
+.vscode/
+*.log

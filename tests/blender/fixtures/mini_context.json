@@ -1,0 +1,26 @@
+{
+  "schema": 1, "tool": "ghosttown 0.1.0",
+  "centre": {"lat": 43.649667, "lon": -79.380991}, "address": "320 Bay St", "radius_m": 150.0,
+  "region": "world", "ground_at_centre_m": 84.7, "terrain": {"source": "test", "cell_m": null},
+  "site_rings_m": [],
+  "elements": [
+    {"id": "ground:road", "kind": "road", "name": "", "solids": [], "lines": [],
+     "meshes": [{"kind": "road", "verts": [[-10, -3, 0], [10, -3, 0], [10, 3, 0], [-10, 3, 0]], "faces": [[0, 1, 2], [0, 2, 3]]}]},
+    {"id": "osm:way:1", "kind": "building", "name": "Tower", "meshes": [], "lines": [],
+     "solids": [
+       {"kind": "building", "rings": [[[0, 10], [20, 10], [20, 30], [0, 30]]], "z0": -0.3, "z1": 12.0, "height_source": "osm_levels"},
+       {"kind": "building", "rings": [[[5, 15], [15, 15], [15, 25], [5, 25]]], "z0": -0.3, "z1": 60.0, "height_source": "osm_height"}]},
+    {"id": "osm:way:2", "kind": "building_guessed", "name": "", "meshes": [], "lines": [],
+     "solids": [
+       {"kind": "building_guessed", "rings": [[[30, 10], [50, 10], [50, 30], [30, 30]], [[35, 15], [35, 25], [45, 25], [45, 15]]], "z0": -0.3, "z1": 9.0, "height_source": "guessed"}]},
+    {"id": "tree:osm:3", "kind": "tree", "name": "", "solids": [], "lines": [],
+     "meshes": [
+       {"kind": "tree", "verts": [[60, 0, 0], [61, 0, 0], [60, 1, 0], [60, 0, 3]], "faces": [[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]]},
+       {"kind": "tree", "verts": [[59, -1, 3], [62, -1, 3], [59, 2, 3], [59, -1, 7]], "faces": [[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]]}]},
+    {"id": "toronto:parcel:4", "kind": "parcel", "name": "320 Bay St", "solids": [], "meshes": [],
+     "lines": [{"kind": "parcel", "pts": [[-20, -20, 0.15], [20, -20, 0.15], [20, 20, 0.15], [-20, 20, 0.15], [-20, -20, 0.15]]}]}
+  ],
+  "sources": [{"key": "osm", "name": "OpenStreetMap", "credit": "© OpenStreetMap contributors"}],
+  "notes": [{"level": "warn", "code": "test", "text": "A test warning."}],
+  "counts": {"road": 1, "building": 1, "building_guessed": 1, "tree": 1, "parcel": 1}
+}
