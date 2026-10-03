@@ -1,4 +1,7 @@
-"""Live smoke test of the installed extension; run by tools/smoke_installed.sh inside Blender."""
+"""Live smoke test of the installed extension; run by tools/smoke_installed.sh inside Blender.
+
+    ... --python tools/smoke_live.py -- "<address or lat, lon>" <radius_m>
+"""
 import importlib
 import json
 import os
@@ -8,20 +11,29 @@ import tempfile
 import bpy
 
 args = sys.argv[sys.argv.index("--") + 1:]
-lat, lon, radius = float(args[0]), float(args[1]), float(args[2])
+query, radius = args[0], float(args[1])
 pkg = "bl_ext.user_default.ghosttown"
 runner = importlib.import_module(pkg + ".runner")
 scene_build = importlib.import_module(pkg + ".scene_build")
+ops = importlib.import_module(pkg + ".ops")
 rq = importlib.import_module(pkg + ".ghosttown_fetch.request")
 
 work = tempfile.mkdtemp(prefix="ghosttown-smoke-")
+cache = os.path.join(work, "cache")
 wheels = [runner.wheels_site_packages()]
 result = runner.run_blocking(["selftest"], work_dir=os.path.join(work, "selftest"), extra_paths=wheels)
 print("SELFTEST", result)
 assert result["ok"], result
 
-req = rq.build(centre={"lat": lat, "lon": lon}, address="Smoke test", radius_m=radius,
-               cache_dir=os.path.join(work, "cache"), out_dir=os.path.join(work, "run"))
+where = ops.parse_location(query)
+if where is None:
+    result = runner.run_blocking(["geocode", cache, query], work_dir=os.path.join(work, "find"), extra_paths=wheels)
+    print("GEOCODE", result)
+    assert result["ok"] and result["results"], result
+    where = (result["results"][0]["lat"], result["results"][0]["lon"])
+
+req = rq.build(centre={"lat": where[0], "lon": where[1]}, address="Smoke test", radius_m=radius,
+               cache_dir=cache, out_dir=os.path.join(work, "run"))
 os.makedirs(req["out_dir"])
 path = os.path.join(req["out_dir"], "request.json")
 with open(path, "w", encoding="utf-8") as f:
@@ -32,9 +44,16 @@ assert result["ok"], result
 
 with open(result["context"], encoding="utf-8") as f:
     doc = json.load(f)
+print("REGION", doc["region"], "TERRAIN", doc["terrain"], "GROUND_ASL", doc["ground_at_centre_m"])
+print("COUNTS", doc["counts"])
+print("NOTES", [n["text"] for n in doc["notes"]])
 root = scene_build.build(bpy.context.scene, doc)
-count = sum(1 for ob in root.all_objects if str(ob.get("ctx_kind", "")).startswith("building"))
-print("BUILDINGS", count)
-assert count >= 10, count
+buildings = sum(1 for ob in root.all_objects if str(ob.get("ctx_kind", "")).startswith("building"))
+print("BUILDINGS", buildings)
+assert buildings >= 10, buildings
+assert "ground" in doc["counts"], doc["counts"]
+if doc["region"] == "toronto":
+    assert {"road", "tree", "parcel"} <= set(doc["counts"]), doc["counts"]
+    assert doc["terrain"]["source"] == "nrcan-dtm", doc["terrain"]
 bpy.ops.wm.save_as_mainfile(filepath=os.path.join(work, "smoke.blend"))
 print("SMOKE OK", work)

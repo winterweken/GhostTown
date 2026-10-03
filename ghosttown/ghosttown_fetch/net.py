@@ -28,6 +28,18 @@ def urllib_transport(url, data, headers, timeout):
         return e.code, e.read()
 
 
+def _still_good(body, check):
+    """A stored answer is used only while it passes the source's check. One damaged on disk (or
+    written by a version with a looser check) is fetched again instead of failing every build."""
+    if check is None:
+        return True
+    try:
+        check(body)
+    except SourceError:
+        return False
+    return True
+
+
 class Net:
     def __init__(self, cache_dir, *, fresh=False, transport=None, sleep=time.sleep, max_age_days=30):
         self.cache = Cache(cache_dir, max_age_days=max_age_days)
@@ -39,7 +51,7 @@ class Net:
         key = url if data is None else url + "\n" + data.decode("utf-8", "replace")
         if not self.fresh:
             body = self.cache.read(source, key)
-            if body is not None:
+            if body is not None and _still_good(body, check):
                 return body
         name = SOURCE_NAMES.get(source, source)
         problem = f"{name} couldn't be reached"

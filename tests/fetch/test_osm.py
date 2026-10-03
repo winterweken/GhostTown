@@ -70,3 +70,18 @@ def test_recorded_bay_street_answer_parses():
     outlines = [f for f in polygonal if "building" in f.tags]
     parts = [f for f in polygonal if "building:part" in f.tags]
     assert len(outlines) >= 30 and len(parts) >= 50  # downtown towers are mapped as parts
+
+
+def test_one_element_that_defeats_the_geometry_library_is_skipped(monkeypatch):
+    import shapely
+
+    real = osm._geometry
+
+    def fussy(el):
+        if el["id"] == 2:
+            raise shapely.errors.GEOSException("TopologyException: test")
+        return real(el)
+
+    monkeypatch.setattr(osm, "_geometry", fussy)
+    feats = osm.parse(body(way(1, square(0, 0, 10), {"building": "yes"}), way(2, square(20, 0, 10), {"building": "yes"})))
+    assert [f.id for f in feats] == ["osm:way:1"]

@@ -6,6 +6,7 @@ Writes tests/fetch/fixtures/<site>/<source>.json.gz. The tests themselves never 
 OpenStreetMap data © OpenStreetMap contributors, ODbL 1.0.
 """
 import gzip
+import json
 import os
 import sys
 import urllib.parse
@@ -15,6 +16,7 @@ sys.path.insert(0, os.path.join(ROOT, "ghosttown"))
 
 from ghosttown_fetch.net import Net  # noqa: E402
 from ghosttown_fetch.sources import osm  # noqa: E402
+from ghosttown_fetch.sources import address, arcgis, toronto  # noqa: E402
 
 FIXTURES = os.path.join(ROOT, "tests", "fetch", "fixtures")
 SITES = {  # name: (lat, lon, radius_m)
@@ -36,6 +38,28 @@ def record(name):
     print(f"{name}: {len(body):,} bytes")
 
 
+def record_toronto(name):
+    lat, lon, radius = SITES[name]
+    net = Net(os.path.join(ROOT, ".cache-record"), fresh=True)
+    folder = os.path.join(FIXTURES, name)
+    os.makedirs(folder, exist_ok=True)
+    feats = toronto.fetch_buildings(net, lat, lon, radius)
+    with gzip.open(os.path.join(folder, "toronto_buildings.json.gz"), "wb") as f:
+        f.write(json.dumps({"type": "FeatureCollection", "features": feats}).encode("utf-8"))
+    print(f"{name}: {len(feats)} City building tiers")
+    if hasattr(address, "build_params"):
+        params = address.build_params(address.normalise("320 Bay St"), 5)
+        body = net.get(arcgis.layer_url(*address.LAYER), source="toronto",
+                       data=urllib.parse.urlencode(params).encode("ascii"), check=arcgis.check)
+        with gzip.open(os.path.join(folder, "toronto_address.json.gz"), "wb") as f:
+            f.write(body)
+        print(f"{name}: address answer {len(body):,} bytes")
+
+
 if __name__ == "__main__":
-    for site in sys.argv[1:] or list(SITES):
-        record(site)
+    args = sys.argv[1:]
+    if args[:1] == ["toronto"]:
+        record_toronto("bay")
+    else:
+        for site in args or list(SITES):
+            record(site)

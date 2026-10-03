@@ -4,15 +4,16 @@ import re
 import time
 
 import bpy
-from bpy.props import StringProperty
+from bpy.props import IntProperty, StringProperty
 
 from . import prefs, runner, scene_build
 from .ghosttown_fetch import context as ctx
 from .ghosttown_fetch import request as rq
 
 OFFLINE = "Online access is off. Turn on Preferences › System › Network › Allow Online Access."
-MISSING_SHAPELY = ("GhostTown's shapely library isn't installed. Disable and re-enable GhostTown in "
+MISSING_SHAPELY = ("Ghost Town's shapely library isn't installed. Disable and re-enable Ghost Town in "
                    "Preferences › Add-ons, or reinstall it.")
+NO_MATCH = "No Toronto address matched. Outside Toronto, enter latitude, longitude for now."
 _LOCATION = re.compile(r"\s*(-?\d+(?:\.\d+)?)\s*[,\s]\s*(-?\d+(?:\.\d+)?)\s*")
 
 
@@ -29,18 +30,52 @@ def parse_location(text):
 def check_inputs(settings):
     where = parse_location(settings.location)
     if where is None:
-        return "Enter the location as latitude, longitude (for example 43.6497, -79.3810)."
+        return "Enter an address and press Find, or type latitude, longitude (for example 43.6497, -79.3810)."
     if abs(where[0]) < 1e-9 and abs(where[1]) < 1e-9:
         return "The location is 0, 0, in the Atlantic off West Africa; enter the site's latitude, longitude."
     return None
 
 
+def find_refusal(settings):
+    """(report level, sentence) when Find has nothing to look up, else None."""
+    text = settings.location.strip()
+    if not text:
+        return "ERROR", "Type an address first, for example 320 Bay St."
+    if parse_location(text) is not None:
+        return "INFO", "That's already latitude, longitude; press Build Context."
+    return None
+
+
+def _stamp(now=None):
+    return time.strftime("%Y%m%d-%H%M%S", time.localtime(now))
+
+
 def make_request(settings, cache_dir, overpass_url="", now=None):
     lat, lon = parse_location(settings.location)
-    stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(now))
     return rq.build(centre={"lat": lat, "lon": lon}, address=settings.site_name.strip(),
                     radius_m=float(settings.radius), cache_dir=cache_dir,
-                    out_dir=os.path.join(cache_dir, "runs", stamp), overpass_url=overpass_url)
+                    out_dir=os.path.join(cache_dir, "runs", _stamp(now)), overpass_url=overpass_url)
+
+
+def use_result(settings, label, lat, lon):
+    settings.location = f"{lat}, {lon}"
+    settings.site_name = label
+    settings.results.clear()
+
+
+def apply_results(settings, results):
+    """Fill the panel from address-search results; returns the sentence to show."""
+    settings.results.clear()
+    if not results:
+        return NO_MATCH
+    if len(results) == 1:
+        r = results[0]
+        use_result(settings, r["label"], float(r["lat"]), float(r["lon"]))
+        return f"Found {r['label']}."
+    for r in results:
+        item = settings.results.add()
+        item.label, item.lat, item.lon = r["label"], repr(float(r["lat"])), repr(float(r["lon"]))
+    return f"{len(results)} addresses match; pick one below."
 
 
 def _summary(doc):
@@ -77,6 +112,64 @@ def _redraw(context):
             area.tag_redraw()
 
 
+class _FetcherOperator:
+    """Shared modal loop: run the fetcher under `key`, poll it on a timer, hand its answer to `finished`."""
+    key = ""
+    _timer = None
+
+    def _launch(self, context, args, work_dir):
+        wheels = runner.wheels_site_packages()
+        if not runner.ensure_wheels(wheels, refresh=bpy.ops.extensions.repo_refresh_all):
+            self.report({"ERROR"}, MISSING_SHAPELY)
+            return {"CANCELLED"}
+        runner.ACTIVE[self.key] = runner.Run(args, work_dir=work_dir, extra_paths=[wheels])
+        runner.STATUS[self.key] = "Starting…"
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.25, window=context.window)
+        wm.modal_handler_add(self)
+        _redraw(context)
+        return {"RUNNING_MODAL"}
+
+    def modal(self, context, event):
+        run = runner.ACTIVE.get(self.key)
+        if run is None:  # cancelled from the panel, by a file load or by unregister
+            self._stop(context)
+            return {"CANCELLED"}
+        if event.type == "ESC":
+            runner.cancel(self.key)
+            self._stop(context)
+            self.report({"WARNING"}, "Cancelled.")
+            return {"CANCELLED"}
+        if event.type != "TIMER":
+            return {"PASS_THROUGH"}
+        result = run.poll()
+        if result is None:
+            progress = runner.read_progress(run.work_dir)
+            if progress:
+                runner.STATUS[self.key] = f"{progress[0]}… {progress[1]}%"
+            _redraw(context)
+            return {"PASS_THROUGH"}  # never swallow timer events other handlers rely on
+        runner.ACTIVE.pop(self.key, None)
+        self._stop(context)
+        if not result.get("ok"):
+            self.report({"ERROR"}, result.get("error") or "The fetch failed.")
+            return {"CANCELLED"}
+        return self.finished(context, result)
+
+    def cancel(self, context):
+        # Blender calls this when it tears the operator down unfinished (window closed, file loaded,
+        # add-on disabled): stop the fetch so the panel is never left saying "running".
+        runner.cancel(self.key)
+        self._stop(context)
+
+    def _stop(self, context):
+        if self._timer is not None:
+            context.window_manager.event_timer_remove(self._timer)
+            self._timer = None
+        runner.STATUS.pop(self.key, None)
+        _redraw(context)
+
+
 class GHOSTTOWN_OT_import_context(bpy.types.Operator):
     bl_idname = "ghosttown.import_context"
     bl_label = "Import Context JSON"
@@ -95,13 +188,12 @@ class GHOSTTOWN_OT_import_context(bpy.types.Operator):
         return {"FINISHED"} if root is not None else {"CANCELLED"}
 
 
-class GHOSTTOWN_OT_build(bpy.types.Operator):
+class GHOSTTOWN_OT_build(_FetcherOperator, bpy.types.Operator):
     bl_idname = "ghosttown.build"
     bl_label = "Build Context"
     bl_description = "Fetch open data around the location and build it in this scene"
     bl_options = {"REGISTER", "UNDO"}
-
-    _timer = None
+    key = "build"
 
     @classmethod
     def poll(cls, context):
@@ -122,61 +214,63 @@ class GHOSTTOWN_OT_build(bpy.types.Operator):
         if problems:
             self.report({"ERROR"}, problems[0])
             return {"CANCELLED"}
-        wheels = runner.wheels_site_packages()
-        if not runner.ensure_wheels(wheels, refresh=bpy.ops.extensions.repo_refresh_all):
-            self.report({"ERROR"}, MISSING_SHAPELY)
-            return {"CANCELLED"}
         os.makedirs(req["out_dir"], exist_ok=True)
         path = os.path.join(req["out_dir"], "request.json")
         with open(path, "w", encoding="utf-8") as f:
             json.dump(req, f, indent=1)
-        runner.ACTIVE["build"] = runner.Run(["fetch", path], work_dir=req["out_dir"], extra_paths=[wheels])
-        runner.STATUS["build"] = "Starting…"
-        wm = context.window_manager
-        self._timer = wm.event_timer_add(0.25, window=context.window)
-        wm.modal_handler_add(self)
-        _redraw(context)
-        return {"RUNNING_MODAL"}
+        return self._launch(context, ["fetch", path], req["out_dir"])
 
-    def modal(self, context, event):
-        run = runner.ACTIVE.get("build")
-        if run is None:  # cancelled from the panel, by a file load or by unregister
-            self._stop(context)
-            return {"CANCELLED"}
-        if event.type == "ESC":
-            runner.cancel("build")
-            self._stop(context)
-            self.report({"WARNING"}, "Build cancelled.")
-            return {"CANCELLED"}
-        if event.type != "TIMER":
-            return {"PASS_THROUGH"}
-        result = run.poll()
-        if result is None:
-            progress = runner.read_progress(run.work_dir)
-            if progress:
-                runner.STATUS["build"] = f"{progress[0]}… {progress[1]}%"
-            _redraw(context)
-            return {"PASS_THROUGH"}  # never swallow timer events other handlers rely on
-        runner.ACTIVE.pop("build", None)
-        self._stop(context)
-        if not result.get("ok"):
-            self.report({"ERROR"}, result.get("error") or "The fetch failed.")
-            return {"CANCELLED"}
+    def finished(self, context, result):
         root = import_into_scene(context, result["context"], self.report)
         return {"FINISHED"} if root is not None else {"CANCELLED"}
 
-    def cancel(self, context):
-        # Blender calls this when it tears the operator down unfinished (window closed, file loaded,
-        # add-on disabled): stop the fetch so the panel is never left saying "running".
-        runner.cancel("build")
-        self._stop(context)
 
-    def _stop(self, context):
-        if self._timer is not None:
-            context.window_manager.event_timer_remove(self._timer)
-            self._timer = None
-        runner.STATUS.pop("build", None)
-        _redraw(context)
+class GHOSTTOWN_OT_find(_FetcherOperator, bpy.types.Operator):
+    bl_idname = "ghosttown.find"
+    bl_label = "Find Address"
+    bl_description = "Look up a City of Toronto address and use its location"
+    bl_options = {"REGISTER"}
+    key = "find"
+
+    @classmethod
+    def poll(cls, context):
+        return "find" not in runner.ACTIVE
+
+    def invoke(self, context, event):
+        settings = context.scene.ghosttown
+        refusal = find_refusal(settings)
+        if refusal:
+            self.report({refusal[0]}, refusal[1])
+            return {"CANCELLED"}
+        text = settings.location.strip()
+        if not bpy.app.online_access:
+            self.report({"ERROR"}, OFFLINE)
+            return {"CANCELLED"}
+        cache = prefs.cache_dir(context)
+        return self._launch(context, ["geocode", cache, text], os.path.join(cache, "runs", "find-" + _stamp()))
+
+    def finished(self, context, result):
+        results = result.get("results") or []
+        message = apply_results(context.scene.ghosttown, results)
+        self.report({"INFO"} if results else {"WARNING"}, message)
+        return {"FINISHED"}
+
+
+class GHOSTTOWN_OT_pick(bpy.types.Operator):
+    bl_idname = "ghosttown.pick"
+    bl_label = "Use This Address"
+    bl_description = "Use this address's location"
+    bl_options = {"REGISTER", "UNDO"}
+
+    index: IntProperty(default=0)
+
+    def execute(self, context):
+        settings = context.scene.ghosttown
+        if not 0 <= self.index < len(settings.results):
+            return {"CANCELLED"}
+        item = settings.results[self.index]
+        use_result(settings, item.label, item.lat, item.lon)
+        return {"FINISHED"}
 
 
 class GHOSTTOWN_OT_cancel(bpy.types.Operator):
@@ -186,4 +280,5 @@ class GHOSTTOWN_OT_cancel(bpy.types.Operator):
 
     def execute(self, context):
         runner.cancel("build")
+        runner.cancel("find")
         return {"FINISHED"}

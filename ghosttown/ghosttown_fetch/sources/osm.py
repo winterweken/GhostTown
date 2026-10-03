@@ -37,7 +37,10 @@ def parse(body):
     doc = _load(body)
     out = []
     for el in doc.get("elements", []):
-        geom = _geometry(el)
+        try:
+            geom = _geometry(el)
+        except shapely.errors.GEOSException:
+            continue  # one element the geometry library can't assemble must not cost the rest
         if geom is not None and not geom.is_empty:
             out.append(Feature(f"osm:{el['type']}:{el['id']}", el.get("tags", {}), geom))
     return out

@@ -1,10 +1,22 @@
 """Small shapely helpers shared by the builders."""
+import numpy as np
 import shapely
+import shapely.geometry
 from shapely.geometry import Polygon
 from shapely.geometry.polygon import orient
 
 MIN_AREA_M2 = 1e-6
 SEPARATE_M = 0.005  # rings that touch at a point are pulled this far apart
+GRID_M = 0.001      # everything written out is on a 1 mm grid
+
+
+def _snap(geom):
+    """The geometry on the 1 mm grid, still valid. Coordinates are written out in millimetres, so the
+    checks below must see what will be written: rounding afterwards can make near-touching rings cross."""
+    try:
+        return shapely.set_precision(geom, GRID_M)
+    except shapely.errors.GEOSException:
+        return geom
 
 
 def polygons(geom):
@@ -16,7 +28,7 @@ def polygons(geom):
     if not geom.is_valid:
         geom = shapely.make_valid(geom)
     out = []
-    for poly in _polygon_parts(geom):
+    for poly in _polygon_parts(_snap(geom)):
         out += _separate(poly)
     return out
 
@@ -46,7 +58,7 @@ def _separate(poly):
     holes = [shapely.buffer(Polygon(r), -SEPARATE_M, join_style="mitre") for r in poly.interiors]
     fixed = Polygon(poly.exterior).difference(shapely.union_all(holes)) if holes else Polygon(poly.exterior)
     out = []
-    for part in _polygon_parts(fixed):
+    for part in _polygon_parts(_snap(fixed)):
         if not _touching(part):
             out.append(part)
         elif Polygon(part.exterior).is_valid and part.exterior.is_simple:
@@ -77,3 +89,20 @@ def _ring(coords):
     while len(pts) > 1 and pts[0] == pts[-1]:
         pts.pop()
     return pts if len(pts) >= 3 else None
+
+
+def to_local(geom, frame):
+    """A lon/lat geometry in the site's local metres."""
+    return shapely.transform(geom, lambda c: np.column_stack(frame.to_local(c[:, 0], c[:, 1])))
+
+
+def feature_geometry(feature):
+    """The shapely geometry of a GeoJSON feature, or None when it has none or it can't be read."""
+    g = (feature or {}).get("geometry")
+    if not g:
+        return None
+    try:
+        geom = shapely.geometry.shape(g)
+    except (ValueError, TypeError, AttributeError, KeyError, IndexError, shapely.errors.GEOSException):
+        return None
+    return None if geom.is_empty else geom

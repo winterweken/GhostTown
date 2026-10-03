@@ -6,6 +6,8 @@ a few millimetres, which is far below the accuracy of the source data.
 """
 import math
 
+import numpy as np
+
 A = 6378137.0                # WGS84 semi-major axis, m
 F = 1 / 298.257223563        # WGS84 flattening
 E2 = F * (2 - F)             # first eccentricity squared
@@ -27,3 +29,10 @@ class Frame:
 
     def to_lonlat(self, x, y):
         return self.lon0 + x / self.kx, self.lat0 + y / self.ky
+
+
+def lonlat_to_merc(lon, lat):
+    """Web Mercator (EPSG:3857) metres from lon/lat degrees; floats or numpy arrays."""
+    lon = np.asarray(lon, dtype=float)
+    lat = np.asarray(lat, dtype=float)
+    return A * np.radians(lon), A * np.log(np.tan(np.pi / 4 + np.radians(lat) / 2))

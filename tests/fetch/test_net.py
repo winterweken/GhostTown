@@ -82,3 +82,17 @@ def test_fresh_skips_cached_answers_but_refreshes_them(tmp_path):
     Net(str(tmp_path), transport=Transport((200, b"old"))).get(URL, source="osm")
     assert Net(str(tmp_path), fresh=True, transport=Transport((200, b"new"))).get(URL, source="osm") == b"new"
     assert Net(str(tmp_path), transport=Transport()).get(URL, source="osm") == b"new"
+
+
+def test_a_damaged_cache_entry_is_fetched_again(tmp_path):
+    def check(body):
+        if body != b"good":
+            raise SourceError("The answer was damaged.")
+
+    t = Transport((200, b"good"), (200, b"good"))
+    net = Net(str(tmp_path), transport=t)
+    assert net.get(URL, source="osm", check=check) == b"good"
+    entry, = (tmp_path / "osm").iterdir()
+    entry.write_bytes(b"trunc")  # the stored answer is damaged on disk
+    assert net.get(URL, source="osm", check=check) == b"good" and len(t.calls) == 2
+    assert entry.read_bytes() == b"good"

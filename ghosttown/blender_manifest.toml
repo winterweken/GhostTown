@@ -1,8 +1,8 @@
 schema_version = "1.0.0"
 
 id = "ghosttown"
-version = "0.1.0"
-name = "GhostTown"
+version = "0.2.0"
+name = "Ghost Town"
 tagline = "Site context from open data, built as clean geometry"
 maintainer = "winterweken"
 type = "add-on"

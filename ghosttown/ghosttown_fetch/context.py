@@ -69,7 +69,7 @@ def validate(doc):
         return ["The context is not a JSON object."]
     problems = []
     if doc.get("schema") != SCHEMA:
-        problems.append(f"Unknown context schema {doc.get('schema')!r}; GhostTown reads schema {SCHEMA}.")
+        problems.append(f"Unknown context schema {doc.get('schema')!r}; Ghost Town reads schema {SCHEMA}.")
     for key in ("centre", "radius_m", "terrain", "elements", "sources", "notes", "counts"):
         if key not in doc:
             problems.append(f"The context has no {key}.")
