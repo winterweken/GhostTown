@@ -55,7 +55,19 @@ Everything is in metres, with x east, y north, the address at the origin and z =
 Ghost Town needs **Blender 5.2 or later** on macOS (Apple silicon or Intel), Windows x64 or Linux x64.
 It bundles the one library it needs (shapely), so there is nothing to `pip install`.
 
-There are no packaged releases yet. Until there are, build the package yourself:
+1. Download the zip for your computer from the [latest release](https://github.com/winterweken/GhostTown/releases/latest):
+
+   | Your computer | File |
+   |---|---|
+   | macOS, Apple silicon | `ghosttown-<version>-macos_arm64.zip` |
+   | macOS, Intel | `ghosttown-<version>-macos_x64.zip` |
+   | Windows | `ghosttown-<version>-windows_x64.zip` |
+   | Linux | `ghosttown-<version>-linux_x64.zip` |
+
+2. In Blender, go to Edit › Preferences › Get Extensions › ⌄ › **Install from Disk…** and pick the zip.
+3. Go to Edit › Preferences › System › Network and turn on **Allow Online Access**.
+
+### Building it yourself
 
 ```bash
 git clone https://github.com/winterweken/GhostTown.git
@@ -65,12 +77,7 @@ tools/build.sh
 
 `tools/build.sh` downloads the shapely wheels from PyPI and writes one zip per platform into `dist/`.
 It expects Blender at `/Applications/Blender.app`; on other systems, set `BLENDER` to your Blender
-executable first.
-
-Then, in Blender:
-
-1. Go to Edit › Preferences › Get Extensions › ⌄ › **Install from Disk…** and pick the zip for your platform.
-2. Go to Edit › Preferences › System › Network and turn on **Allow Online Access**.
+executable first. Install the zip as above.
 
 ## Use
 
@@ -154,7 +161,6 @@ sidebar panel ─▶ request.json ─▶ fetcher process ─▶ context.json ─
 - OpenStreetMap roads, green space, water and trees outside Toronto.
 - Terrain outside Canada.
 - A site outline: cut your site out of the ground and mark its buildings and parcel.
-- Packaged releases.
 
 ## Development
 
