@@ -86,10 +86,10 @@ def test_unregister_and_file_load_cancel_running_fetches():
     assert run2.proc.poll() is not None and runner.ACTIVE == {}
 
 
-def _fake_operator():
+def _fake_operator(key="build"):
     from types import SimpleNamespace
 
-    op = SimpleNamespace(_timer=None, report=lambda *args: None)
+    op = SimpleNamespace(key=key, _timer=None, report=lambda *args: None)
     op._stop = lambda context: ops.GHOSTTOWN_OT_build._stop(op, context)
     return op
 
@@ -114,6 +114,74 @@ def test_cancelling_the_operator_stops_the_fetch():
         runner.ACTIVE["build"] = run
         ops.GHOSTTOWN_OT_build.cancel(_fake_operator(), bpy.context)
         assert run.proc.poll() is not None and "build" not in runner.ACTIVE
+    finally:
+        runner.cancel_all()
+        ghosttown.unregister()
+
+
+def test_one_address_match_fills_the_location_and_site_name():
+    ghosttown.register()
+    try:
+        s = bpy.context.scene.ghosttown
+        msg = ops.apply_results(s, [{"label": "320 Bay St", "lat": 43.649667039, "lon": -79.380991173, "source": "toronto"}])
+        assert s.location == "43.649667039, -79.380991173" and s.site_name == "320 Bay St" and len(s.results) == 0
+        assert "320 Bay St" in msg and ops.parse_location(s.location) == (43.649667039, -79.380991173)
+    finally:
+        ghosttown.unregister()
+
+
+def test_several_matches_are_offered_and_one_is_picked():
+    ghosttown.register()
+    try:
+        s = bpy.context.scene.ghosttown
+        results = [{"label": f"{n} Bay St", "lat": 43.6496 + n * 1e-6, "lon": -79.381, "source": "toronto"} for n in (318, 320, 322)]
+        msg = ops.apply_results(s, results)
+        assert len(s.results) == 3 and "pick" in msg
+        assert bpy.ops.ghosttown.pick(index=1) == {"FINISHED"}
+        assert s.site_name == "320 Bay St" and s.location == f"{43.6496 + 320e-6!r}, -79.381" and len(s.results) == 0
+    finally:
+        ghosttown.unregister()
+
+
+def test_no_match_says_what_to_do():
+    ghosttown.register()
+    try:
+        s = bpy.context.scene.ghosttown
+        assert "latitude, longitude" in ops.apply_results(s, []) and len(s.results) == 0
+    finally:
+        ghosttown.unregister()
+
+
+def test_find_refuses_blank_text():
+    ghosttown.register()
+    try:
+        s = bpy.context.scene.ghosttown
+        s.location = "  "
+        level, message = ops.find_refusal(s)
+        assert level == "ERROR" and "Type an address" in message
+    finally:
+        ghosttown.unregister()
+
+
+def test_find_leaves_coordinates_alone():
+    ghosttown.register()
+    try:
+        s = bpy.context.scene.ghosttown
+        s.location = "43.65, -79.38"
+        level, message = ops.find_refusal(s)
+        assert level == "INFO" and "latitude, longitude" in message and s.location == "43.65, -79.38"
+        assert ops.find_refusal(Settings("320 Bay St")) is None
+    finally:
+        ghosttown.unregister()
+
+
+def test_cancel_stops_a_running_find_too():
+    ghosttown.register()
+    try:
+        run = runner.Run(["unused"], work_dir=tempfile.mkdtemp(), extra_paths=[], argv=SLEEPER)
+        runner.ACTIVE["find"] = run
+        assert bpy.ops.ghosttown.cancel() == {"FINISHED"}
+        assert run.proc.poll() is not None and "find" not in runner.ACTIVE
     finally:
         runner.cancel_all()
         ghosttown.unregister()

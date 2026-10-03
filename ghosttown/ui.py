@@ -18,8 +18,19 @@ class GHOSTTOWN_PT_main(bpy.types.Panel):
             box.label(text="Online access is off", icon="ERROR")
             box.label(text="Preferences › System › Network")
         col = layout.column(align=True)
-        col.prop(settings, "location")
+        row = col.row(align=True)
+        row.prop(settings, "location")
+        find = row.row(align=True)
+        find.enabled = bpy.app.online_access and "find" not in runner.ACTIVE
+        find.operator("ghosttown.find", text="", icon="VIEWZOOM")
         col.prop(settings, "site_name")
+        if "find" in runner.ACTIVE:
+            layout.label(text="Searching…", icon="TIME")
+        if settings.results:
+            box = layout.box()
+            box.label(text="Pick an address:")
+            for i, item in enumerate(settings.results):
+                box.operator("ghosttown.pick", text=item.label).index = i
         layout.prop(settings, "radius")
         if "build" in runner.ACTIVE:
             layout.label(text=runner.STATUS.get("build", "Working…"), icon="TIME")

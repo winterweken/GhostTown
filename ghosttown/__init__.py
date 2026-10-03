@@ -5,9 +5,12 @@ from . import ops, prefs, props, runner, ui
 
 _CLASSES = (
     prefs.GhostTownPreferences,
+    props.GhostTownResult,
     props.GhostTownSettings,
     ops.GHOSTTOWN_OT_import_context,
     ops.GHOSTTOWN_OT_build,
+    ops.GHOSTTOWN_OT_find,
+    ops.GHOSTTOWN_OT_pick,
     ops.GHOSTTOWN_OT_cancel,
     ui.GHOSTTOWN_PT_main,
 )
