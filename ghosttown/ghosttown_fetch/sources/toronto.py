@@ -30,3 +30,10 @@ def _props(feature):
 
 def _oid(feature):
     return _props(feature).get("OBJECTID")
+
+
+TREES = (TOPO, 10)
+
+
+def fetch_trees(net, lat, lon, radius_m):
+    return arcgis.query(net, *TREES, arcgis.radius_params(lat, lon, radius_m, out_fields="OBJECTID,DERIVED_HEIGHT"))
