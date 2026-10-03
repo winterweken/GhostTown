@@ -13,7 +13,7 @@ import traceback
 
 from . import TOOL
 
-USAGE = "Usage: python -m ghosttown_fetch selftest | fetch <request.json>"
+USAGE = "Usage: python -m ghosttown_fetch selftest | fetch <request.json> | geocode <cache_dir> <text>"
 
 
 def main(argv=None, *, net_factory=None):
@@ -32,6 +32,8 @@ def _dispatch(argv, net_factory):
         return selftest()
     if len(argv) == 2 and argv[0] == "fetch":
         return fetch(argv[1], net_factory)
+    if len(argv) == 3 and argv[0] == "geocode":
+        return geocode(argv[1], argv[2], net_factory)
     return {"ok": False, "error": USAGE}
 
 
@@ -99,3 +101,16 @@ def _fail(out_dir, sentence, detail):
         except OSError:
             pass
     return {"ok": False, "error": sentence}
+
+
+def geocode(cache_dir, text, net_factory):
+    try:
+        from .net import Net, SourceError
+        from .sources import address
+    except ImportError as e:
+        return {"ok": False, "error": f"A required library is missing ({e.name}); reinstall GhostTown."}
+    net = (net_factory or Net)(cache_dir, fresh=False)
+    try:
+        return {"ok": True, "results": address.search(net, text)}
+    except SourceError as e:
+        return {"ok": False, "error": str(e)}
