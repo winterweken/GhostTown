@@ -37,3 +37,13 @@ TREES = (TOPO, 10)
 
 def fetch_trees(net, lat, lon, radius_m):
     return arcgis.query(net, *TREES, arcgis.radius_params(lat, lon, radius_m, out_fields="OBJECTID,DERIVED_HEIGHT"))
+
+
+PARCELS = (CITY, 36)
+
+
+def fetch_parcels(net, lat, lon, radius_m):
+    """Lot lines only: CONDO parcels overlap the COMMON ones they sit on."""
+    return arcgis.query(net, *PARCELS, arcgis.radius_params(
+        lat, lon, radius_m, out_fields="OBJECTID,PARCELID,ADDRESS_NUMBER,LINEAR_NAME_FULL",
+        where="FEATURE_TYPE = 'COMMON'"))
