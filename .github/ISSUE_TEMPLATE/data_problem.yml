@@ -1,0 +1,68 @@
+name: Data problem
+description: The build worked, but something is wrong or missing for a site (heights, roads, water, trees, parcels, address search).
+title: "[Data]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ghost Town draws what the open data says, so some problems come from the source itself.
+        Reports still help: they show where a source is weak or where Ghost Town reads it wrongly.
+        Please check the README's [Known limits](https://github.com/winterweken/GhostTown#known-limits) first.
+  - type: input
+    id: location
+    attributes:
+      label: Location
+      description: The address or latitude, longitude you built.
+      placeholder: "235 Queens Quay W, Toronto  (or 43.6392, -79.3831)"
+    validations:
+      required: true
+  - type: dropdown
+    id: radius
+    attributes:
+      label: Radius
+      options:
+        - 150 m
+        - 300 m
+        - 500 m
+        - 1000 m
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What is affected?
+      multiple: true
+      options:
+        - Buildings
+        - Terrain
+        - Roads, sidewalks or parking
+        - Rail
+        - Water
+        - Green space
+        - Trees
+        - Parcels
+        - Address search
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is wrong?
+      description: Say where in the site it is (a street, a building name, or the object's `ctx_id` custom property in Blender) and add a screenshot if you can.
+    validations:
+      required: true
+  - type: textarea
+    id: truth
+    attributes:
+      label: How do you know?
+      description: A link to a map, photo, survey or other source showing what is really there.
+  - type: input
+    id: ghosttown-version
+    attributes:
+      label: Ghost Town version
+      description: Edit › Preferences › Add-ons › Ghost Town.
+      placeholder: "0.2.0"
+    validations:
+      required: true

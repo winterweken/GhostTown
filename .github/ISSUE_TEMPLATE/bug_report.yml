@@ -1,0 +1,71 @@
+name: Bug report
+description: Ghost Town failed, showed an error, or built something broken.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form when Ghost Town itself misbehaves: an error, a build that never finishes, broken geometry.
+        If the model is fine but the map data looks wrong for a site (a building too tall, a missing road), use the **Data problem** form instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The location and radius matter most. Anyone with those can run the same build.
+      placeholder: |
+        1. Location: 320 Bay St (or 43.6497, -79.3810)
+        2. Radius: 300 m
+        3. Pressed Build Context
+    validations:
+      required: true
+  - type: textarea
+    id: message
+    attributes:
+      label: Error or warning text
+      description: Copy the message Blender showed (status bar, or the Info editor). Paste it as text if you can.
+      render: text
+  - type: input
+    id: ghosttown-version
+    attributes:
+      label: Ghost Town version
+      description: Edit › Preferences › Add-ons › Ghost Town.
+      placeholder: "0.2.0"
+    validations:
+      required: true
+  - type: input
+    id: blender-version
+    attributes:
+      label: Blender version
+      placeholder: "5.2.2"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS (Apple silicon)
+        - macOS (Intel)
+        - Windows
+        - Linux
+    validations:
+      required: true
+  - type: textarea
+    id: run-files
+    attributes:
+      label: Run files (optional)
+      description: |
+        Each build keeps its files in a run folder inside Ghost Town's cache folder, under `runs/<date-time>/`.
+        To find the cache folder, run this in Blender's Python console:
+        `import bpy; print(bpy.utils.extension_path_user("bl_ext.user_default.ghosttown", path="cache"))`
+        (or look in Preferences › Add-ons › Ghost Town if you set your own cache folder).
+        Attaching `error.txt` and `request.json` from the failed run helps a lot.
+        Note that `request.json` contains the location you built and folder paths on your computer.

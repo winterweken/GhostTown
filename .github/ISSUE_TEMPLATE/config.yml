@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Known limits
+    url: https://github.com/winterweken/GhostTown#known-limits
+    about: Check whether what you found is already a listed limit of this version.

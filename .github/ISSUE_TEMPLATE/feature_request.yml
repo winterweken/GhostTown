@@ -1,0 +1,37 @@
+name: Feature request
+description: Suggest a new city, data source, layer or workflow improvement.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of request is it?
+      options:
+        - A new city or data source
+        - A new layer (something Ghost Town doesn't build yet)
+        - The Blender workflow (panel, options, re-builds)
+        - Export or the hand-off to Revit and other tools
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: request
+    attributes:
+      label: What would you like?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: What would it let you do?
+      description: The project or task you are trying to get done. This helps weigh the request against the roadmap.
+    validations:
+      required: true
+  - type: textarea
+    id: data
+    attributes:
+      label: Data source details (for a new city, source or layer)
+      description: |
+        Link the dataset and its licence. Ghost Town can only use open data that allows reuse with credit,
+        and that can be queried around a point without an account or API key.
