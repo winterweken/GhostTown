@@ -4,7 +4,7 @@ import re
 import shapely
 
 from . import context as ctx
-from .geom import polygons, rings, to_local
+from .geom import feature_geometry, polygons, rings, to_local
 
 LEVEL_M = 3.2      # storey height when only building:levels is known
 GUESS_M = 9.0      # height when OpenStreetMap says nothing
@@ -127,3 +127,40 @@ def _element(feature, pieces, terrain):
         return None
     kind = "building_guessed" if all(s["kind"] == "building_guessed" for s in solids) else "building"
     return ctx.element(feature.id, kind, name=_name(feature.tags), solids=solids)
+
+
+def from_toronto(features, frame, terrain):
+    """City building tiers grouped by BUILDINGID; every tier stands on the lowest ground under the whole building."""
+    groups = {}
+    for feature in features:
+        props = feature.get("properties") or {}
+        if props.get("SUBTYPE_DESC", "Building Outline") != "Building Outline":
+            continue
+        geom = feature_geometry(feature)
+        if geom is None:
+            continue
+        local = polygons(to_local(geom, frame))
+        if not local:
+            continue
+        bid = props.get("BUILDINGID")
+        key = str(int(bid)) if isinstance(bid, (int, float)) else f"obj{props.get('OBJECTID')}"
+        groups.setdefault(key, []).append((props, local))
+
+    elements = []
+    for key, tiers in groups.items():
+        ground = terrain.min_under(shapely.union_all([p for _, local in tiers for p in local]))
+        solids = []
+        for props, local in tiers:
+            height = _count(props.get("DERIVED_HEIGHT"))
+            if height is None or height < MIN_SOLID_M:
+                kind, source, height = "building_guessed", "guessed", GUESS_M
+            else:
+                kind, source = "building", "toronto_derived"
+            for poly in local:
+                r = rings(poly)
+                if r is not None:
+                    solids.append(ctx.solid(kind, r, ground - SINK_M, ground + height, source))
+        if solids:
+            kind = "building_guessed" if all(s["kind"] == "building_guessed" for s in solids) else "building"
+            elements.append(ctx.element(f"toronto:building:{key}", kind, solids=solids))
+    return elements
