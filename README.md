@@ -3,8 +3,14 @@
 A Blender 5.2 extension that builds the site context around a location from open data, as clean
 geometry you can take into Revit or any BIM tool.
 
-**Version 0.1 builds OpenStreetMap buildings on flat ground.** Address search, terrain, roads,
-sidewalks, green space, water, trees, parcels and City of Toronto data are on the way.
+**Version 0.2:**
+- **In Toronto:** the City's own buildings (stepped tiers, measured heights), roads, sidewalks, parking, rail,
+  water, parks, trees and lot lines.
+- **Elsewhere:** OpenStreetMap buildings.
+- **Terrain:** NRCan elevation in Canada.
+- **Search:** type a Toronto address and press Find.
+
+Worldwide address search, worldwide terrain and OSM ground are on the way.
 
 ## Install
 
@@ -16,7 +22,8 @@ sidewalks, green space, water, trees, parcels and City of Toronto data are on th
 
 1. In the 3D View, open the sidebar (N) and the **GhostTown** tab.
 2. Fill in the fields:
-   - **Location:** `latitude, longitude`, for example `43.6497, -79.3810`.
+   - **Location:** a Toronto address (press **Find**, then pick if several match) or `latitude, longitude`,
+     for example `43.6497, -79.3810`.
    - **Site name** (optional): it names the collection.
    - **Radius:** 150 / 300 / 500 / 1000 m.
 3. Press **Build Context**. It takes about 10–30 s; press Esc or Cancel to stop.
