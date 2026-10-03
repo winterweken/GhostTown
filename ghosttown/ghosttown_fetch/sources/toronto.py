@@ -8,6 +8,7 @@ BUILDINGS = (TOPO, 2)
 BUILDING_WHERE = "SUBTYPE_DESC = 'Building Outline'"  # Miscellaneous Structure (canopies, kiosks) is left out
 BUILDING_FIELDS = "BUILDINGID,SUBTYPE_DESC,DERIVED_HEIGHT,OBJECTID"
 ID_CHUNK = 200
+WHOLE_MARGIN_M = 250.0  # a building's other tiers are fetched this far beyond the circle (some ids recur kilometres away)
 
 
 def fetch_buildings(net, lat, lon, radius_m):
@@ -18,8 +19,8 @@ def fetch_buildings(net, lat, lon, radius_m):
     ids = sorted({int(p["BUILDINGID"]) for p in (_props(f) for f in near) if isinstance(p.get("BUILDINGID"), (int, float))})
     for start in range(0, len(ids), ID_CHUNK):
         chunk = ",".join(str(i) for i in ids[start:start + ID_CHUNK])
-        params = {"where": f"BUILDINGID IN ({chunk}) AND {BUILDING_WHERE}", "outFields": BUILDING_FIELDS,
-                  "outSR": "4326", "f": "geojson", "orderByFields": "OBJECTID"}
+        params = arcgis.radius_params(lat, lon, radius_m + WHOLE_MARGIN_M, out_fields=BUILDING_FIELDS,
+                                      where=f"BUILDINGID IN ({chunk}) AND {BUILDING_WHERE}")
         for f in arcgis.query(net, *BUILDINGS, params):
             found.setdefault(_oid(f), f)
     return list(found.values())

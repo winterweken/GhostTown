@@ -129,9 +129,38 @@ def _element(feature, pieces, terrain):
     return ctx.element(feature.id, kind, name=_name(feature.tags), solids=solids)
 
 
+SLIVER_M = 0.5  # what's left of a cut-back outline and thinner than 1 m is a digitising gap, not building
+
+
+def _resolve_overlaps(items):
+    """[(Polygon, payload)] -> the same without overlaps: where outlines overlap, the smaller one wins.
+
+    The City draws a whole-building outline at the building's tallest height *and* every roof level
+    inside it (sometimes under another BUILDINGID, sometimes twice). Painting the largest first and the
+    smaller ones on top leaves each roof level at its own height and the big outline only where nothing
+    else covers it."""
+    geoms = [p for p, _ in items]
+    if not geoms:
+        return []
+    tree = shapely.STRtree(geoms)
+    rank = {i: r for r, i in enumerate(sorted(range(len(geoms)), key=lambda i: (geoms[i].area, i)))}
+    out = []
+    for i, (poly, payload) in enumerate(items):
+        smaller = [geoms[j] for j in tree.query(poly, predicate="intersects")
+                   if rank[j] < rank[i] and not poly.touches(geoms[j])]
+        if not smaller:
+            out.append((poly, payload))
+            continue
+        rest = poly.difference(shapely.union_all(smaller))
+        rest = shapely.buffer(shapely.buffer(rest, -SLIVER_M, join_style="mitre"), SLIVER_M, join_style="mitre")
+        out += [(part, payload) for part in polygons(rest)]
+    return out
+
+
 def from_toronto(features, frame, terrain):
-    """City building tiers grouped by BUILDINGID; every tier stands on the lowest ground under the whole building."""
-    groups = {}
+    """City building outlines grouped by BUILDINGID, overlaps resolved; every tier stands on the lowest
+    ground under its whole building."""
+    items, footprints = [], {}
     for feature in features:
         props = feature.get("properties") or {}
         if props.get("SUBTYPE_DESC", "Building Outline") != "Building Outline":
@@ -139,27 +168,29 @@ def from_toronto(features, frame, terrain):
         geom = feature_geometry(feature)
         if geom is None:
             continue
-        local = polygons(to_local(geom, frame))
-        if not local:
-            continue
         bid = props.get("BUILDINGID")
         key = str(int(bid)) if isinstance(bid, (int, float)) else f"obj{props.get('OBJECTID')}"
-        groups.setdefault(key, []).append((props, local))
+        for poly in polygons(to_local(geom, frame)):
+            items.append((poly, (key, props)))
+            footprints.setdefault(key, []).append(poly)
+
+    groups = {}
+    for poly, (key, props) in _resolve_overlaps(items):
+        groups.setdefault(key, []).append((props, poly))
 
     elements = []
     for key, tiers in groups.items():
-        ground = terrain.min_under(shapely.union_all([p for _, local in tiers for p in local]))
+        ground = terrain.min_under(shapely.union_all(footprints[key]))
         solids = []
-        for props, local in tiers:
+        for props, poly in tiers:
             height = _count(props.get("DERIVED_HEIGHT"))
             if height is None or height < MIN_SOLID_M:
                 kind, source, height = "building_guessed", "guessed", GUESS_M
             else:
                 kind, source = "building", "toronto_derived"
-            for poly in local:
-                r = rings(poly)
-                if r is not None:
-                    solids.append(ctx.solid(kind, r, ground - SINK_M, ground + height, source))
+            r = rings(poly)
+            if r is not None:
+                solids.append(ctx.solid(kind, r, ground - SINK_M, ground + height, source))
         if solids:
             kind = "building_guessed" if all(s["kind"] == "building_guessed" for s in solids) else "building"
             elements.append(ctx.element(f"toronto:building:{key}", kind, solids=solids))
