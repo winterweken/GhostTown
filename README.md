@@ -1,8 +1,17 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="media/brand/png/lockup/ghosttown-lockup-horizontal-dark.png">
+    <img src="media/brand/png/lockup/ghosttown-lockup-horizontal-light.png" alt="Ghost Town logo: a ghost-shaped tower in a faded skyline. No more ghost towns." width="600">
+  </picture>
+</p>
+
 ![Ghost Town: no more ghost towns. Buildings, roads, trees, parcels.](media/brand/png/hero/ghosttown-hero-banner.png)
 
 # Ghost Town
 
-**No more ghost towns.** Type an address in Blender and get the city around it: buildings, terrain, roads, sidewalks,
+**No more ghost towns.**
+
+Type an address in Blender and get the city around it: buildings, terrain, roads, sidewalks,
 water, parks, trees and lot lines, built from open data as clean geometry you can take into Revit or
 any BIM tool.
 
