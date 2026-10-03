@@ -55,3 +55,23 @@ def test_two_courtyards_sharing_a_node_are_separated():
     poly = Polygon([(0, 0), (30, 0), (30, 30), (0, 30)], holes)
     parts = polygons(poly)
     assert parts and not any(_touching(rings(p)) for p in parts)
+
+
+def test_to_local_puts_the_centre_at_the_origin():
+    from shapely.geometry import Point
+
+    from ghosttown_fetch.frame import Frame
+    from ghosttown_fetch.geom import to_local
+
+    p = to_local(Point(-79.38, 43.65), Frame(43.65, -79.38))
+    assert abs(p.x) < 1e-9 and abs(p.y) < 1e-9
+
+
+def test_feature_geometry_reads_geojson_and_survives_junk():
+    from ghosttown_fetch.geom import feature_geometry
+
+    good = {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [-79.38, 43.65]}}
+    assert feature_geometry(good).geom_type == "Point"
+    assert feature_geometry({"properties": {}}) is None
+    assert feature_geometry({"geometry": {"type": "Polygon", "coordinates": "nonsense"}}) is None
+    assert feature_geometry(None) is None

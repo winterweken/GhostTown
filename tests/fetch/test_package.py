@@ -17,3 +17,10 @@ def test_kinds_are_unique_and_grouped():
 def test_every_source_has_a_name_and_credit():
     assert set(cf.SOURCE_NAMES) == set(cf.CREDITS)
     assert cf.CREDITS["osm"] == "© OpenStreetMap contributors"
+
+
+def test_city_of_toronto_and_nrcan_are_credited():
+    assert cf.SOURCE_NAMES["toronto"] == "City of Toronto"
+    assert cf.CREDITS["toronto"] == "Contains information licensed under the Open Government Licence – Toronto"
+    assert cf.SOURCE_NAMES["nrcan"] == "Natural Resources Canada"
+    assert cf.CREDITS["nrcan"] == "Contains information licensed under the Open Government Licence – Canada"

@@ -19,5 +19,9 @@ LAYERS = ("buildings", "terrain", "roads", "sidewalks", "parking", "rail",
 RADIUS_RANGE_M = (50.0, 1000.0)
 SITE_LIMIT_M = 2000.0  # site outlines must sit within this distance of the centre
 
-SOURCE_NAMES = {"osm": "OpenStreetMap"}
-CREDITS = {"osm": "© OpenStreetMap contributors"}
+SOURCE_NAMES = {"osm": "OpenStreetMap", "toronto": "City of Toronto", "nrcan": "Natural Resources Canada"}
+CREDITS = {
+    "osm": "© OpenStreetMap contributors",
+    "toronto": "Contains information licensed under the Open Government Licence – Toronto",
+    "nrcan": "Contains information licensed under the Open Government Licence – Canada",
+}

@@ -1,11 +1,10 @@
 """Buildings as vertical prisms. Milestone 1: OpenStreetMap outlines and parts."""
 import re
 
-import numpy as np
 import shapely
 
 from . import context as ctx
-from .geom import polygons, rings
+from .geom import polygons, rings, to_local
 
 LEVEL_M = 3.2      # storey height when only building:levels is known
 GUESS_M = 9.0      # height when OpenStreetMap says nothing
@@ -73,9 +72,6 @@ def _name(tags):
 
 
 def from_osm(features, frame, terrain):
-    def to_local(geom):
-        return shapely.transform(geom, lambda c: np.column_stack(frame.to_local(c[:, 0], c[:, 1])))
-
     outlines, parts = [], []
     for f in features:
         if _wanted(f.tags, "building"):
@@ -84,7 +80,7 @@ def from_osm(features, frame, terrain):
             target = parts
         else:
             continue
-        local = polygons(to_local(f.geom))
+        local = polygons(to_local(f.geom, frame))
         if local:
             target.append((f, local))
 

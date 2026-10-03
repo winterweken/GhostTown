@@ -1,5 +1,7 @@
 """Small shapely helpers shared by the builders."""
+import numpy as np
 import shapely
+import shapely.geometry
 from shapely.geometry import Polygon
 from shapely.geometry.polygon import orient
 
@@ -77,3 +79,20 @@ def _ring(coords):
     while len(pts) > 1 and pts[0] == pts[-1]:
         pts.pop()
     return pts if len(pts) >= 3 else None
+
+
+def to_local(geom, frame):
+    """A lon/lat geometry in the site's local metres."""
+    return shapely.transform(geom, lambda c: np.column_stack(frame.to_local(c[:, 0], c[:, 1])))
+
+
+def feature_geometry(feature):
+    """The shapely geometry of a GeoJSON feature, or None when it has none or it can't be read."""
+    g = (feature or {}).get("geometry")
+    if not g:
+        return None
+    try:
+        geom = shapely.geometry.shape(g)
+    except (ValueError, TypeError, AttributeError, KeyError, IndexError, shapely.errors.GEOSException):
+        return None
+    return None if geom.is_empty else geom
