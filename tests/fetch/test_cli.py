@@ -7,23 +7,28 @@ from pathlib import Path
 from ghosttown_fetch import cli
 from ghosttown_fetch import request as rq
 from ghosttown_fetch.net import SourceError
-from fakes import FakeNet
+from fakes import FakeNet, router
 from osm_samples import LAT0, LON0, body, square, way
+from toronto_samples import page as city_page, polygon as city_polygon
 
 GHOSTTOWN_DIR = str(Path(__file__).resolve().parents[2] / "ghosttown")
 
 
 def _write_req(tmp_path, **changes):
     req = rq.build(centre={"lat": LAT0, "lon": LON0}, radius_m=150, cache_dir=str(tmp_path / "cache"),
-                   out_dir=str(tmp_path / "run"))
+                   out_dir=str(tmp_path / "run"), layers=["buildings"])
     req.update(changes)
     path = tmp_path / "request.json"
     path.write_text(json.dumps(req), encoding="utf-8")
     return path
 
 
+FAR = city_polygon([(5000, 5000), (6000, 5000), (6000, 6000), (5000, 6000)])
+
+
 def _net(answer):
-    return lambda cache_dir, fresh=False: FakeNet({"osm": answer})
+    """A site outside Toronto: the City boundary says 'elsewhere' and OSM gives the answer."""
+    return lambda cache_dir, fresh=False: FakeNet({"osm": answer, "toronto": router({"FeatureServer/40/": city_page(FAR)})})
 
 
 def _one_line(capsys):
