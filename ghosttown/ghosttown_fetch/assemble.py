@@ -3,7 +3,10 @@
 The centre decides the region. Inside the City of Toronto, the City's own layers supply buildings,
 ground, trees and parcels; elsewhere, OpenStreetMap supplies buildings on plain ground. NRCan supplies
 the terrain in Canada. Each source runs on its own: a failure becomes a warning note, and only a run
-where every data source failed raises NothingFetched."""
+where every data source failed raises NothingFetched. Real-world outlines occasionally defeat the
+geometry library; that too costs only the layer it happens in."""
+import shapely
+
 from . import buildings, ground, parcels, region, trees
 from . import context as ctx
 from . import terrain as terrain_mod
@@ -74,13 +77,21 @@ def assemble(request, net, *, progress=None):
         ctx.add_source(doc, source)
         return result
 
+    def built(code, what, make):
+        try:
+            return make()
+        except shapely.errors.GEOSException as e:
+            ctx.note(doc, "warn", code, f"{what} couldn't be built from the source geometry ({str(e)[:80]}).")
+            return []
+
     pieces = {}
     if where == "toronto":
         if "buildings" in layers:
             found = attempt("City buildings", 25, "city_buildings", "toronto",
                             lambda: toronto.fetch_buildings(net, lat, lon, radius))
             if found is not None:
-                doc["elements"].extend(buildings.from_toronto(found, frame, terrain))
+                doc["elements"].extend(built("city_buildings", "City buildings",
+                                             lambda: buildings.from_toronto(found, frame, terrain, radius)))
         kinds = [kind for kind, layer in KIND_LAYERS.items() if layer in layers]
         if kinds:
             found = attempt("City ground", 40, "city_ground", "toronto",
@@ -89,23 +100,29 @@ def assemble(request, net, *, progress=None):
         if "trees" in layers:
             found = attempt("City trees", 55, "city_trees", "toronto", lambda: toronto.fetch_trees(net, lat, lon, radius))
             if found is not None:
-                doc["elements"].extend(trees.from_toronto(found, frame, terrain))
+                doc["elements"].extend(built("city_trees", "City trees", lambda: trees.from_toronto(found, frame, terrain)))
         if "parcels" in layers:
             found = attempt("City parcels", 65, "city_parcels", "toronto",
                             lambda: toronto.fetch_parcels(net, lat, lon, radius))
             if found is not None:
-                doc["elements"].extend(parcels.from_toronto(found, frame, terrain, radius))
+                doc["elements"].extend(built("city_parcels", "City parcels",
+                                             lambda: parcels.from_toronto(found, frame, terrain, radius)))
     elif "buildings" in layers:
         endpoint = request.get("overpass_url") or osm.ENDPOINT
         found = attempt("OpenStreetMap", 25, "osm", "osm", lambda: osm.fetch(net, lat, lon, radius, layers, endpoint=endpoint))
         if found is not None:
-            doc["elements"].extend(buildings.from_osm(found, frame, terrain))
+            doc["elements"].extend(built("osm", "OpenStreetMap buildings", lambda: buildings.from_osm(found, frame, terrain)))
 
     if tried and failed == tried:
         raise NothingFetched(" ".join(n["text"] for n in doc["notes"] if n["level"] == "warn"))
 
     progress("Ground", 80)
-    faces = ground.layout(pieces, radius, include_ground="terrain" in layers)
-    doc["elements"].extend(ground.elements(faces, terrain))
+    plain = "terrain" in layers
+    try:
+        surface = ground.elements(ground.layout(pieces, radius, include_ground=plain), terrain)
+    except shapely.errors.GEOSException as e:
+        ctx.note(doc, "warn", "ground", f"The ground pieces couldn't be laid out ({str(e)[:80]}), so the ground is plain.")
+        surface = ground.elements(ground.layout({}, radius, include_ground=plain), terrain)
+    doc["elements"].extend(surface)
     progress("Writing", 95)
     return ctx.finish(doc)

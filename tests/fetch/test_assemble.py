@@ -119,3 +119,35 @@ def test_custom_overpass_endpoint_is_used_outside_toronto(tmp_path):
     net = _net(toronto=_city(**{"FeatureServer/40/": page(FAR)}))
     assemble(_req(tmp_path, overpass_url="https://example.org/api/interpreter"), net)
     assert any(url == "https://example.org/api/interpreter" for url, source, _ in net.calls if source == "osm")
+
+
+def _geos_error(*args, **kwargs):
+    import shapely
+
+    raise shapely.errors.GEOSException("TopologyException: found non-noded intersection")
+
+
+def test_a_geometry_error_in_one_layer_is_a_warning_not_a_failed_build(tmp_path, monkeypatch):
+    monkeypatch.setattr("ghosttown_fetch.buildings.from_toronto", _geos_error)
+    doc = assemble(_req(tmp_path), _net())
+    assert any(n["code"] == "city_buildings" and n["level"] == "warn" and "couldn't be built" in n["text"] for n in doc["notes"])
+    ids = {e["id"] for e in doc["elements"]}
+    assert "tree:toronto:9" in ids and "ground:road" in ids and not any(i.startswith("toronto:building") for i in ids)
+    assert ctx.validate(doc) == []
+
+
+def test_if_the_ground_pieces_cannot_be_laid_out_the_ground_is_plain(tmp_path, monkeypatch):
+    from ghosttown_fetch import ground
+
+    real = ground.layout
+
+    def fussy(pieces, radius_m, **kw):
+        if pieces:
+            _geos_error()
+        return real(pieces, radius_m, **kw)
+
+    monkeypatch.setattr("ghosttown_fetch.ground.layout", fussy)
+    doc = assemble(_req(tmp_path), _net())
+    assert any(n["code"] == "ground" and n["level"] == "warn" for n in doc["notes"])
+    ground_ids = {e["id"] for e in doc["elements"] if e["id"].startswith("ground:")}
+    assert ground_ids == {"ground:ground"} and "toronto:building:7" in {e["id"] for e in doc["elements"]}

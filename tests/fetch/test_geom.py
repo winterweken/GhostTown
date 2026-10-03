@@ -75,3 +75,12 @@ def test_feature_geometry_reads_geojson_and_survives_junk():
     assert feature_geometry({"properties": {}}) is None
     assert feature_geometry({"geometry": {"type": "Polygon", "coordinates": "nonsense"}}) is None
     assert feature_geometry(None) is None
+
+
+def test_rings_that_nearly_touch_are_separated_before_rounding_makes_them_touch():
+    # The courtyard corner sits 0.4 mm inside the wall: rounded to millimetres it would land on it.
+    poly = Polygon([(0, 0), (30.0004, 0), (30.0004, 30), (0, 30)], [[(10, 10), (30, 12), (10, 14)]])
+    parts = polygons(poly)
+    assert parts
+    for p in parts:
+        assert Polygon(rings(p)[0], rings(p)[1:]).is_valid and not _touching(rings(p))

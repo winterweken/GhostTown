@@ -7,31 +7,17 @@ CITY = "cot_geospatial27"   # parcels, parks, address points, city boundary
 BUILDINGS = (TOPO, 2)
 BUILDING_WHERE = "SUBTYPE_DESC = 'Building Outline'"  # Miscellaneous Structure (canopies, kiosks) is left out
 BUILDING_FIELDS = "BUILDINGID,SUBTYPE_DESC,DERIVED_HEIGHT,OBJECTID"
-ID_CHUNK = 200
-WHOLE_MARGIN_M = 250.0  # a building's other tiers are fetched this far beyond the circle (some ids recur kilometres away)
+WHOLE_MARGIN_M = 250.0  # outlines are fetched this far beyond the circle
 
 
 def fetch_buildings(net, lat, lon, radius_m):
-    """Building tiers touching the circle, plus every other tier of those buildings so they come in whole."""
-    near = arcgis.query(net, *BUILDINGS, arcgis.radius_params(lat, lon, radius_m, out_fields=BUILDING_FIELDS,
-                                                               where=BUILDING_WHERE))
-    found = {_oid(f): f for f in near}
-    ids = sorted({int(p["BUILDINGID"]) for p in (_props(f) for f in near) if isinstance(p.get("BUILDINGID"), (int, float))})
-    for start in range(0, len(ids), ID_CHUNK):
-        chunk = ",".join(str(i) for i in ids[start:start + ID_CHUNK])
-        params = arcgis.radius_params(lat, lon, radius_m + WHOLE_MARGIN_M, out_fields=BUILDING_FIELDS,
-                                      where=f"BUILDINGID IN ({chunk}) AND {BUILDING_WHERE}")
-        for f in arcgis.query(net, *BUILDINGS, params):
-            found.setdefault(_oid(f), f)
-    return list(found.values())
+    """Every building outline within the circle and WHOLE_MARGIN_M beyond it.
 
-
-def _props(feature):
-    return feature.get("properties") or {}
-
-
-def _oid(feature):
-    return _props(feature).get("OBJECTID")
+    The margin brings in the rest of buildings that straddle the circle, and the neighbours needed to
+    resolve the City's overlapping outlines. It is a distance rather than a BUILDINGID lookup because
+    some ids recur kilometres away."""
+    return arcgis.query(net, *BUILDINGS, arcgis.radius_params(
+        lat, lon, radius_m + WHOLE_MARGIN_M, out_fields=BUILDING_FIELDS, where=BUILDING_WHERE))
 
 
 TREES = (TOPO, 10)
