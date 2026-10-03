@@ -1,4 +1,6 @@
 """City of Toronto open data layers on gis.toronto.ca, asked for by site radius."""
+import shapely
+
 from ..geom import feature_geometry, polygons, to_local
 from . import arcgis
 
@@ -48,8 +50,9 @@ GROUND = {
 RAIL_HALF_WIDTH_M = 1.75
 
 
-def fetch_ground(net, lat, lon, radius_m, frame, kinds=None):
-    """{kind: [Polygon]} in local metres for the ground layout; rail lines are widened into surfaces."""
+def fetch_ground(net, lat, lon, radius_m, frame, kinds=None, skipped=None):
+    """{kind: [Polygon]} in local metres for the ground layout; rail lines are widened into surfaces.
+    A shape the geometry library can't handle is left out and recorded in `skipped` as (kind, OBJECTID)."""
     pieces = {}
     for kind, layers in GROUND.items():
         if kinds is not None and kind not in kinds:
@@ -60,10 +63,15 @@ def fetch_ground(net, lat, lon, radius_m, frame, kinds=None):
                 geom = feature_geometry(feature)
                 if geom is None:
                     continue
-                local = to_local(geom, frame)
-                if local.geom_type in ("LineString", "MultiLineString"):
-                    local = local.buffer(RAIL_HALF_WIDTH_M, cap_style="flat")
-                found = polygons(local)
+                try:
+                    local = to_local(geom, frame)
+                    if local.geom_type in ("LineString", "MultiLineString"):
+                        local = local.buffer(RAIL_HALF_WIDTH_M, cap_style="flat")
+                    found = polygons(local)
+                except shapely.errors.GEOSException:
+                    if skipped is not None:
+                        skipped.append((kind, (feature.get("properties") or {}).get("OBJECTID")))
+                    continue
                 if found:
                     pieces.setdefault(kind, []).extend(found)
     return pieces

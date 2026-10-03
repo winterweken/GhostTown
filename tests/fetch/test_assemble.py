@@ -151,3 +151,36 @@ def test_if_the_ground_pieces_cannot_be_laid_out_the_ground_is_plain(tmp_path, m
     assert any(n["code"] == "ground" and n["level"] == "warn" for n in doc["notes"])
     ground_ids = {e["id"] for e in doc["elements"] if e["id"].startswith("ground:")}
     assert ground_ids == {"ground:ground"} and "toronto:building:7" in {e["id"] for e in doc["elements"]}
+
+
+def test_a_geometry_error_while_reading_city_ground_gives_plain_ground(tmp_path, monkeypatch):
+    monkeypatch.setattr("ghosttown_fetch.sources.toronto.fetch_ground", _geos_error)
+    doc = assemble(_req(tmp_path), _net())
+    assert any(n["code"] == "city_ground" and n["level"] == "warn" for n in doc["notes"])
+    ids = {e["id"] for e in doc["elements"]}
+    assert "toronto:building:7" in ids and {i for i in ids if i.startswith("ground:")} == {"ground:ground"}
+    assert ctx.validate(doc) == []
+
+
+def test_ground_shapes_that_cannot_be_read_are_reported(tmp_path, monkeypatch):
+    from ghosttown_fetch.sources import toronto as city
+
+    real = city.fetch_ground
+
+    def lossy(*args, skipped=None, **kw):
+        pieces = real(*args, skipped=skipped, **kw)
+        skipped.append(("road", 99))
+        return pieces
+
+    monkeypatch.setattr("ghosttown_fetch.sources.toronto.fetch_ground", lossy)
+    doc = assemble(_req(tmp_path), _net())
+    assert any(n["code"] == "city_ground" and n["level"] == "warn" and "1 City ground shape" in n["text"]
+               for n in doc["notes"])
+    assert "ground:road" in {e["id"] for e in doc["elements"]}
+
+
+def test_a_geometry_error_reading_the_city_boundary_means_the_world(tmp_path, monkeypatch):
+    monkeypatch.setattr("ghosttown_fetch.region.fetch_boundary", _geos_error)
+    doc = assemble(_req(tmp_path), _net())
+    assert doc["region"] == "world" and any(n["code"] == "region" and n["level"] == "warn" for n in doc["notes"])
+    assert "osm:way:1" in {e["id"] for e in doc["elements"]}

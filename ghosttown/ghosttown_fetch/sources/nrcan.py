@@ -26,12 +26,18 @@ def build_url(frame, half_m, cell_m):
     return ENDPOINT + "?" + urllib.parse.urlencode(params, safe=":,")
 
 
-def check(body):
+def _read(body):
     try:
-        tiff.read(body)
+        return tiff.read(body)
     except tiff.TiffError as e:
         raise SourceError(f"Natural Resources Canada sent elevation data that couldn't be read ({e})") from None
 
 
+def check(body):
+    _read(body)
+
+
 def fetch(net, frame, half_m, cell_m):
-    return tiff.read(net.get(build_url(frame, half_m, cell_m), source="nrcan", check=check))
+    """The elevation grid. An unreadable file is a SourceError wherever it came from, a stored answer
+    included, so the build carries on with flat ground."""
+    return _read(net.get(build_url(frame, half_m, cell_m), source="nrcan", check=check))

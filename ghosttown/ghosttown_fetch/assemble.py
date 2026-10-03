@@ -29,6 +29,9 @@ def _region(net, frame, radius):
         boundary = region.fetch_boundary(net)
     except SourceError as e:
         return "world", ("warn", "region", f"{e} The site is treated as outside Toronto.")
+    except shapely.errors.GEOSException as e:
+        return "world", ("warn", "region", f"The City of Toronto boundary couldn't be read ({str(e)[:80]}). "
+                                           "The site is treated as outside Toronto.")
     where, crosses = region.classify(boundary, frame, radius)
     if crosses and where == "toronto":
         return where, ("warn", "boundary", "Part of the circle is outside the City of Toronto; that part has no City data.")
@@ -74,6 +77,10 @@ def assemble(request, net, *, progress=None):
             failed += 1
             ctx.note(doc, "warn", code, str(e))
             return None
+        except shapely.errors.GEOSException as e:  # sources turn answers into geometry as they read them
+            failed += 1
+            ctx.note(doc, "warn", code, f"{stage} couldn't be read ({str(e)[:80]}).")
+            return None
         ctx.add_source(doc, source)
         return result
 
@@ -94,9 +101,14 @@ def assemble(request, net, *, progress=None):
                                              lambda: buildings.from_toronto(found, frame, terrain, radius)))
         kinds = [kind for kind, layer in KIND_LAYERS.items() if layer in layers]
         if kinds:
+            skipped = []
             found = attempt("City ground", 40, "city_ground", "toronto",
-                            lambda: toronto.fetch_ground(net, lat, lon, radius, frame, kinds=kinds))
+                            lambda: toronto.fetch_ground(net, lat, lon, radius, frame, kinds=kinds, skipped=skipped))
             pieces = found or {}
+            if skipped:
+                shapes = ("1 City ground shape couldn't be read and was" if len(skipped) == 1
+                          else f"{len(skipped)} City ground shapes couldn't be read and were")
+                ctx.note(doc, "warn", "city_ground", f"{shapes} left out; plain ground fills the gap.")
         if "trees" in layers:
             found = attempt("City trees", 55, "city_trees", "toronto", lambda: toronto.fetch_trees(net, lat, lon, radius))
             if found is not None:

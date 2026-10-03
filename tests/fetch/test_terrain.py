@@ -122,3 +122,12 @@ def test_an_island_site_that_is_mostly_lake_keeps_its_land_terrain():
     t, note = terrain.load(FakeNet({"nrcan": east_slope_tiff(f, half=200.0, gaps=all_but_a_strip)}), f, 150)
     assert isinstance(t, terrain.GridTerrain) and note is None
     assert float(t.z(np.array([20.0]), np.array([0.0]))[0]) > 0.5
+
+
+def test_a_damaged_stored_elevation_file_gives_flat_ground_not_a_failed_build():
+    class StoredAnswer:  # hands back a stored answer without checking it
+        def get(self, url, *, source, data=None, check=None, timeout=120):
+            return b"II*\x00 truncated"
+
+    t, note = terrain.load(StoredAnswer(), Frame(*BAY), 150)
+    assert t.source == "flat" and note[0] == "warn" and note[2].endswith("The ground is flat.")

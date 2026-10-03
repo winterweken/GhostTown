@@ -36,3 +36,18 @@ def test_only_the_requested_kinds_are_fetched():
     net = FakeNet({"toronto": router(TABLE)})
     pieces = toronto.fetch_ground(net, LAT0, LON0, 200, F, kinds=["road"])
     assert set(pieces) == {"road"} and len(net.calls) == 1
+
+
+def test_one_unreadable_ground_shape_is_left_out_not_fatal(monkeypatch):
+    real = toronto.polygons
+
+    def fussy(geom):
+        if abs(geom.area - 25.0) < 0.5:  # the sidewalk square
+            raise shapely.errors.GEOSException("TopologyException: test")
+        return real(geom)
+
+    monkeypatch.setattr(toronto, "polygons", fussy)
+    skipped = []
+    pieces = toronto.fetch_ground(FakeNet({"toronto": router(TABLE)}), LAT0, LON0, 200, F, skipped=skipped)
+    assert "sidewalk" not in pieces and {"road", "rail", "green"} <= set(pieces)
+    assert skipped == [("sidewalk", 2)]
