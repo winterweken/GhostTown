@@ -1,6 +1,6 @@
 # Data credits
 
-GhostTown downloads open data at build time. Credit the sources you use in anything you publish:
+Ghost Town downloads open data at build time. Credit the sources you use in anything you publish:
 
 - **OpenStreetMap**: © OpenStreetMap contributors, available under the Open Database License (ODbL) 1.0.
   https://www.openstreetmap.org/copyright

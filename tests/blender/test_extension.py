@@ -185,3 +185,28 @@ def test_cancel_stops_a_running_find_too():
     finally:
         runner.cancel_all()
         ghosttown.unregister()
+
+
+def test_the_panel_and_the_add_on_carry_the_brand_name():
+    import tomllib
+
+    from ghosttown import ui
+
+    assert ui.GHOSTTOWN_PT_main.bl_label == "Ghost Town" and ui.GHOSTTOWN_PT_main.bl_category == "Ghost Town"
+    with open(os.path.join(os.path.dirname(ghosttown.__file__), "blender_manifest.toml"), "rb") as f:
+        manifest = tomllib.load(f)
+    assert manifest["name"] == "Ghost Town" and manifest["id"] == "ghosttown"
+
+
+def test_the_panel_icon_loads_and_unloads_with_the_add_on():
+    # Background mode hands out no UI icon ids, so this checks the loaded image; the GUI run checks the id.
+    from ghosttown import ui
+
+    assert not ui.icon_loaded()
+    ghosttown.register()
+    try:
+        assert os.path.isfile(ui.ICON_FILE) and ui.icon_loaded()
+        assert tuple(ui._previews["ghosttown"].image_size) == (64, 64)
+    finally:
+        ghosttown.unregister()
+    assert not ui.icon_loaded() and ui.icon_id() == 0

@@ -11,7 +11,7 @@ from .ghosttown_fetch import context as ctx
 from .ghosttown_fetch import request as rq
 
 OFFLINE = "Online access is off. Turn on Preferences › System › Network › Allow Online Access."
-MISSING_SHAPELY = ("GhostTown's shapely library isn't installed. Disable and re-enable GhostTown in "
+MISSING_SHAPELY = ("Ghost Town's shapely library isn't installed. Disable and re-enable Ghost Town in "
                    "Preferences › Add-ons, or reinstall it.")
 NO_MATCH = "No Toronto address matched. Outside Toronto, enter latitude, longitude for now."
 _LOCATION = re.compile(r"\s*(-?\d+(?:\.\d+)?)\s*[,\s]\s*(-?\d+(?:\.\d+)?)\s*")

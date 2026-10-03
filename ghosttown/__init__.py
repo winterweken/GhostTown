@@ -1,4 +1,4 @@
-"""GhostTown: site context from open data, built as clean geometry."""
+"""Ghost Town: site context from open data, built as clean geometry."""
 import bpy
 
 from . import ops, prefs, props, runner, ui
@@ -31,6 +31,7 @@ def register():
     for cls in _CLASSES:
         bpy.utils.register_class(cls)
     bpy.types.Scene.ghosttown = bpy.props.PointerProperty(type=props.GhostTownSettings)
+    ui.load_icons()
     _remove_handler()
     bpy.app.handlers.load_pre.append(_on_load_pre)
 
@@ -38,6 +39,7 @@ def register():
 def unregister():
     runner.cancel_all()
     _remove_handler()
+    ui.unload_icons()
     del bpy.types.Scene.ghosttown
     for cls in reversed(_CLASSES):
         bpy.utils.unregister_class(cls)

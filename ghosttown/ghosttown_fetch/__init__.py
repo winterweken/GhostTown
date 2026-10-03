@@ -1,4 +1,4 @@
-"""GhostTown fetcher: request.json in, context.json out.
+"""Ghost Town fetcher: request.json in, context.json out.
 
 Runs as `python -m ghosttown_fetch` on Blender's own Python. It never imports bpy.
 This file, request.py and context.py use the standard library only, so the

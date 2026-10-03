@@ -104,7 +104,7 @@ def build(scene, doc):
 
 
 def remove(root, scene):
-    """Delete a context collection and what GhostTown made in it. The user's objects, duplicates and
+    """Delete a context collection and what Ghost Town made in it. The user's objects, duplicates and
     sub-collections are kept; anything that would be left with no parent moves to the scene collection."""
     made = set(json.loads(root.get("ctx_objects", "[]")))
     ours = [root] + [c for c in root.children_recursive if c.get("ctx_group")]

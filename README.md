@@ -1,15 +1,17 @@
-# GhostTown
+![Ghost Town: no more ghost towns. Buildings, roads, trees, parcels.](media/brand/png/hero/ghosttown-hero-banner.png)
 
-**Type an address in Blender and get the city around it:** buildings, terrain, roads, sidewalks,
+# Ghost Town
+
+**No more ghost towns.** Type an address in Blender and get the city around it: buildings, terrain, roads, sidewalks,
 water, parks, trees and lot lines, built from open data as clean geometry you can take into Revit or
 any BIM tool.
 
-![The Toronto waterfront around 235 Queens Quay W, built by GhostTown](media/waterfront.jpg)
+![The Toronto waterfront around 235 Queens Quay W, built by Ghost Town](media/waterfront.jpg)
 
 *235 Queens Quay W, Toronto, 300 m radius, built in about 8 seconds. Data: City of Toronto and Natural
 Resources Canada (see [Data and credits](#data-and-credits)).*
 
-GhostTown is a free, open-source extension for Blender 5.2 and later. It is at an early stage
+Ghost Town is a free, open-source extension for Blender 5.2 and later. It is at an early stage
 (version 0.2): Toronto is covered in depth, and the rest of the world gets buildings only.
 
 ## What you get
@@ -41,7 +43,7 @@ Everything is in metres, with x east, y north, the address at the origin and z =
 
 ## Install
 
-GhostTown needs **Blender 5.2 or later** on macOS (Apple silicon or Intel), Windows x64 or Linux x64.
+Ghost Town needs **Blender 5.2 or later** on macOS (Apple silicon or Intel), Windows x64 or Linux x64.
 It bundles the one library it needs (shapely), so there is nothing to `pip install`.
 
 There are no packaged releases yet. Until there are, build the package yourself:
@@ -63,7 +65,7 @@ Then, in Blender:
 
 ## Use
 
-1. In the 3D View, open the sidebar (N) and the **GhostTown** tab.
+1. In the 3D View, open the sidebar (N) and the **Ghost Town** tab.
 2. **Location:** type a Toronto address such as `320 Bay St` and press the search button beside it. If
    several addresses match, pick one. Anywhere else, type `latitude, longitude`, for example
    `51.5074, -0.1278`.
@@ -72,12 +74,12 @@ Then, in Blender:
 5. Press **Build Context**. A 300 m site takes about 10 seconds and a 1000 m site about 20. Cancel or
    Esc stops it, and Ctrl+Z removes a finished build in one step.
 
-Building the same site again replaces what GhostTown made and keeps anything you added, including
+Building the same site again replaces what Ghost Town made and keeps anything you added, including
 your own objects and collections inside the context collection.
 
 ## Taking it into Revit
 
-GhostTown does not export. It keeps the geometry friendly to exporters and to Revit instead:
+Ghost Town does not export. It keeps the geometry friendly to exporters and to Revit instead:
 metres, closed building solids, outlines cleaned of edges under 3 mm, and stable material names.
 
 - **OBJ:** set **Up Axis: Z** (Blender's default is Y).
@@ -89,7 +91,7 @@ metres, closed building solids, outlines cleaned of edges under 3 mm, and stable
 
 ## Data and credits
 
-GhostTown downloads open data when you build. If you publish anything made with it, credit the sources
+Ghost Town downloads open data when you build. If you publish anything made with it, credit the sources
 you used. The panel lists them after every build.
 
 | Source | Used for | Credit |
@@ -104,12 +106,12 @@ More detail is in [CREDITS.md](CREDITS.md).
 heights are derived from aerial data, some are guessed, and lot lines are approximate. Check anything
 you rely on against a survey.
 
-**Privacy.** GhostTown contacts only `gis.toronto.ca`, `datacube.services.geo.ca` and
+**Privacy.** Ghost Town contacts only `gis.toronto.ca`, `datacube.services.geo.ca` and
 `overpass-api.de`, and only when you press the search button or Build Context. It sends what the query
 needs (the address you search for, or the location and radius you build) and nothing else. Answers are
 cached on your computer for 30 days.
 
-GhostTown is an independent project. It is not affiliated with or endorsed by the City of Toronto,
+Ghost Town is an independent project. It is not affiliated with or endorsed by the City of Toronto,
 Natural Resources Canada or OpenStreetMap.
 
 ## Known limits
@@ -118,7 +120,7 @@ Natural Resources Canada or OpenStreetMap.
 - Buildings are flat-topped prisms: no roof shapes, and canopies and kiosks are left out.
 - Bridges and elevated rail are draped onto the ground.
 - A stream is flat at one level along its length instead of following its valley.
-- Where the City's data leaves a gap between roof levels, GhostTown fills it at the height of the
+- Where the City's data leaves a gap between roof levels, Ghost Town fills it at the height of the
   neighbouring roof.
 - Rebuilding a site resets colours you changed on the `Context - …` materials.
 
@@ -161,5 +163,9 @@ one module that turns a public dataset into polygons, points or lines.
 
 ## Licence
 
-GPL-3.0-or-later. See [LICENSE](LICENSE). The data GhostTown downloads keeps its own licence, listed
+GPL-3.0-or-later. See [LICENSE](LICENSE). The data Ghost Town downloads keeps its own licence, listed
 under [Data and credits](#data-and-credits).
+
+The Ghost Town name and logo are © winterweken and are not covered by the GPL. That includes the files
+in [media/brand](media/brand) and the icon in `ghosttown/icons/`. You may use them to refer to this
+project; please ask before using them for a modified version or another product.

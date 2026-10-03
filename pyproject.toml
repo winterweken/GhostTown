@@ -1,7 +1,7 @@
 [project]
 name = "ghosttown-dev"
 version = "0.2.0"
-description = "Development environment for the GhostTown Blender extension"
+description = "Development environment for the Ghost Town Blender extension"
 requires-python = "==3.13.*"
 dependencies = []
 

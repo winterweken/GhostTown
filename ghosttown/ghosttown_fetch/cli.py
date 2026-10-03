@@ -42,10 +42,10 @@ def selftest():
         import numpy
         import shapely
     except ImportError as e:
-        return {"ok": False, "error": f"A required library is missing ({e.name}); reinstall GhostTown."}
+        return {"ok": False, "error": f"A required library is missing ({e.name}); reinstall Ghost Town."}
     major, minor = (int(p) for p in shapely.__version__.split(".")[:2])
     if (major, minor) < (2, 1):
-        return {"ok": False, "error": f"shapely {shapely.__version__} is too old; GhostTown needs 2.1 or later."}
+        return {"ok": False, "error": f"shapely {shapely.__version__} is too old; Ghost Town needs 2.1 or later."}
     return {"ok": True, "tool": TOOL, "python": platform.python_version(), "numpy": numpy.__version__,
             "shapely": shapely.__version__, "geos": shapely.geos_version_string}
 
@@ -63,7 +63,7 @@ def fetch(path, net_factory):
         from .cache import atomic_write
         from .net import Net
     except ImportError as e:
-        return _fail(out_dir, f"A required library is missing ({e.name}); reinstall GhostTown.", traceback.format_exc())
+        return _fail(out_dir, f"A required library is missing ({e.name}); reinstall Ghost Town.", traceback.format_exc())
 
     os.makedirs(out_dir, exist_ok=True)
     net = (net_factory or Net)(doc["cache_dir"], fresh=doc["fetch_fresh"])
@@ -108,7 +108,7 @@ def geocode(cache_dir, text, net_factory):
         from .net import Net, SourceError
         from .sources import address
     except ImportError as e:
-        return {"ok": False, "error": f"A required library is missing ({e.name}); reinstall GhostTown."}
+        return {"ok": False, "error": f"A required library is missing ({e.name}); reinstall Ghost Town."}
     net = (net_factory or Net)(cache_dir, fresh=False)
     try:
         return {"ok": True, "results": address.search(net, text)}
