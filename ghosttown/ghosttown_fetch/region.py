@@ -1,4 +1,6 @@
 """Is the site in the City of Toronto? The centre decides; the City's own boundary layer answers."""
+import json
+
 import numpy as np
 import shapely
 from shapely.geometry import Point
@@ -21,15 +23,25 @@ def boundary_params():
             "f": "geojson", "maxAllowableOffset": "0.0002", "geometryPrecision": "6", "orderByFields": "OBJECTID"}
 
 
+EMPTY = "The City of Toronto boundary came back empty; try again in a minute."
+
+
+def _has_features(body):
+    """An empty answer must not be cached: every Toronto site would look like it is outside the city."""
+    arcgis.check(body)
+    if not json.loads(body).get("features"):
+        raise SourceError(EMPTY)
+
+
 def fetch_boundary(net):
     parts = []
-    for feature in arcgis.query(net, *BOUNDARY, boundary_params()):
+    for feature in arcgis.query(net, *BOUNDARY, boundary_params(), accept=_has_features):
         geom = feature_geometry(feature)
         if geom is not None:
             geom = shapely.make_valid(geom)
             parts += [p for p in shapely.get_parts(geom) if p.geom_type in ("Polygon", "MultiPolygon")]
     if not parts:
-        raise SourceError("The City of Toronto boundary came back empty; try again in a minute.")
+        raise SourceError(EMPTY)
     return shapely.union_all(parts)
 
 

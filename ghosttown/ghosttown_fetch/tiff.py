@@ -13,7 +13,17 @@ class TiffError(ValueError):
 
 
 def read(data):
-    """-> (grid, x0, y0, dx, dy): float64 rows × cols with NaN for nodata; top-left corner; pixel size."""
+    """-> (grid, x0, y0, dx, dy): float64 rows × cols with NaN for nodata; top-left corner; pixel size.
+    Anything wrong with the file is a TiffError."""
+    try:
+        return _read(data)
+    except TiffError:
+        raise
+    except (ValueError, IndexError, KeyError, TypeError, ZeroDivisionError, struct.error, MemoryError):
+        raise TiffError("The TIFF file is damaged.") from None
+
+
+def _read(data):
     if len(data) < 8 or data[:4] not in (b"II*\x00", b"MM\x00*"):
         raise TiffError("This isn't a TIFF file.")
     bo = "<" if data[:2] == b"II" else ">"

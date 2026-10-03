@@ -23,6 +23,11 @@ ANSWER = json.dumps({"features": [{"attributes": {"ADDRESS_FULL": "320 Bay St", 
     ("1 Avenue Road", "1 AVENUE RD"),
     ("12 St. Clair Ave W", "12 ST CLAIR AVE W"),
     ("O'Connor Dr", "O'CONNOR DR"),
+    ("320 Bay Street Toronto ON", "320 BAY ST"),
+    ("100 Queen St W Toronto Ontario M5H 2N2", "100 QUEEN ST W"),
+    ("100 queen street west toronto on m5h2n2 canada", "100 QUEEN ST W"),
+    ("100 Toronto St", "100 TORONTO ST"),
+    ("100 Ontario", "100 ONTARIO"),
     ("   ", ""),
 ])
 def test_normalise(text, norm):

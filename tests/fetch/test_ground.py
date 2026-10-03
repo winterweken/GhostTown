@@ -108,3 +108,13 @@ def test_a_1000m_site_with_many_pieces_lays_out_in_seconds():
     meshes = ground.mesh(ground.layout(pieces, 1000.0), FlatTerrain())
     assert time.monotonic() - started < 30.0
     assert sum(len(m["faces"]) for m in meshes.values()) > 10000
+
+
+def test_each_water_body_sits_at_its_own_shoreline():
+    meshes = ground.mesh(ground.layout({"water": [box(-80, -10, -60, 10), box(60, -10, 80, 10)]}, R), Ramp())
+    plain = {tuple(p[:2]) for p in meshes["ground"]["verts"]}
+    inner = [p for p in meshes["water"]["verts"] if tuple(p[:2]) not in plain]
+    west = {p[2] for p in inner if p[0] < 0}
+    east = {p[2] for p in inner if p[0] > 0}
+    assert len(west) == 1 and len(east) == 1
+    assert -8.2 <= west.pop() <= -7.5 and 5.8 <= east.pop() <= 6.5

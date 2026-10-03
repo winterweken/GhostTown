@@ -2,7 +2,8 @@
 
 The City spells street types and directions in short form ("100 Queen St W"), so the street type
 (the last word, or the one before a final direction) and a final direction are abbreviated;
-everything else is left alone ("North York Blvd" keeps "North", "Avenue Rd" keeps "Avenue")."""
+everything else is left alone ("North York Blvd" keeps "North", "Avenue Rd" keeps "Avenue").
+A trailing city, province, country or postcode is dropped."""
 import json
 import re
 import urllib.parse
@@ -15,11 +16,15 @@ TYPES = {"STREET": "ST", "AVENUE": "AVE", "ROAD": "RD", "BOULEVARD": "BLVD", "DR
          "GARDENS": "GDNS", "HEIGHTS": "HTS", "TRAIL": "TRL", "GROVE": "GRV", "GATE": "GT"}
 DIRECTIONS = {"WEST": "W", "EAST": "E", "NORTH": "N", "SOUTH": "S"}
 _UNWANTED = re.compile(r"[^A-Z0-9 '\-/&]")
+LOCALITY = {"TORONTO", "ON", "ONT", "ONTARIO", "CANADA"}
+_POSTCODE = re.compile(r"[A-Z]\d[A-Z]|\d[A-Z]\d|[A-Z]\d[A-Z]\d[A-Z]\d")
 
 
 def normalise(text):
     s = (text or "").split(",")[0].upper().replace(".", " ")
     tokens = _UNWANTED.sub(" ", s).split()
+    while len(tokens) > 2 and (tokens[-1] in LOCALITY or _POSTCODE.fullmatch(tokens[-1])):
+        tokens.pop()  # "... Toronto ON M5H 2N2" typed without commas
     type_at = len(tokens) - 1
     if tokens and tokens[-1] in DIRECTIONS:
         tokens[-1] = DIRECTIONS[tokens[-1]]

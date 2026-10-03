@@ -47,3 +47,13 @@ def test_near_toronto():
     assert region.near_toronto(43.649667, -79.380991)
     assert not region.near_toronto(51.50735, -0.12776)
     assert not region.near_toronto(45.5017, -73.5673)
+
+
+def test_an_empty_boundary_answer_is_not_cached(tmp_path):
+    from ghosttown_fetch.net import Net
+
+    answers = [(200, page()), (200, page(WEST, EAST))]
+    net = Net(str(tmp_path), transport=lambda url, data, headers, timeout: answers.pop(0))
+    with pytest.raises(SourceError, match="boundary"):
+        region.fetch_boundary(net)
+    assert region.classify(region.fetch_boundary(net), F, 300) == ("toronto", False)

@@ -109,3 +109,16 @@ def test_real_bay_street_ground_level():
     data = gzip.decompress((FIX / "bay" / "nrcan_dtm.tif.gz").read_bytes())
     t, note = terrain.load(FakeNet({"nrcan": data}), Frame(43.649667039, -79.380991173), 150)
     assert note is None and t.ground_at_centre_m == pytest.approx(84.73, abs=0.05)
+
+
+def test_an_island_site_that_is_mostly_lake_keeps_its_land_terrain():
+    f = Frame(*BAY)
+
+    def all_but_a_strip(rows, cols):
+        mask = np.ones((rows, cols), dtype=bool)
+        mask[:, cols // 2 - cols // 12: cols // 2 + cols // 12] = False  # about 17 % land
+        return mask
+
+    t, note = terrain.load(FakeNet({"nrcan": east_slope_tiff(f, half=200.0, gaps=all_but_a_strip)}), f, 150)
+    assert isinstance(t, terrain.GridTerrain) and note is None
+    assert float(t.z(np.array([20.0]), np.array([0.0]))[0]) > 0.5

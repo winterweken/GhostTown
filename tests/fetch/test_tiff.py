@@ -51,3 +51,17 @@ def test_real_nrcan_tile_at_bay_street():
 def test_real_placeholder_outside_canada_is_one_pixel():
     grid, *_ = tiff.read(gzip.decompress((FIX / "london" / "nrcan_dtm.tif.gz").read_bytes()))
     assert grid.shape == (1, 1)
+
+
+def _replace(tag, typ, vals):
+    return lambda entries: [e for e in entries if e[0] != tag] + [(tag, typ, vals)]
+
+
+@pytest.mark.parametrize("edit", [
+    _replace(33922, 12, [0.0, 0.0]),   # tiepoint cut short
+    _replace(33550, 12, [2.0]),        # pixel scale cut short
+    _replace(322, 4, [0]),             # zero tile width
+])
+def test_damaged_tags_are_refused_in_a_sentence(edit):
+    with pytest.raises(tiff.TiffError):
+        tiff.read(write_tiff(GRID, 0.0, 0.0, 1.0, 1.0, tile=16, edit=edit))

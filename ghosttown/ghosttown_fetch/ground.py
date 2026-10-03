@@ -4,7 +4,7 @@ Per-kind polygons are laid out without overlaps in priority order (water > road 
 parking > rail > green; whatever is left is plain ground). Every outline, the circle edge and a
 regular grid are noded together and polygonised, so neighbouring faces share their edges exactly
 and the grid lets the terrain show through. Faces are triangulated into one vertex table, welded
-within 3 mm, and draped on the terrain. Water is flattened to its shoreline level."""
+within 3 mm, and draped on the terrain. Each water body is flattened to its own shoreline level."""
 import math
 
 import numpy as np
@@ -148,18 +148,35 @@ def mesh(faces, terrain):
     xs, ys = np.array(welder.xs), np.array(welder.ys)
     zs = np.asarray(terrain.z(xs, ys), dtype=float).copy()
     if "water" in tris:
-        _flatten_water(tris, faces, terrain, zs)
+        _flatten_water(tris, zs)
     return {kind: _compact(t, xs, ys, zs) for kind, t in tris.items()}
 
 
-def _flatten_water(tris, faces, terrain, zs):
-    shore = shapely.union_all([f for kind, f in faces if kind == "water"]).boundary
-    pts = shapely.get_coordinates(shapely.segmentize(shore, 1.0))
-    level = float(np.percentile(terrain.z(pts[:, 0], pts[:, 1]), WATER_PERCENTILE)) - WATER_DROP_M
-    shared = {i for kind, t in tris.items() if kind != "water" for tri in t for i in tri}
-    for tri in tris["water"]:
-        for i in tri:
-            if i not in shared:
+def _flatten_water(tris, zs):
+    """Each connected water body lies flat just below its own shoreline: the 10th percentile of the
+    terrain at the vertices it shares with the land. Shore vertices keep the terrain height."""
+    water = tris["water"]
+    shore = {i for kind, t in tris.items() if kind != "water" for tri in t for i in tri}
+    parent = {}
+
+    def find(i):
+        parent.setdefault(i, i)
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for a, b, c in water:
+        parent[find(a)] = find(b)
+        parent[find(b)] = find(c)
+    bodies = {}
+    for tri in water:
+        bodies.setdefault(find(tri[0]), set()).update(tri)
+    for verts in bodies.values():
+        on_shore = [zs[i] for i in verts if i in shore]
+        level = float(np.percentile(on_shore or [zs[i] for i in verts], WATER_PERCENTILE)) - WATER_DROP_M
+        for i in verts:
+            if i not in shore:
                 zs[i] = level
 
 

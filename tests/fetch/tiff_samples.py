@@ -5,7 +5,7 @@ import numpy as np
 
 
 def write_tiff(grid, x, y, dx, dy, *, big_endian=False, tile=None, rows_per_strip=2, nodata="-32767",
-               compression=1, tie_pixel=(0, 0)):
+               compression=1, tie_pixel=(0, 0), edit=None):
     bo = ">" if big_endian else "<"
     arr = np.asarray(grid, dtype=bo + "f4")
     h, w = arr.shape
@@ -35,6 +35,8 @@ def write_tiff(grid, x, y, dx, dy, *, big_endian=False, tile=None, rows_per_stri
         entries += [(322, 4, [tile]), (323, 4, [tile]), (324, 4, offsets), (325, 4, counts)]
     else:
         entries += [(273, 4, offsets), (278, 4, [rows_per_strip]), (279, 4, counts)]
+    if edit is not None:
+        entries = edit(entries)  # tests damage tags here
     entries.sort()
     if len(data) % 2:
         data += b"\0"

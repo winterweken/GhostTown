@@ -12,7 +12,7 @@ from .sources import nrcan
 
 MARGIN_M = 30.0
 CANADA = (41.5, 84.0, -141.1, -52.5)  # lat_min, lat_max, lon_min, lon_max
-MAX_NODATA = 0.6
+MAX_NODATA = 0.95  # islands and piers are mostly lake; keep whatever land there is
 GAP_PERCENTILE = 5
 
 
