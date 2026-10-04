@@ -88,6 +88,8 @@ class GHOSTTOWN_PT_main(bpy.types.Panel):
 
 
 SITE_ICONS = ("EMPTY_AXIS", "COPYDOWN", "IMAGE_DATA", "INFO", "EXPORT")
+# The default Solid view colours by material, so it never shows the photo on the ground.
+SOLID_HINT = "Shows in Material Preview, or Solid view with Color: Texture."
 
 
 def _choice(layout, label, operator, current, options):
@@ -131,6 +133,7 @@ class GHOSTTOWN_PT_site(bpy.types.Panel):
             box.label(text=f"Aerial photo {year}" if year else "Aerial photo", icon="IMAGE_DATA")
             _choice(box, "Ground", "ghosttown.use_ground", root.get("use_ground"),
                     (("colours", "Colours"), ("photo", "Photo")))
+            box.label(text=SOLID_HINT, icon="INFO")
             _choice(box, "Roofs", "ghosttown.use_roofs", root.get("use_roofs"),
                     (("plain", "Plain"), ("photo", "Photo")))
             if root.get("use_roofs") == "photo":

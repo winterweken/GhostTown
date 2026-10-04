@@ -246,6 +246,14 @@ def test_the_site_panel_sits_under_the_main_panel_with_real_icons():
         ghosttown.unregister()
 
 
+def test_the_solid_view_hint_is_in_the_panel_and_the_readme():
+    from ghosttown import ui
+    readme = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "README.md")
+    with open(readme, encoding="utf-8") as f:
+        assert ui.SOLID_HINT in f.read()
+    assert "Material Preview" in ui.SOLID_HINT and "Color: Texture" in ui.SOLID_HINT
+
+
 def test_the_photo_is_fetched_unless_turned_off():
     with_photo = ops.make_request(Settings("43.649667, -79.380991"), "/tmp/gt-cache", now=0)
     without = ops.make_request(Settings("43.649667, -79.380991", fetch_photo=False), "/tmp/gt-cache", now=0)
