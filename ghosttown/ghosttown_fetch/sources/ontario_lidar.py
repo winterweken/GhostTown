@@ -16,6 +16,7 @@ import numpy as np
 from .. import tiff
 from ..frame import lonlat_to_merc
 from ..net import SourceError
+from ..terrain import bilinear
 
 ROOT = "https://ws.geoservices.lrc.gov.on.ca/arcgis5/rest/services/Elevation"
 SURFACE = "Ontario_DSM_LidarDerived"
@@ -88,20 +89,7 @@ class Heights:
         """Bilinear heights at local points; NaN off the grid or where any of the four cells has none."""
         lon, lat = self.frame.to_lonlat(np.asarray(xs, dtype=float), np.asarray(ys, dtype=float))
         mx, my = lonlat_to_merc(lon, lat)
-        rows, cols = self.grid.shape
-        col = (np.asarray(mx) - self.x0) / self.dx - 0.5
-        row = (self.y0 - np.asarray(my)) / self.dy - 0.5
-        out = np.full(np.shape(col), np.nan)
-        inside = (col >= 0) & (col <= cols - 1) & (row >= 0) & (row <= rows - 1)
-        c, r = col[inside], row[inside]
-        c0, r0 = np.floor(c).astype(int), np.floor(r).astype(int)
-        c1, r1 = np.minimum(c0 + 1, cols - 1), np.minimum(r0 + 1, rows - 1)
-        fc, fr = c - c0, r - r0
-        g = self.grid
-        upper = g[r0, c0] * (1 - fc) + g[r0, c1] * fc
-        lower = g[r1, c0] * (1 - fc) + g[r1, c1] * fc
-        out[inside] = upper * (1 - fr) + lower * fr
-        return out
+        return bilinear(self.grid, self.x0, self.y0, self.dx, self.dy, mx, my)
 
 
 def fetch(net, frame, bounds_m, cell_m):

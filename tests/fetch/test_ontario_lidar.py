@@ -1,11 +1,12 @@
 import numpy as np
 import pytest
 
-from ghosttown_fetch.frame import Frame, merc_to_lonlat
+from ghosttown_fetch.frame import Frame, lonlat_to_merc, merc_to_lonlat
 from ghosttown_fetch.net import SourceError
 from ghosttown_fetch.sources import ontario_lidar as lidar
 from fakes import FakeNet, router
 from lidar_samples import BAY_SURFACE, BAY_TERRAIN, LAKE_NONE, rasters
+from tiff_samples import write_tiff
 from toronto_samples import LAT0, LON0
 
 F = Frame(LAT0, LON0)
@@ -53,6 +54,24 @@ def test_heights_are_surface_minus_terrain_and_nan_where_there_is_none():
     got = heights.sample(np.array([0.0, -30.0, 50.0, 500.0]), np.array([0.0, 0.0, 0.0, 0.0]))
     assert got[0] == pytest.approx(20.0) and got[1] == pytest.approx(0.0)
     assert np.isnan(got[2]) and np.isnan(got[3])
+
+
+def test_heights_are_read_at_pixel_centres():
+    step, east, north = 0.7, 0.1, 0.05  # Mercator metres a pixel; metres of height per Mercator metre
+    lons, lats = F.to_lonlat(np.array([-60.0, 60.0]), np.array([-60.0, 60.0]))
+    mx, my = lonlat_to_merc(lons, lats)
+    cols, rows = int((mx[1] - mx[0]) / step), int((my[1] - my[0]) / step)
+    cx = mx[0] + (np.arange(cols) + 0.5) * step  # a pixel's value belongs to its centre
+    cy = my[1] - (np.arange(rows) + 0.5) * step
+    ramp = east * (cx[None, :] - mx[0]) + north * (cy[:, None] - my[0])  # height above the flat terrain
+    corner = (float(mx[0]), float(my[1]), step, step)
+    surface = write_tiff(ramp, *corner, tile=64, nodata=None)
+    terrain = write_tiff(np.zeros_like(ramp), *corner, tile=64, nodata=None)
+    heights = lidar.Heights(lidar.tiff.read(surface), lidar.tiff.read(terrain), F)
+    xs, ys = np.array([0.0, 17.3, -23.9, 41.2]), np.array([0.0, -31.4, 12.6, 8.8])
+    px, py = lonlat_to_merc(*F.to_lonlat(xs, ys))
+    expected = east * (px - mx[0]) + north * (py - my[0])
+    assert np.allclose(heights.sample(xs, ys), expected, atol=0.001)  # half a pixel off would be 35 mm
 
 
 def test_real_heights_at_320_bay_street_match_the_citys_tower():
