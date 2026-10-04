@@ -52,8 +52,9 @@ def _stamp(now=None):
 
 
 def request_layers(settings):
-    """Every layer, less the photo when the user turned it off."""
-    return [layer for layer in LAYERS if layer != "photo" or getattr(settings, "fetch_photo", True)]
+    """Every layer, less the photo when the user turned it off; LiDAR roofs only when ticked."""
+    wanted = {"photo": getattr(settings, "fetch_photo", True), "lidar": getattr(settings, "fetch_lidar", False)}
+    return [layer for layer in LAYERS if wanted.get(layer, True)]
 
 
 def make_request(settings, cache_dir, overpass_url="", now=None):

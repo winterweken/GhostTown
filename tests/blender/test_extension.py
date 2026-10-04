@@ -14,8 +14,9 @@ SLEEPER = [sys.executable, "-c", "import time; time.sleep(30)"]
 
 
 class Settings:
-    def __init__(self, location, site_name="", radius="300", fetch_photo=True):
+    def __init__(self, location, site_name="", radius="300", fetch_photo=True, fetch_lidar=False):
         self.location, self.site_name, self.radius, self.fetch_photo = location, site_name, radius, fetch_photo
+        self.fetch_lidar = fetch_lidar
 
 
 def test_register_and_unregister_twice():
@@ -336,3 +337,56 @@ def test_import_of_a_damaged_photo_builds_without_it_and_says_why():
                              "so the site has no photo.") in reports
     finally:
         ghosttown.unregister()
+
+
+def test_lidar_roofs_are_fetched_only_when_ticked():
+    plain = ops.make_request(Settings("43.649667, -79.380991"), "/tmp/gt-cache", now=0)
+    lidar = ops.make_request(Settings("43.649667, -79.380991", fetch_lidar=True), "/tmp/gt-cache", now=0)
+    assert rq.validate(lidar) == [] and set(lidar["layers"]) - set(plain["layers"]) == {"lidar"}
+
+
+def test_settings_start_without_lidar_and_at_full_detail_with_a_budget():
+    ghosttown.register()
+    try:
+        from ghosttown import prefs
+        settings = bpy.context.scene.ghosttown
+        assert settings.fetch_lidar is False and settings.roof_detail == 100.0
+        assert prefs.DEFAULT_BUDGET == 500_000 and prefs.triangle_budget(bpy.context) == 500_000
+    finally:
+        ghosttown.unregister()
+
+
+def test_the_detail_slider_simplifies_the_picked_site_and_recounts():
+    from ghosttown import site_use
+    from test_site_lidar import buildings, lidar_site
+    ghosttown.register()
+    try:
+        root, _ = lidar_site(dense=True)
+        settings = bpy.context.scene.ghosttown
+        settings.site = root
+        settings.roof_detail = 40.0
+        assert abs(root["roof_detail"] - 0.4) < 1e-6
+        assert abs(buildings(root)[1].modifiers[site_use.DETAIL_MODIFIER].ratio - 0.4) < 1e-6
+        site_use.count_later(root)()  # what the slider scheduled, run now
+        assert root["ctx_triangles"] == site_use.count_triangles(root, bpy.context.evaluated_depsgraph_get())
+    finally:
+        ghosttown.unregister()
+
+
+def test_picking_a_site_shows_its_roof_detail():
+    from test_site_lidar import lidar_site
+    ghosttown.register()
+    try:
+        root, _ = lidar_site()
+        root["roof_detail"] = 0.25
+        settings = bpy.context.scene.ghosttown
+        settings.site = root
+        assert settings.roof_detail == 25.0
+    finally:
+        ghosttown.unregister()
+
+
+def test_triangle_counts_read_well_and_the_warning_says_what_to_do():
+    from ghosttown import ui
+    assert ui.triangles_text(1_400_000) == "1.4 M" and ui.triangles_text(86_000) == "86,000"
+    assert " ".join(ui.HEAVY) == "Heavy for Revit: lower Roof detail or use Flat roofs before exporting."

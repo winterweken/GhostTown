@@ -205,3 +205,28 @@ def count_triangles(root, depsgraph):
         total += int(np.clip(sizes - 2, 0, None).sum())
     root["ctx_triangles"] = total
     return total
+
+
+_pending = set()
+
+
+def count_later(root, delay=0.3):
+    """Count the site's triangles shortly after a change: a dragged slider changes many times, and an
+    update callback is no place to evaluate the scene. Returns the scheduled function (tests call it)."""
+    name = root.name
+
+    def run():
+        _pending.discard(name)
+        site = bpy.data.collections.get(name)
+        if site is not None and site.get("ctx_root"):
+            count_triangles(site, bpy.context.evaluated_depsgraph_get())
+            for window in bpy.context.window_manager.windows:
+                for area in window.screen.areas:
+                    if area.type == "VIEW_3D":
+                        area.tag_redraw()
+        return None
+
+    if name not in _pending:
+        _pending.add(name)
+        bpy.app.timers.register(run, first_interval=delay)
+    return run
