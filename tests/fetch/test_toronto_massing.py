@@ -3,8 +3,10 @@ import json
 import os
 import struct
 import zipfile
+from pathlib import Path
 
 import pytest
+from shapely.geometry import Point
 
 from ghosttown_fetch.frame import Frame
 from ghosttown_fetch.net import SourceError
@@ -128,3 +130,17 @@ def test_a_corrupt_member_that_passes_the_zip_check_falls_back_cleanly(tmp_path)
         massing.fetch(net_for(zip_bytes=damaged), str(tmp_path), F, 300)
     root = tmp_path / "toronto_massing"
     assert not root.exists() or os.listdir(root) == []
+
+
+SUBSET = (Path(__file__).parent / "fixtures" / "bay" / "massing_subset.zip").read_bytes()
+BAY = Frame(43.649667, -79.380991)
+
+
+def test_the_recorded_slice_reads_back_as_real_parts(tmp_path):
+    net = FakeNet({"toronto": router({"package_show?id=3d-massing": package(2025), "3DMassingShapefile_": SUBSET})})
+    parts, year = massing.fetch(net, str(tmp_path), BAY, 150)
+    assert year == 2025 and len(parts) >= 70
+    assert {"toronto_massing_lidar", "toronto_massing_3d_model", "toronto_massing_site_plan"} <= {p.source for p in parts}
+    at_address = [p for p in parts if any(poly.contains(Point(0, 0)) for poly in p.polygons)]
+    assert at_address and max(p.height for p in at_address) == pytest.approx(75.85, abs=0.5)
+    assert all(poly.is_valid for p in parts for poly in p.polygons)
