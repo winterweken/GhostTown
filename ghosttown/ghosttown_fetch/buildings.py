@@ -123,7 +123,7 @@ def _element(feature, pieces, terrain):
             z0 = ground + base if base > 0 else ground - SINK_M
             z1 = ground + height
             if z1 - z0 >= MIN_SOLID_M:
-                solids.append(ctx.solid(kind, r, z0, z1, source))
+                solids.append(ctx.solid(kind, r, z0, z1, source, ground=ground))
     if not solids:
         return None
     kind = "building_guessed" if all(s["kind"] == "building_guessed" for s in solids) else "building"
@@ -251,7 +251,7 @@ def from_toronto(features, frame, terrain, radius_m=None):
                 kind, source = "building", ("toronto_inferred" if inferred else "toronto_derived")
             r = rings(poly)
             if r is not None:
-                solids.append(ctx.solid(kind, r, ground - SINK_M, ground + height, source))
+                solids.append(ctx.solid(kind, r, ground - SINK_M, ground + height, source, ground=ground))
         if solids:
             kind = "building_guessed" if all(s["kind"] == "building_guessed" for s in solids) else "building"
             elements.append(ctx.element(f"toronto:building:{key}", kind, solids=solids))
@@ -340,7 +340,7 @@ def from_massing(parts, terrain, radius_m, year):
                 continue
             z0 = ground[i] + parts[i].base if parts[i].base > 0 else base
             if tops[i] - z0 >= MIN_SOLID_M:
-                solids.append(ctx.solid("building", r, z0, tops[i], parts[i].source))
+                solids.append(ctx.solid("building", r, z0, tops[i], parts[i].source, ground=ground[i]))
         if solids:
             first = min(parts[i].record for i in idx)
             elements.append(ctx.element(f"toronto:massing:{year}:{first}", "building", solids=solids))

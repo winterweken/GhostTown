@@ -10,6 +10,7 @@ from ghosttown_fetch.frame import Frame
 from ghosttown_fetch.sources import osm
 from ghosttown_fetch.terrain import FlatTerrain
 from osm_samples import LAT0, LON0, body, relation, square, way
+from terrains import Ramp
 
 FRAME = Frame(LAT0, LON0)
 FLAT = FlatTerrain()
@@ -51,6 +52,14 @@ def test_height_tag_wins_over_levels():
     el, = build(way(1, square(0, 0, 10), {"building": "yes", "height": "30", "building:levels": "3"}))
     s, = el["solids"]
     assert (s["z0"], s["z1"], s["height_source"], el["kind"]) == (-0.3, 30.0, "osm_height", "building")
+
+
+def test_each_solid_records_the_ground_under_it():
+    el, = buildings.from_osm(osm.parse(body(way(1, square(20, 0, 10), {"building": "yes", "height": "12", "min_height": "3"}))),
+                             FRAME, Ramp())
+    s, = el["solids"]
+    assert s["ground"] == pytest.approx(2.0, abs=0.01)
+    assert (s["z0"], s["z1"]) == (pytest.approx(5.0, abs=0.01), pytest.approx(14.0, abs=0.01))
 
 
 def test_levels_when_there_is_no_height():

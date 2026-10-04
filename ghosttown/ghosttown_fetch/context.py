@@ -36,9 +36,14 @@ def element(element_id, kind, *, name="", solids=(), meshes=(), lines=()):
             "solids": list(solids), "meshes": list(meshes), "lines": list(lines)}
 
 
-def solid(kind, rings, z0, z1, height_source):
-    return {"kind": kind, "rings": rings, "z0": round(float(z0), 3), "z1": round(float(z1), 3),
-            "height_source": height_source}
+def solid(kind, rings, z0, z1, height_source, ground=None):
+    """A prism. `ground` is the ground level its top stands on (z1 - ground is its height), which LiDAR
+    roofs measure up from; the base z0 can sit lower, buried under a whole building."""
+    out = {"kind": kind, "rings": rings, "z0": round(float(z0), 3), "z1": round(float(z1), 3),
+           "height_source": height_source}
+    if ground is not None:
+        out["ground"] = round(float(ground), 3)
+    return out
 
 
 def note(doc, level, code, text):
@@ -123,6 +128,8 @@ def _element_problems(el):
             p.append(f"{eid}: a solid needs rings of at least 3 points.")
         elif not (_num(s.get("z0")) and _num(s.get("z1")) and s["z0"] < s["z1"]):
             p.append(f"{eid}: a solid needs z0 below z1.")
+        elif "ground" in s and not _num(s["ground"]):
+            p.append(f"{eid}: a solid's ground must be a number.")
     for m in el.get("meshes", []):
         n = len(m.get("verts", []))
         if not all(len(f) == 3 and all(isinstance(i, int) and 0 <= i < n for i in f) for f in m.get("faces", [])):

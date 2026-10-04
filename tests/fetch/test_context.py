@@ -41,6 +41,12 @@ def test_solid_rounds_heights_to_millimetres():
     assert (s["z0"], s["z1"]) == (-0.3, 12.346)
 
 
+def test_a_solid_records_the_ground_its_top_stands_on():
+    s = ctx.solid("building", [SQUARE], -1.3, 12.0, "osm_height", ground=-1.00004)
+    assert s["ground"] == -1.0
+    assert "ground" not in ctx.solid("building", [SQUARE], 0, 1, "s")
+
+
 def test_add_source_once_with_its_credit():
     doc = _doc()
     ctx.add_source(doc, "osm")
@@ -55,6 +61,8 @@ def test_add_source_once_with_its_credit():
     (ctx.element("x", "road", meshes=[{"kind": "road", "verts": [[0, 0, 0]], "faces": [[0, 1, 2]]}]), "missing vertex"),
     (ctx.element("x", "parcel", lines=[{"kind": "parcel", "pts": [[0, 0, 0]]}]), "2 points"),
     (ctx.element("x", "building"), "no geometry"),
+    (ctx.element("x", "building", solids=[dict(ctx.solid("building", [SQUARE], 0, 1, "s"), ground="low")]),
+     "ground must be a number"),
 ])
 def test_validate_catches_bad_elements(bad, words):
     doc = _doc()
