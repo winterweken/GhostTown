@@ -101,7 +101,8 @@ def test_photo_is_optional_but_must_be_well_formed():
     for fine in (good, dict(good, year=None)):
         doc["photo"] = fine
         assert ctx.validate(doc) == []
-    for bad in (dict(good, file="../photo.jpg"), dict(good, file=""), dict(good, bounds_m=[1, 0, 0, 1]),
+    for bad in (dict(good, file="../photo.jpg"), dict(good, file="C:photo.jpg"), dict(good, file=""),
+                dict(good, bounds_m=[1, 0, 0, 1]),
                 dict(good, bounds_m=[0, 0, 1]), dict(good, width_px=0), dict(good, year="2025")):
         doc["photo"] = bad
         assert ctx.validate(doc) == [

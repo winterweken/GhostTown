@@ -96,10 +96,11 @@ def _survey_problems(point):
 
 def _photo_problems(photo):
     """The photo is optional (older files have none) but must say where it is and what it covers.
-    The file must sit beside context.json: no folders in its name."""
+    The file must sit beside context.json: no folders in its name, and no ':' (on Windows 'C:x.jpg'
+    is relative to a drive's current folder)."""
     bounds = photo.get("bounds_m") if isinstance(photo, dict) else None
     ok = (isinstance(photo, dict) and isinstance(photo.get("file"), str) and photo["file"].strip()
-          and "/" not in photo["file"] and "\\" not in photo["file"] and photo["file"] not in (".", "..")
+          and not any(c in photo["file"] for c in "/\\:") and photo["file"] not in (".", "..")
           and isinstance(bounds, list) and len(bounds) == 4 and all(_num(v) for v in bounds)
           and bounds[0] < bounds[2] and bounds[1] < bounds[3]
           and all(isinstance(photo.get(k), int) and not isinstance(photo.get(k), bool) and photo[k] > 0
