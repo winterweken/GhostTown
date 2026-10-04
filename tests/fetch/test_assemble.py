@@ -184,3 +184,12 @@ def test_a_geometry_error_reading_the_city_boundary_means_the_world(tmp_path, mo
     doc = assemble(_req(tmp_path), _net())
     assert doc["region"] == "world" and any(n["code"] == "region" and n["level"] == "warn" for n in doc["notes"])
     assert "osm:way:1" in {e["id"] for e in doc["elements"]}
+
+
+def test_the_survey_point_of_the_origin_is_recorded(tmp_path):
+    doc = assemble(_req(tmp_path), _net())
+    s = doc["survey"]
+    assert s["epsg"] == "EPSG:2952" and s["elevation_m"] == round(doc["ground_at_centre_m"], 3)
+    assert 300000 < s["easting_m"] < 330000 and 4.82e6 < s["northing_m"] < 4.85e6
+    world = assemble(_req(tmp_path), _net(toronto=_city(**{"FeatureServer/40/": page(FAR)})))
+    assert world["survey"]["epsg"] == "EPSG:32617" and ctx.validate(world) == []

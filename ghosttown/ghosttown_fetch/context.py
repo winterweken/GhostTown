@@ -75,11 +75,21 @@ def validate(doc):
             problems.append(f"The context has no {key}.")
     if problems:
         return problems
+    if doc.get("survey") is not None:
+        problems += _survey_problems(doc["survey"])
     for el in doc["elements"]:
         problems += _element_problems(el)
         if len(problems) >= _MAX_PROBLEMS:
             break
     return problems[:_MAX_PROBLEMS]
+
+
+def _survey_problems(point):
+    """The survey point is optional (older files have none) but must hold numbers when present."""
+    if not (isinstance(point, dict) and all(_num(point.get(k)) for k in ("easting_m", "northing_m", "grid_angle_deg"))
+            and (point.get("elevation_m") is None or _num(point["elevation_m"]))):
+        return ["The survey point needs a numeric easting, northing and grid angle."]
+    return []
 
 
 def _element_problems(el):

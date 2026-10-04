@@ -7,7 +7,7 @@ where every data source failed raises NothingFetched. Real-world outlines occasi
 geometry library; that too costs only the layer it happens in."""
 import shapely
 
-from . import buildings, ground, parcels, region, trees
+from . import buildings, ground, parcels, region, survey, trees
 from . import context as ctx
 from . import terrain as terrain_mod
 from .frame import Frame
@@ -64,6 +64,7 @@ def assemble(request, net, *, progress=None):
         ctx.add_source(doc, "nrcan")
     doc["terrain"] = {"source": terrain.source, "cell_m": terrain.cell_m}
     doc["ground_at_centre_m"] = terrain.ground_at_centre_m
+    doc["survey"] = survey.survey_point(where, lat, lon, terrain.ground_at_centre_m)
 
     tried = failed = 0
 
