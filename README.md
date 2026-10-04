@@ -87,11 +87,23 @@ executable first. Install the zip as above.
    `51.5074, -0.1278`.
 3. **Site name** (optional) names the collection. A found address fills it in.
 4. **Radius:** 150, 300, 500 or 1000 m.
-5. Press **Build Context**. A 300 m site takes about 10 seconds and a 1000 m site about 20. Cancel or
+5. **Fetch:** tick **Aerial photo** (on by default) to fetch the City of Toronto's newest aerial photo
+   of the site with the build. It is kept inside the .blend file.
+6. Press **Build Context**. A 300 m site takes about 10 seconds and a 1000 m site about 20. Cancel or
    Esc stops it, and Ctrl+Z removes a finished build in one step.
 
 Building the same site again replaces what Ghost Town made and keeps anything you added, including
 your own objects and collections inside the context collection.
+
+The **Site** section under the panel shows one site at a time; pick it at the top. It lists the site's
+survey point, and, when the site has an aerial photo:
+
+- **Ground: Colours | Photo** shows the photo on the ground, or the colours by kind.
+- **Roofs: Plain | Photo** puts the photo on the roofs of buildings up to a height you set (20 m to start).
+  Taller buildings lean in the photo, so their roof texture would be offset.
+- **Save Site Photo…** writes the photo and a world file, for an underlay in Revit or CAD.
+
+Switching never downloads anything again, and each site in a file keeps its own choices.
 
 ## Taking it into Revit
 
@@ -102,6 +114,11 @@ metres, closed building solids, outlines cleaned of edges under 3 mm, and stable
 - **FBX:** tick **Loose Edges** if you want the parcel lines.
 - In Revit, import **origin to origin**. The material names become the layers or materials you control
   under Object Styles › Imported Objects.
+- Before exporting, set the site's **Ground** to Colours and **Roofs** to Plain, so every piece keeps its
+  `Context - …` material. While the photo shows, exporters see the photo material on those faces instead.
+- To use the aerial photo in Revit, **Save Site Photo…**, then in a site plan use **Insert › Image**, set
+  the image's width to the width Ghost Town reports (twice the radius, in metres), and centre it on the
+  origin.
 - **Survey point.** The model stays at the origin, which is the site's latitude and longitude at ground
   level. After a build, the panel shows where that origin sits on the survey grid, and its copy button
   puts the values on the clipboard. The grid is the City's own in Toronto (NAD83(CSRS) / MTM zone 10,
