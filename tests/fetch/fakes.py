@@ -10,10 +10,12 @@ class FakeNet:
         self.answers = answers
         self.calls = []
         self.keeps = []
+        self.timeouts = []
 
     def get(self, url, *, source, data=None, check=None, timeout=120, keep=True):
         self.calls.append((url, source, data))
         self.keeps.append(keep)
+        self.timeouts.append(timeout)
         answer = self.answers[source]
         if callable(answer):
             answer = answer(url, data)

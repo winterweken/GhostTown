@@ -5,12 +5,13 @@ The root collection remembers which collections and objects this build made (by 
 name), so a re-run removes exactly those and keeps everything the user added, duplicated or
 linked elsewhere.
 """
+import collections
 import json
 import os
 
 import bpy
 
-from . import geometry, georef, materials, site_photo, site_use
+from . import geometry, georef, materials, site_lidar, site_photo, site_use
 from .ghosttown_fetch import BUILDING_KINDS
 from .ghosttown_fetch import context as ctx
 
@@ -101,6 +102,14 @@ def build(scene, doc, folder=None):
     root.objects.link(origin)
     made.append(origin.name)
     root["ctx_objects"] = json.dumps(made)
+    lidar = doc.get("lidar")
+    if lidar and folder:
+        path = os.path.join(folder, lidar["file"])
+        if os.path.isfile(path):
+            try:
+                site_lidar.attach(root, path, lidar)
+            except (OSError, ValueError, KeyError):
+                pass  # a roofs file numpy can't read: the site builds with flat roofs
     photo = doc.get("photo")
     if photo and folder:
         path = os.path.join(folder, photo["file"])
@@ -125,14 +134,15 @@ def remove(root, scene):
     ours = [root] + [c for c in root.children_recursive if c.get("ctx_group")]
     ours_names = {c.name for c in ours}
 
-    doomed, meshes, kept_objects, kept_collections = [], [], [], []
-    for coll in ours:
+    doomed, kept_objects, kept_collections = [], [], []
+    refs = collections.Counter()  # each mesh's users among the doomed objects: the one shown, and the
+    for coll in ours:             # flat and LiDAR meshes a building keeps in its ID properties
         for ob in coll.objects:
             if ob.name in made and "ctx_id" in ob:
                 if ob not in doomed:
                     doomed.append(ob)
-                    if ob.data is not None and ob.data.users == 1:
-                        meshes.append(ob.data)
+                    refs.update(me for me in (ob.data, ob.get(site_use.FLAT_KEY), ob.get(site_use.LIDAR_KEY))
+                                if me is not None)
             elif ob not in kept_objects:
                 kept_objects.append(ob)
         for child in coll.children:
@@ -148,6 +158,7 @@ def remove(root, scene):
         if not parents and not in_a_scene:
             scene.collection.children.link(child)
 
+    meshes = [me for me, n in refs.items() if me.users == n]  # a mesh a kept duplicate shares stays
     bpy.data.batch_remove(doomed + meshes + ours)
     site_photo.forget(*photo_assets)
 

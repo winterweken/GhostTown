@@ -2,10 +2,10 @@
 import json
 import math
 
-from . import LAYERS, RADIUS_RANGE_M, SCHEMA, SITE_LIMIT_M, TOOL
+from . import DEFAULT_LAYERS, LAYERS, RADIUS_RANGE_M, SCHEMA, SITE_LIMIT_M, TOOL
 
 
-def build(*, centre, radius_m, cache_dir, out_dir, address="", layers=LAYERS,
+def build(*, centre, radius_m, cache_dir, out_dir, address="", layers=DEFAULT_LAYERS,
           site_polys_m=(), fetch_fresh=False, overpass_url=""):
     return {
         "schema": SCHEMA,

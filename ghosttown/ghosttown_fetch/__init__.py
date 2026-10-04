@@ -15,13 +15,16 @@ GROUND_KINDS = ("water", "road", "sidewalk", "parking", "rail", "green", "ground
 KINDS = BUILDING_KINDS + GROUND_KINDS + ("tree", "parcel", "parcel_on_site")
 
 LAYERS = ("buildings", "terrain", "roads", "sidewalks", "parking", "rail",
-          "green", "water", "trees", "parcels", "photo")
+          "green", "water", "trees", "parcels", "photo", "lidar")
+DEFAULT_LAYERS = tuple(layer for layer in LAYERS if layer != "lidar")  # LiDAR roofs are a big download: asked for
 RADIUS_RANGE_M = (50.0, 1000.0)
 SITE_LIMIT_M = 2000.0  # site outlines must sit within this distance of the centre
 
-SOURCE_NAMES = {"osm": "OpenStreetMap", "toronto": "City of Toronto", "nrcan": "Natural Resources Canada"}
+SOURCE_NAMES = {"osm": "OpenStreetMap", "toronto": "City of Toronto", "nrcan": "Natural Resources Canada",
+                "ontario": "Geospatial Ontario"}
 CREDITS = {
     "osm": "© OpenStreetMap contributors",
     "toronto": "Contains information licensed under the Open Government Licence – Toronto",
     "nrcan": "Contains information licensed under the Open Government Licence – Canada",
+    "ontario": "Contains information licensed under the Open Government Licence – Ontario",
 }

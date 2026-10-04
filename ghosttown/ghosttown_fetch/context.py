@@ -36,9 +36,14 @@ def element(element_id, kind, *, name="", solids=(), meshes=(), lines=()):
             "solids": list(solids), "meshes": list(meshes), "lines": list(lines)}
 
 
-def solid(kind, rings, z0, z1, height_source):
-    return {"kind": kind, "rings": rings, "z0": round(float(z0), 3), "z1": round(float(z1), 3),
-            "height_source": height_source}
+def solid(kind, rings, z0, z1, height_source, ground=None):
+    """A prism. `ground` is the ground level its top stands on (z1 - ground is its height), which LiDAR
+    roofs measure up from; the base z0 can sit lower, buried under a whole building."""
+    out = {"kind": kind, "rings": rings, "z0": round(float(z0), 3), "z1": round(float(z1), 3),
+           "height_source": height_source}
+    if ground is not None:
+        out["ground"] = round(float(ground), 3)
+    return out
 
 
 def note(doc, level, code, text):
@@ -79,6 +84,8 @@ def validate(doc):
         problems += _survey_problems(doc["survey"])
     if doc.get("photo") is not None:
         problems += _photo_problems(doc["photo"])
+    if doc.get("lidar") is not None:
+        problems += _lidar_problems(doc["lidar"])
     for el in doc["elements"]:
         problems += _element_problems(el)
         if len(problems) >= _MAX_PROBLEMS:
@@ -94,13 +101,21 @@ def _survey_problems(point):
     return []
 
 
+def _beside(name):
+    """A file name beside context.json: no folders in it, and no ':' (on Windows 'C:x.jpg' is relative
+    to a drive's current folder)."""
+    return (isinstance(name, str) and bool(name.strip()) and not any(c in name for c in "/\\:")
+            and name not in (".", ".."))
+
+
+def _count(v):
+    return isinstance(v, int) and not isinstance(v, bool) and v >= 0
+
+
 def _photo_problems(photo):
-    """The photo is optional (older files have none) but must say where it is and what it covers.
-    The file must sit beside context.json: no folders in its name, and no ':' (on Windows 'C:x.jpg'
-    is relative to a drive's current folder)."""
+    """The photo is optional (older files have none) but must say where it is and what it covers."""
     bounds = photo.get("bounds_m") if isinstance(photo, dict) else None
-    ok = (isinstance(photo, dict) and isinstance(photo.get("file"), str) and photo["file"].strip()
-          and not any(c in photo["file"] for c in "/\\:") and photo["file"] not in (".", "..")
+    ok = (isinstance(photo, dict) and _beside(photo.get("file"))
           and isinstance(bounds, list) and len(bounds) == 4 and all(_num(v) for v in bounds)
           and bounds[0] < bounds[2] and bounds[1] < bounds[3]
           and all(isinstance(photo.get(k), int) and not isinstance(photo.get(k), bool) and photo[k] > 0
@@ -108,6 +123,18 @@ def _photo_problems(photo):
           and (photo.get("year") is None or (isinstance(photo["year"], int) and not isinstance(photo["year"], bool))))
     if not ok:
         return ["The photo needs a file name beside context.json, a pixel size and bounds_m [xmin, ymin, xmax, ymax]."]
+    return []
+
+
+def _lidar_problems(lidar):
+    """LiDAR roofs are optional but must name their file, grid, counts and building kinds."""
+    kinds = lidar.get("kinds") if isinstance(lidar, dict) else None
+    ok = (isinstance(lidar, dict) and _beside(lidar.get("file")) and _num(lidar.get("cell_m")) and lidar["cell_m"] > 0
+          and _count(lidar.get("buildings")) and _count(lidar.get("triangles"))
+          and isinstance(kinds, list) and kinds and all(k in BUILDING_KINDS for k in kinds)
+          and (lidar.get("year") is None or _count(lidar["year"])))
+    if not ok:
+        return ["The LiDAR roofs need a file name beside context.json, a cell size, counts and building kinds."]
     return []
 
 
@@ -123,6 +150,8 @@ def _element_problems(el):
             p.append(f"{eid}: a solid needs rings of at least 3 points.")
         elif not (_num(s.get("z0")) and _num(s.get("z1")) and s["z0"] < s["z1"]):
             p.append(f"{eid}: a solid needs z0 below z1.")
+        elif "ground" in s and not _num(s["ground"]):
+            p.append(f"{eid}: a solid's ground must be a number.")
     for m in el.get("meshes", []):
         n = len(m.get("verts", []))
         if not all(len(f) == 3 and all(isinstance(i, int) and 0 <= i < n for i in f) for f in m.get("faces", [])):

@@ -18,6 +18,8 @@ def _site_picked(self, context):
     root = self.site
     if root is not None and "roof_photo_max_m" in root:
         self["roof_photo_max_m"] = float(root["roof_photo_max_m"])  # item assignment: no update loop
+    if root is not None and "roof_detail" in root:
+        self["roof_detail"] = 100.0 * float(root["roof_detail"])
 
 
 def _roof_limit_changed(self, context):
@@ -29,6 +31,15 @@ def _roof_limit_changed(self, context):
         site_use.apply_roofs(root, "photo", self.roof_photo_max_m)
     else:
         root["roof_photo_max_m"] = float(self.roof_photo_max_m)
+
+
+def _roof_detail_changed(self, context):
+    from . import site_use
+    root = site_use.picked(context)
+    if root is None or not site_use.has_lidar(root) or context.mode != "OBJECT":
+        return
+    site_use.apply_roof_detail(root, self.roof_detail / 100.0)
+    site_use.count_later(root)
 
 
 class GhostTownResult(bpy.types.PropertyGroup):
@@ -51,9 +62,17 @@ class GhostTownSettings(bpy.types.PropertyGroup):
     fetch_photo: BoolProperty(
         name="Aerial photo", default=True,
         description="Toronto: fetch the City's newest aerial photo of the site (one download)")
+    fetch_lidar: BoolProperty(
+        name="LiDAR roofs (slower)", default=False,
+        description="Ontario: fetch the province's LiDAR and sample roofs from it for buildings the City of "
+                    "Toronto's 3D Massing model doesn't cover. "
+                    "A large download; the first request can take a minute")
     site: PointerProperty(
         type=bpy.types.Collection, name="Site", poll=is_site, update=_site_picked,
         description="The Ghost Town site whose data the Site panel shows")
     roof_photo_max_m: FloatProperty(
         name="Up to", default=20.0, min=1.0, max=500.0, unit="LENGTH", update=_roof_limit_changed,
         description="Only buildings up to this tall get the photo on their roofs; taller ones lean in the photo")
+    roof_detail: FloatProperty(
+        name="Roof detail", default=100.0, min=5.0, max=100.0, subtype="PERCENTAGE", update=_roof_detail_changed,
+        description="Simplify LiDAR roofs without moving their edges; lower it for a lighter Revit import")

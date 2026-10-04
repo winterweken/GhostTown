@@ -5,7 +5,7 @@ import numpy as np
 
 
 def write_tiff(grid, x, y, dx, dy, *, big_endian=False, tile=None, rows_per_strip=2, nodata="-32767",
-               compression=1, tie_pixel=(0, 0), edit=None):
+               compression=1, tie_pixel=(0, 0), edit=None, sparse=()):
     bo = ">" if big_endian else "<"
     arr = np.asarray(grid, dtype=bo + "f4")
     h, w = arr.shape
@@ -26,6 +26,8 @@ def write_tiff(grid, x, y, dx, dy, *, big_endian=False, tile=None, rows_per_stri
         offsets.append(len(data))
         data += block
     counts = [len(b) for b in blocks]
+    for k in sparse:  # a sparse file leaves these tiles out
+        offsets[k] = counts[k] = 0
     i, j = tie_pixel
     entries = [(256, 4, [w]), (257, 4, [h]), (258, 3, [32]), (259, 3, [compression]), (277, 3, [1]),
                (339, 3, [3]), (33550, 12, [dx, dy, 0.0]), (33922, 12, [float(i), float(j), 0.0, x, y, 0.0])]

@@ -7,6 +7,7 @@ from ghosttown_fetch.frame import Frame
 from ghosttown_fetch.sources import toronto_massing as massing
 from ghosttown_fetch.terrain import FlatTerrain
 from fakes import FakeNet, router
+from terrains import Ramp
 from test_toronto_massing import SUBSET, package
 
 
@@ -109,3 +110,8 @@ def test_the_recorded_slice_builds_valid_buildings(tmp_path):
     doc = ctx.new({"centre": {"lat": 43.649667, "lon": -79.380991}, "radius_m": 150}, region="toronto", terrain_source="flat")
     doc["elements"] = els
     assert ctx.validate(ctx.finish(doc)) == []
+
+
+def test_each_part_records_the_ground_its_top_stands_on():
+    el, = buildings.from_massing([P(1, box(20, 0, 30, 10), 10.0), P(2, box(30, 0, 40, 10), 30.0)], Ramp(), 150, 2025)
+    assert sorted((s["ground"], s["z0"], s["z1"]) for s in el["solids"]) == [(2.0, 1.7, 12.0), (3.0, 1.7, 33.0)]

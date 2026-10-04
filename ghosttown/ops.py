@@ -52,8 +52,9 @@ def _stamp(now=None):
 
 
 def request_layers(settings):
-    """Every layer, less the photo when the user turned it off."""
-    return [layer for layer in LAYERS if layer != "photo" or getattr(settings, "fetch_photo", True)]
+    """Every layer, less the photo when the user turned it off; LiDAR roofs only when ticked."""
+    wanted = {"photo": getattr(settings, "fetch_photo", True), "lidar": getattr(settings, "fetch_lidar", False)}
+    return [layer for layer in LAYERS if wanted.get(layer, True)]
 
 
 def make_request(settings, cache_dir, overpass_url="", now=None):
@@ -111,6 +112,12 @@ def import_into_scene(context, path, report):
     elif photo:
         report({"WARNING"}, "The aerial photo file is missing or unreadable beside the context file, "
                             "so the site has no photo.")
+    if doc.get("lidar") and site_use.has_lidar(root):
+        settings.summary += ", LiDAR roofs"
+    elif doc.get("lidar"):
+        report({"WARNING"}, "The LiDAR roofs file is missing or unreadable beside the context file, "
+                            "so the buildings have flat roofs.")
+    site_use.count_triangles(root, context.evaluated_depsgraph_get())
     settings.credits = "\n".join(dict.fromkeys(s["credit"] for s in doc["sources"]))
     for note in doc["notes"]:
         if note["level"] == "warn":
@@ -351,6 +358,33 @@ class GHOSTTOWN_OT_use_roofs(bpy.types.Operator):
         reset = site_use.apply_roofs(site_use.picked(context), self.use, context.scene.ghosttown.roof_photo_max_m)
         if reset:
             self.report({"WARNING"}, roofs_reset_warning(reset))
+        return {"FINISHED"}
+
+
+def _has_lidar(context):
+    root = site_use.picked(context)
+    return context.mode == "OBJECT" and root is not None and site_use.has_lidar(root)
+
+
+class GHOSTTOWN_OT_use_roof_shapes(bpy.types.Operator):
+    bl_idname = "ghosttown.use_roof_shapes"
+    bl_label = "Roof shapes"
+    bl_description = "Show the picked site's buildings with flat roofs, or with roofs from the LiDAR"
+    bl_options = {"REGISTER", "UNDO"}
+
+    use: EnumProperty(items=(("flat", "Flat", "Flat-topped prisms, the shapes the City or OpenStreetMap give"),
+                             ("lidar", "LiDAR", "Roofs sampled from Ontario's LiDAR")))
+
+    @classmethod
+    def poll(cls, context):
+        return _has_lidar(context)
+
+    def execute(self, context):
+        root = site_use.picked(context)
+        reset = site_use.apply_roof_shapes(root, self.use)
+        if reset:
+            self.report({"WARNING"}, roofs_reset_warning(reset))
+        site_use.count_triangles(root, context.evaluated_depsgraph_get())
         return {"FINISHED"}
 
 

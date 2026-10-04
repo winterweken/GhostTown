@@ -2,7 +2,7 @@ import os
 
 import bpy
 
-from . import georef, runner, site_use
+from . import georef, prefs, runner, site_use
 
 ICON_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons", "ghosttown.png")
 _previews = None
@@ -69,9 +69,10 @@ class GHOSTTOWN_PT_main(bpy.types.Panel):
             for i, item in enumerate(settings.results):
                 box.operator("ghosttown.pick", text=item.label).index = i
         layout.prop(settings, "radius")
-        row = layout.row(align=True)
-        row.label(text="Fetch")
-        row.prop(settings, "fetch_photo")
+        col = layout.column()
+        col.label(text="Fetch")
+        col.prop(settings, "fetch_photo")
+        col.prop(settings, "fetch_lidar")
         if "build" in runner.ACTIVE:
             layout.label(text=runner.STATUS.get("build", "Working…"), icon="TIME")
             layout.operator("ghosttown.cancel", icon="CANCEL")
@@ -87,7 +88,15 @@ class GHOSTTOWN_PT_main(bpy.types.Panel):
                 box.label(text=line)
 
 
-SITE_ICONS = ("EMPTY_AXIS", "COPYDOWN", "IMAGE_DATA", "INFO", "EXPORT")
+SITE_ICONS = ("EMPTY_AXIS", "COPYDOWN", "IMAGE_DATA", "INFO", "EXPORT", "MOD_DECIM", "ERROR")
+HEAVY = ("Heavy for Revit: lower Roof detail", "or use Flat roofs before exporting.")
+
+
+def triangles_text(count):
+    """'1.4 M' or '86,000'."""
+    return f"{count / 1e6:.1f} M" if count >= 1_000_000 else f"{count:,}"
+
+
 # The default Solid view colours by material, so it never shows the photo on the ground.
 SOLID_HINT = "Shows in Material Preview, or Solid view with Color: Texture."
 
@@ -140,3 +149,17 @@ class GHOSTTOWN_PT_site(bpy.types.Panel):
                 box.prop(settings, "roof_photo_max_m")
                 box.label(text="Taller buildings lean in the photo.", icon="INFO")
             box.operator("ghosttown.save_photo", icon="EXPORT")
+        if site_use.has_lidar(root):
+            box = layout.box()
+            box.label(text="LiDAR roofs", icon="MOD_DECIM")
+            _choice(box, "Roof shapes", "ghosttown.use_roof_shapes", root.get("use_roof_shapes"),
+                    (("flat", "Flat"), ("lidar", "LiDAR")))
+            if root.get("use_roof_shapes") == "lidar":
+                box.prop(settings, "roof_detail")
+            count = root.get("ctx_triangles")
+            if count is not None:
+                heavy = count > prefs.triangle_budget(context)
+                box.label(text=f"For Revit: {triangles_text(count)} triangles", icon="ERROR" if heavy else "INFO")
+                if heavy:
+                    for line in HEAVY:
+                        box.label(text=line)
