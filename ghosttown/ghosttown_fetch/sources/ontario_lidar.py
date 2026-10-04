@@ -71,6 +71,15 @@ def check(body):
         raise SourceError(f"Ontario's LiDAR service sent an image Ghost Town can't read ({e})") from None
 
 
+def check_surface(body):
+    """The check for the surface model's answer, which also refuses a surface with no data anywhere. Net
+    stores an answer only after its check passes, so an empty answer is never kept for 30 days (the
+    add-on has no way to fetch fresh), and one stored by an older version is fetched again."""
+    check(body)
+    if np.isnan(tiff.read(body)[0]).all():
+        raise NoLidar(NONE_HERE)
+
+
 class Heights:
     """Heights above ground (surface minus terrain) on the LiDAR grid, sampled at local points."""
 
@@ -93,11 +102,11 @@ class Heights:
 
 
 def fetch(net, frame, bounds_m, cell_m):
-    """Heights over local bounds. Raises NoLidar outside the surveys and SourceError when the service
-    fails. The terrain model is asked for only when the surface model has something there."""
+    """Heights over local bounds. Raises NoLidar outside the surveys (the surface model has no data
+    there) and SourceError when the service fails. The terrain model is asked for only when the surface
+    model has something there."""
     box, size = area(frame, bounds_m, cell_m)
-    surface = tiff.read(net.get(export_url(SURFACE, box, size), source="ontario", check=check, timeout=TIMEOUT_S))
-    if np.isnan(surface[0]).all():
-        raise NoLidar(NONE_HERE)
+    surface = tiff.read(net.get(export_url(SURFACE, box, size), source="ontario", check=check_surface,
+                                timeout=TIMEOUT_S))
     terrain = tiff.read(net.get(export_url(TERRAIN, box, size), source="ontario", check=check, timeout=TIMEOUT_S))
     return Heights(surface, terrain, frame)

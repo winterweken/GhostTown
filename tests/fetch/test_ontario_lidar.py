@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from ghosttown_fetch.frame import Frame, lonlat_to_merc, merc_to_lonlat
-from ghosttown_fetch.net import SourceError
+from ghosttown_fetch.net import Net, SourceError
 from ghosttown_fetch.sources import ontario_lidar as lidar
 from fakes import FakeNet, router
 from lidar_samples import BAY_SURFACE, BAY_TERRAIN, LAKE_NONE, rasters
@@ -95,6 +95,38 @@ def test_outside_the_surveys_there_is_no_lidar_and_no_terrain_request():
     with pytest.raises(lidar.NoLidar, match="Ontario has no LiDAR here."):
         lidar.fetch(net, F, SQUARE, 0.5)
     assert len(net.calls) == 1
+
+
+class Transport:
+    """Stands in for the network under a real Net: answers each request with the next body as HTTP 200."""
+
+    def __init__(self, *bodies):
+        self.bodies = list(bodies)
+        self.calls = []
+
+    def __call__(self, url, data, headers, timeout):
+        self.calls.append(url)
+        return 200, self.bodies.pop(0)
+
+
+def test_an_empty_answer_is_never_stored_so_a_later_build_asks_again(tmp_path):
+    transport = Transport(LAKE_NONE, LAKE_NONE)
+    net = Net(str(tmp_path), transport=transport)
+    for _ in range(2):
+        with pytest.raises(lidar.NoLidar, match="Ontario has no LiDAR here."):
+            lidar.fetch(net, F, SQUARE, 0.5)
+    assert len(transport.calls) == 2 and all(lidar.SURFACE in url for url in transport.calls)
+    assert not list((tmp_path / "ontario").glob("*"))
+
+
+def test_an_empty_answer_stored_by_an_older_version_is_fetched_again(tmp_path):
+    surface, terrain = rasters(F, tops=[(-10, -10, 10, 10, 20.0)])
+    transport = Transport(surface, terrain)
+    net = Net(str(tmp_path), transport=transport)
+    net.cache.write("ontario", lidar.export_url(lidar.SURFACE, *lidar.area(F, SQUARE, 0.5)), LAKE_NONE)
+    heights = lidar.fetch(net, F, SQUARE, 0.5)
+    assert heights.sample(np.array([0.0]), np.array([0.0]))[0] == pytest.approx(20.0)
+    assert [lidar.SURFACE in url for url in transport.calls] == [True, False]
 
 
 def test_a_failing_service_is_a_source_error():
