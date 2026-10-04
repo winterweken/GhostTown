@@ -127,6 +127,37 @@ def test_the_photo_outlives_the_objects_that_showed_it():
     assert [m.name for m in tower.data.materials][-1] == f"Site photo · {SITE}"
 
 
+def test_the_packed_image_is_named_for_its_site_and_not_for_the_cache():
+    root, folder = photo_site()
+    image = site_use.photo_image(root)
+    assert image.filepath == "//320_Bay_St photo.jpg" and image.packed_file is not None
+    assert folder not in image.filepath and "photo.jpg" != os.path.basename(image.filepath)
+    other, _ = photo_site(address="Second site")
+    assert site_use.photo_image(other).filepath == "//Second_site photo.jpg"
+    assert site_use.photo_image(other).filepath != image.filepath
+
+
+def test_save_reads_the_photo_from_disk_after_unpacking_resources():
+    root, _ = photo_site()
+    blend_dir = tempfile.mkdtemp()
+    bpy.ops.wm.save_as_mainfile(filepath=os.path.join(blend_dir, "site.blend"))
+    image = site_use.photo_image(root)
+    image.unpack(method="WRITE_LOCAL")
+    on_disk = os.path.realpath(bpy.path.abspath(image.filepath))
+    assert image.packed_file is None and os.path.isfile(on_disk)
+    assert os.path.commonpath([on_disk, os.path.realpath(blend_dir)]) == os.path.realpath(blend_dir)
+    jpg, _jgw, _width = site_photo.save(root, tempfile.mkdtemp())
+    with open(jpg, "rb") as saved, open(PHOTO, "rb") as original:
+        assert saved.read() == original.read()
+    os.remove(on_disk)  # neither packed nor on disk: nothing to save
+    try:
+        site_photo.save(root, tempfile.mkdtemp())
+    except ValueError as e:
+        assert "isn't in this file" in str(e)
+    else:
+        raise AssertionError("save should refuse when the photo is gone")
+
+
 def test_save_writes_the_photo_and_a_world_file_in_model_coordinates():
     root, _ = photo_site()
     out = tempfile.mkdtemp()

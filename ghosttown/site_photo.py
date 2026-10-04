@@ -52,6 +52,8 @@ def attach(root, origin, label, path, photo):
     image = bpy.data.images.load(path, check_existing=False)
     image.name = PREFIX + label
     image.pack()
+    # A name of its own, relative to the .blend: not the cache path, and not "photo.jpg" shared by every site.
+    image.filepath_raw = "//" + bpy.path.clean_name(label) + " photo.jpg"
     material = _material(label, image)
     for ob in site_use.made_objects(root, GROUND_KINDS + BUILDING_KINDS):
         add_uvs(ob, photo["bounds_m"])
@@ -87,15 +89,23 @@ def save(root, directory):
     """Write the site's photo as '<site> photo.jpg', plus a world file (.jgw) in the model's own
     metres, origin at the site centre. Returns (jpg path, jgw path, width in metres)."""
     image = site_use.photo_image(root)
-    if image is None or image.packed_file is None:
+    if image is None:
         raise ValueError("the photo isn't in this file")
+    if image.packed_file is not None:
+        data = image.packed_file.data
+    else:  # Unpack Resources wrote it beside the .blend
+        source = bpy.path.abspath(image.filepath)
+        if not os.path.isfile(source):
+            raise ValueError("the photo isn't in this file")
+        with open(source, "rb") as f:
+            data = f.read()
     stem = bpy.path.clean_name(root.get("ctx_label", "site")) + " photo"
     xmin, ymin, xmax, ymax = (float(v) for v in root["photo_bounds_m"])
     width_px, height_px = (int(v) for v in root["photo_px"])
     os.makedirs(directory, exist_ok=True)
     jpg = os.path.join(directory, stem + ".jpg")
     with open(jpg, "wb") as f:
-        f.write(image.packed_file.data)
+        f.write(data)
     px, py = (xmax - xmin) / width_px, (ymax - ymin) / height_px
     jgw = os.path.join(directory, stem + ".jgw")
     with open(jgw, "w", encoding="ascii") as f:
