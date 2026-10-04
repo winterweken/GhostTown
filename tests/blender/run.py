@@ -22,6 +22,13 @@ def _defines_match(name, pattern):
         return any(line.startswith("def test_") and pattern in f"{name}::{line[4:]}" for line in f)
 
 
+def _report(exc):
+    # Not traceback.print_exc(): its "did you mean" hint calls dir() on the failing object, which crashes
+    # Blender when that object is RNA data already freed by unregister().
+    traceback.print_tb(exc.__traceback__)
+    print(f"{type(exc).__name__}: {exc}")
+
+
 def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     pattern = argv[argv.index("-k") + 1] if "-k" in argv else ""
@@ -35,11 +42,11 @@ def main():
         module = importlib.util.module_from_spec(spec)
         try:
             spec.loader.exec_module(module)
-        except Exception:
+        except Exception as e:
             total += 1
             failed += 1
             print("FAIL", name, "(import)")
-            traceback.print_exc()
+            _report(e)
             continue
         for attr in sorted(a for a in dir(module) if a.startswith("test_")):
             label = f"{name}::{attr}"
@@ -50,10 +57,10 @@ def main():
             try:
                 getattr(module, attr)()
                 print("PASS", label)
-            except Exception:
+            except Exception as e:
                 failed += 1
                 print("FAIL", label)
-                traceback.print_exc()
+                _report(e)
     print(f"{total - failed} passed, {failed} failed")
     if failed or not total:
         raise RuntimeError(f"{failed} of {total} Blender tests failed")
