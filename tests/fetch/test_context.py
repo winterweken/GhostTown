@@ -115,3 +115,20 @@ def test_photo_is_optional_but_must_be_well_formed():
         doc["photo"] = bad
         assert ctx.validate(doc) == [
             "The photo needs a file name beside context.json, a pixel size and bounds_m [xmin, ymin, xmax, ymax]."]
+
+
+LIDAR = {"file": "lidar_roofs.npz", "cell_m": 0.5, "year": None, "source": "ontario", "buildings": 3,
+         "triangles": 1200, "kinds": ["building", "building_on_site", "building_guessed"]}
+
+
+@pytest.mark.parametrize("change", [
+    {"file": "../lidar_roofs.npz"}, {"file": "C:lidar.npz"}, {"file": ""}, {"cell_m": 0}, {"buildings": -1},
+    {"triangles": 1.5}, {"kinds": ["road"]}, {"kinds": []}, {"year": "2023"},
+])
+def test_lidar_roofs_are_optional_but_must_be_well_formed(change):
+    doc = _doc()
+    assert ctx.validate(doc) == []
+    doc["lidar"] = dict(LIDAR)
+    assert ctx.validate(doc) == []
+    doc["lidar"].update(change)
+    assert any("LiDAR roofs need" in p for p in ctx.validate(doc))
