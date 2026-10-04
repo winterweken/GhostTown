@@ -167,14 +167,16 @@ def _cut_back(poly, smaller):
     return rest, [part for part in polygons(kept) if part.area >= 4 * SLIVER_M * SLIVER_M]
 
 
-def _resolve_overlaps(items):
+def _resolve_overlaps(items, infer=True):
     """[(Polygon, height | None, payload)] -> [(Polygon, height | None, inferred, payload)], no overlaps.
 
     The City draws a whole-building outline at the building's tallest height *and* every roof level
     inside it (sometimes under another BUILDINGID, sometimes twice). Smaller outlines win: each
     outline keeps only what no smaller one covers. What is left of an outline that was mostly
     covered is a digitising gap between roof levels, not a tower, so it takes the height of the
-    roof level it shares the most boundary with (`inferred`), never more than its own."""
+    roof level it shares the most boundary with (`inferred`), never more than its own. With
+    infer=False (the City's massing model, where a mostly covered part is a real lower or higher
+    storey), nothing takes a neighbour's height."""
     geoms = [item[0] for item in items]
     if not geoms:
         return []
@@ -194,7 +196,7 @@ def _resolve_overlaps(items):
         except shapely.errors.GEOSException:
             pieces[i] = [(poly, height, False)]  # one stubborn outline must not fail the build: keep it uncut
             continue
-        container = rest.area <= (1.0 - CONTAINER_COVER) * poly.area
+        container = infer and rest.area <= (1.0 - CONTAINER_COVER) * poly.area
         neighbours = [piece for j in smaller for piece in pieces[j]] if container else []
         resolved = []
         for part in parts:
@@ -253,4 +255,66 @@ def from_toronto(features, frame, terrain, radius_m=None):
         if solids:
             kind = "building_guessed" if all(s["kind"] == "building_guessed" for s in solids) else "building"
             elements.append(ctx.element(f"toronto:building:{key}", kind, solids=solids))
+    return elements
+
+
+GROUP_OVERLAP_M2 = 1.0  # massing parts overlapping by more than this are storeys of one building
+
+
+def _groups(shapes):
+    """For each shape, the index of its group: shapes whose interiors overlap by more than
+    GROUP_OVERLAP_M2 share one (a tower and its podium); shapes that only touch don't."""
+    parent = list(range(len(shapes)))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    a, b = shapely.STRtree(shapes).query(shapes, predicate="intersects")
+    for i, j in zip(a, b):
+        if i < j and shapes[i].intersection(shapes[j]).area > GROUP_OVERLAP_M2:
+            parent[find(i)] = find(j)
+    return [find(i) for i in range(len(shapes))]
+
+
+def from_massing(parts, terrain, radius_m, year):
+    """Buildings from the City's 3D Massing parts (toronto_massing.Part, local metres).
+
+    Parts overlapping in plan are storeys of one building and become one element, named after its
+    lowest record number; parts that only touch stay apart. Where parts overlap, the smaller wins and
+    the larger keeps its own height for what remains. Only buildings touching the site circle are built,
+    whole, each standing on the lowest ground under it."""
+    if not parts:
+        return []
+    shapes = [shapely.union_all(p.polygons) for p in parts]
+    group_of = _groups(shapes)
+    members = {}
+    for i, g in enumerate(group_of):
+        members.setdefault(g, []).append(i)
+    site = Point(0.0, 0.0).buffer(radius_m, quad_segs=64)
+    wanted = {g for g, idx in members.items() if any(shapes[i].intersects(site) for i in idx)}
+
+    tiers = {}
+    items = [(poly, p.height, i) for i, p in enumerate(parts) for poly in p.polygons]
+    for poly, height, _inferred, i in _resolve_overlaps(items, infer=False):
+        if group_of[i] in wanted:
+            tiers.setdefault(group_of[i], []).append((poly, height, parts[i]))
+
+    elements = []
+    for g, pieces in tiers.items():
+        ground = terrain.min_under(shapely.union_all([shapes[i] for i in members[g]]))
+        solids = []
+        for poly, height, part in pieces:
+            r = rings(poly)
+            if r is None:
+                continue
+            z0 = ground + part.base if part.base > 0 else ground - SINK_M
+            z1 = ground + height
+            if z1 - z0 >= MIN_SOLID_M:
+                solids.append(ctx.solid("building", r, z0, z1, part.source))
+        if solids:
+            first = min(parts[i].record for i in members[g])
+            elements.append(ctx.element(f"toronto:massing:{year}:{first}", "building", solids=solids))
     return elements
