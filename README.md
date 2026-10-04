@@ -34,7 +34,9 @@ Ghost Town is a free, open-source extension for Blender 5.2 and later. It is at 
 Each build makes one collection, `Context · <site>`:
 
 - **Buildings:** one object per building. Each tier is a closed prism standing on the terrain.
-  Buildings that cross the circle come in whole.
+  Buildings that cross the circle come in whole. In Toronto, parts of the City's model that touch or
+  overlap form one building object, and where parts overlap the taller one wins. On a main street a
+  whole block face can become one object; Separate › By Loose Parts splits it in Blender.
 - **Ground:** one draped surface per kind (road, sidewalk, parking, rail, water, green, plain ground).
   The pieces share their edges, so there are no cracks or overlaps. Water lies flat at its shoreline.
 - **Trees:** a trunk and a low-poly crown each, sized from the City's tree heights, merged into one object.

@@ -259,11 +259,20 @@ def from_toronto(features, frame, terrain, radius_m=None):
 
 
 GROUP_OVERLAP_M2 = 1.0  # massing parts overlapping by more than this are storeys of one building
+GROUP_TOUCH_M = 0.5     # ...and so are parts sharing at least this much wall
+
+
+def _joined(a, b):
+    """True when two massing parts overlap by more than GROUP_OVERLAP_M2 or share GROUP_TOUCH_M of wall."""
+    if a.intersection(b).area > GROUP_OVERLAP_M2:
+        return True
+    return a.boundary.intersection(b.buffer(TOUCH_M)).length >= GROUP_TOUCH_M
 
 
 def _groups(shapes):
-    """For each shape, the index of its group: shapes whose interiors overlap by more than
-    GROUP_OVERLAP_M2 share one (a tower and its podium); shapes that only touch don't."""
+    """For each shape, the index of its group: shapes that overlap (more than GROUP_OVERLAP_M2) or share
+    a wall (at least GROUP_TOUCH_M, give or take TOUCH_M of digitising gap) share one, like a tower and
+    its podium, or the two halves of a block; shapes that only meet at a corner don't."""
     parent = list(range(len(shapes)))
 
     def find(i):
@@ -272,20 +281,42 @@ def _groups(shapes):
             i = parent[i]
         return i
 
-    a, b = shapely.STRtree(shapes).query(shapes, predicate="intersects")
-    for i, j in zip(a, b):
-        if i < j and shapes[i].intersection(shapes[j]).area > GROUP_OVERLAP_M2:
+    a, b = shapely.STRtree(shapes).query(shapely.buffer(shapes, TOUCH_M), predicate="intersects")
+    for i, j in sorted({(min(i, j), max(i, j)) for i, j in zip(a.tolist(), b.tolist()) if i != j}):
+        if find(i) != find(j) and _joined(shapes[i], shapes[j]):
             parent[find(i)] = find(j)
     return [find(i) for i in range(len(shapes))]
+
+
+def _tallest_wins(members, parts, shapes, tops):
+    """[(Polygon, part index)] for the parts of one building, with no overlaps: where parts overlap,
+    the one with the higher top keeps the ground (ties: the lower record). Each part keeps only what no
+    taller part covers; what is left of a cut part and thinner than 1 m is a digitising gap and goes."""
+    order = sorted(members, key=lambda i: (-tops[i], parts[i].record))
+    tree = shapely.STRtree([shapes[i] for i in order])
+    kept = []
+    for rank, i in enumerate(order):
+        for poly in parts[i].polygons:
+            taller = [shapes[order[r]] for r in tree.query(poly, predicate="intersects")
+                      if r < rank and not poly.touches(shapes[order[r]])]
+            if not taller:
+                kept.append((poly, i))
+                continue
+            try:
+                _, pieces = _cut_back(poly, taller)
+            except shapely.errors.GEOSException:
+                pieces = [poly]  # one stubborn outline must not fail the build: keep it uncut
+            kept.extend((piece, i) for piece in pieces)
+    return kept
 
 
 def from_massing(parts, terrain, radius_m, year):
     """Buildings from the City's 3D Massing parts (toronto_massing.Part, local metres).
 
-    Parts overlapping in plan are storeys of one building and become one element, named after its
-    lowest record number; parts that only touch stay apart. Where parts overlap, the smaller wins and
-    the larger keeps its own height for what remains. Only buildings touching the site circle are built,
-    whole, each standing on the lowest ground under it."""
+    Parts that overlap in plan or share a wall are one building and become one element, named after
+    its lowest record number; parts that only meet at a corner stay apart. Where parts overlap, the
+    taller one (by absolute top) wins. Each part's top stands on its own ground, while the building keeps
+    one buried base under its lowest ground. Only buildings touching the site circle are built, whole."""
     if not parts:
         return []
     shapes = [shapely.union_all(p.polygons) for p in parts]
@@ -294,27 +325,23 @@ def from_massing(parts, terrain, radius_m, year):
     for i, g in enumerate(group_of):
         members.setdefault(g, []).append(i)
     site = Point(0.0, 0.0).buffer(radius_m, quad_segs=64)
-    wanted = {g for g, idx in members.items() if any(shapes[i].intersects(site) for i in idx)}
-
-    tiers = {}
-    items = [(poly, p.height, i) for i, p in enumerate(parts) for poly in p.polygons]
-    for poly, height, _inferred, i in _resolve_overlaps(items, infer=False):
-        if group_of[i] in wanted:
-            tiers.setdefault(group_of[i], []).append((poly, height, parts[i]))
 
     elements = []
-    for g, pieces in tiers.items():
-        ground = terrain.min_under(shapely.union_all([shapes[i] for i in members[g]]))
+    for idx in members.values():
+        if not any(shapes[i].intersects(site) for i in idx):
+            continue
+        ground = {i: terrain.min_under(shapes[i]) for i in idx}
+        tops = {i: ground[i] + parts[i].height for i in idx}
+        base = min(ground.values()) - SINK_M
         solids = []
-        for poly, height, part in pieces:
+        for poly, i in _tallest_wins(idx, parts, shapes, tops):
             r = rings(poly)
             if r is None:
                 continue
-            z0 = ground + part.base if part.base > 0 else ground - SINK_M
-            z1 = ground + height
-            if z1 - z0 >= MIN_SOLID_M:
-                solids.append(ctx.solid("building", r, z0, z1, part.source))
+            z0 = ground[i] + parts[i].base if parts[i].base > 0 else base
+            if tops[i] - z0 >= MIN_SOLID_M:
+                solids.append(ctx.solid("building", r, z0, tops[i], parts[i].source))
         if solids:
-            first = min(parts[i].record for i in members[g])
+            first = min(parts[i].record for i in idx)
             elements.append(ctx.element(f"toronto:massing:{year}:{first}", "building", solids=solids))
     return elements
