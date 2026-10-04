@@ -193,7 +193,8 @@ Natural Resources Canada, the Province of Ontario or OpenStreetMap.
 - Outside Toronto there are no roads, trees or parcels yet, and outside Canada the ground is flat.
 - Buildings are flat-topped prisms unless they have LiDAR roofs (Ontario, outside the City of Toronto's 3D
   Massing model), and LiDAR roofs carry no roof planes, just measured points.
-- Trees over a roof raise that part of a LiDAR roof.
+- LiDAR roofs are trimmed to their own typical height plus 3 m, which removes a tree crown over part of a roof;
+  trees over most of a roof still raise it.
 - A building newer than the province's LiDAR survey keeps its flat top in LiDAR mode, and one surveyed while
   under construction can show a partly built roof.
 - Bridges and elevated rail are draped onto the ground.

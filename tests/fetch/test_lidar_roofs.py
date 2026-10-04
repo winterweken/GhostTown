@@ -68,11 +68,33 @@ def test_city_outliers_take_the_citys_height():
 
 
 def test_other_buildings_keep_lidar_heights_between_2_and_400_m():
-    field = Field(lambda x, y: np.where(x < 3, 0.5, np.where(x < 6, 900.0, np.nan)))
+    # the 900 m band covers most of the footprint, so the median, and with it the trim's cap, sits at 400 m
+    field = Field(lambda x, y: np.where(x < 1, 0.5, np.where(x < 8, 900.0, np.nan)))
     v, f, inner = roofs.roof_solid([square(0, 0, 10)], -0.3, 9.0, 0.0, field, 0.5, city=False)
     x, z = v[inner][:, 0], v[inner][:, 2]
-    assert np.allclose(z[x < 2.9], 2.0) and np.allclose(z[(x > 3.1) & (x < 5.9)], 400.0)
-    assert np.allclose(z[x > 6.1], 9.0)  # no LiDAR: the building's own height
+    assert np.allclose(z[x < 0.9], 2.0) and np.allclose(z[(x > 1.1) & (x < 7.9)], 400.0)
+    assert np.allclose(z[x > 8.1], 9.0)  # no LiDAR: the building's own height
+
+
+def test_a_tree_crown_over_part_of_a_roof_is_trimmed():
+    crown = Field(lambda x, y: np.where((x > 7) & (y > 7), 25.0, 8.0))
+    v, f, inner = roofs.roof_solid([square(0, 0, 10)], -0.3, 9.0, 0.0, crown, 0.5, city=False)
+    assert closed_outward(v, f)
+    z = v[inner][:, 2]
+    assert z.max() <= 8.0 + roofs.RIDGE_M + 1e-6 and np.median(z) == pytest.approx(8.0)
+
+
+def test_a_pitched_roof_keeps_its_ridge_under_the_trim():
+    ridge = Field(lambda x, y: 15.0 - np.abs(y - 5.0))  # eaves 10 m, ridge 15 m
+    v, f, inner = roofs.roof_solid([square(0, 0, 10)], -0.3, 9.0, 0.0, ridge, 0.5, city=False)
+    top = v[inner]
+    assert np.allclose(top[:, 2], 15.0 - np.abs(top[:, 1] - 5.0))
+
+
+def test_city_solids_are_not_trimmed_by_the_median_rule():
+    crown = Field(lambda x, y: np.where((x > 7) & (y > 7), 25.0, 18.0))  # within the City's +8 m
+    v, f, inner = roofs.roof_solid([square(0, 0, 10)], -0.3, 18.0, 0.0, crown, 0.5, city=True)
+    assert v[inner][:, 2].max() == pytest.approx(25.0)
 
 
 def test_a_courtyard_gets_walls_and_stays_open():
