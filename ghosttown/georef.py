@@ -2,6 +2,8 @@
 (exporters ignore collection properties but keep object ones)."""
 import json
 
+SURVEY_REQUIRED = ("survey_epsg", "survey_name", "survey_easting_m", "survey_northing_m", "survey_grid_angle_deg")
+
 
 def props(doc):
     p = {
@@ -30,8 +32,9 @@ def props(doc):
 
 
 def survey_from(block):
-    """The survey point stored on a context collection or origin empty, in survey_lines' form."""
-    if "survey_epsg" not in block:
+    """The survey point stored on a context collection or origin empty, in survey_lines' form, or None
+    unless all of its required properties are there (a user may have deleted some)."""
+    if not all(key in block for key in SURVEY_REQUIRED):
         return None
     return {"epsg": block["survey_epsg"], "name": block["survey_name"],
             "easting_m": block["survey_easting_m"], "northing_m": block["survey_northing_m"],

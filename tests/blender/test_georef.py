@@ -32,3 +32,12 @@ def test_survey_from_reads_the_stored_properties_back():
     del block["survey_elevation_m"]
     assert georef.survey_from(block)["elevation_m"] is None
     assert georef.survey_from({"lat": 43.65}) is None
+
+
+def test_survey_from_needs_all_five_required_properties():
+    block = {"survey_epsg": "EPSG:2952", "survey_name": "NAD83(CSRS) / MTM zone 10", "survey_easting_m": 314400.285,
+             "survey_northing_m": 4834420.675, "survey_grid_angle_deg": 0.082146}
+    assert georef.survey_from(block)["elevation_m"] is None
+    for missing in ("survey_epsg", "survey_name", "survey_easting_m", "survey_northing_m", "survey_grid_angle_deg"):
+        partial = {k: v for k, v in block.items() if k != missing}
+        assert georef.survey_from(partial) is None, missing
