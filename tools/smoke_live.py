@@ -56,7 +56,7 @@ assert buildings >= 10, buildings
 assert "ground" in doc["counts"], doc["counts"]
 if doc["region"] == "toronto":
     assert {"road", "tree", "parcel"} <= set(doc["counts"]), doc["counts"]
-    assert doc["terrain"]["source"] == "nrcan-dtm", doc["terrain"]
     assert root.get("ctx_photo_image") and bpy.data.images[root["ctx_photo_image"]].packed_file, doc.get("photo")
+    assert doc["terrain"]["source"] == "nrcan-dtm", doc["terrain"]
 bpy.ops.wm.save_as_mainfile(filepath=os.path.join(work, "smoke.blend"))
 print("SMOKE OK", work)
