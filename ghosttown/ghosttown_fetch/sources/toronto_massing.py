@@ -110,8 +110,16 @@ def _index(folder):
     np.save(os.path.join(folder, STEM + ".npy"), np.column_stack([offsets.astype(float), boxes]))
 
 
+def _year_folders(root):
+    """{year: folder} for the 4-digit folders under root."""
+    if not os.path.isdir(root):
+        return {}
+    return {int(name): os.path.join(root, name) for name in os.listdir(root) if re.fullmatch("[0-9]{4}", name)}
+
+
 def local_copy(net, cache_dir, edition, progress=None):
-    """The folder with the edition's massing.shp/.shx/.dbf and its index, downloaded the first time."""
+    """The folder with the edition's massing.shp/.shx/.dbf and its index, downloaded the first time.
+    Another build can finish the same edition meanwhile: a ready folder is never replaced or deleted."""
     root = os.path.join(cache_dir, FOLDER)
     folder = os.path.join(root, str(edition.year))
     if not _ready(folder):
@@ -129,14 +137,18 @@ def local_copy(net, cache_dir, edition, progress=None):
                         with z.open(name) as src, open(os.path.join(staging, STEM + ext), "wb") as dst:
                             shutil.copyfileobj(src, dst)
             _index(staging)
-            shutil.rmtree(folder, ignore_errors=True)
-            os.replace(staging, folder)
-        except BaseException:
-            shutil.rmtree(staging, ignore_errors=True)
-            raise
-    for name in os.listdir(root):
-        if name.isdigit() and name != str(edition.year):
-            shutil.rmtree(os.path.join(root, name), ignore_errors=True)
+            if not _ready(folder):  # else another build got there first: keep its copy, drop ours
+                shutil.rmtree(folder, ignore_errors=True)  # a half-made leftover
+                try:
+                    os.replace(staging, folder)
+                except OSError:
+                    if not _ready(folder):
+                        raise
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)  # nothing left to remove after a successful swap
+    for year, old in _year_folders(root).items():
+        if year < edition.year:
+            shutil.rmtree(old, ignore_errors=True)
     return folder
 
 

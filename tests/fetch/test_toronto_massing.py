@@ -1,6 +1,8 @@
+import errno
 import io
 import json
 import os
+import shutil
 import struct
 import zipfile
 from pathlib import Path
@@ -94,6 +96,79 @@ def test_a_newer_edition_replaces_the_old_copy(tmp_path):
     old = massing.local_copy(net_for(), str(tmp_path), massing.Edition(2098, f"{DOWNLOADS}/3DMassingShapefile_2098_WGS84.zip", 0))
     new = massing.local_copy(net_for(), str(tmp_path), massing.Edition(2099, f"{DOWNLOADS}/3DMassingShapefile_2099_WGS84.zip", 0))
     assert not os.path.exists(old) and os.path.isdir(new)
+
+
+def _ready_folder(tmp_path, year, content=b"x"):
+    """A year folder that looks ready (its four files exist) without being a real copy."""
+    folder = tmp_path / "toronto_massing" / str(year)
+    folder.mkdir(parents=True, exist_ok=True)
+    for ext in (".shp", ".shx", ".dbf", ".npy"):
+        (folder / ("massing" + ext)).write_bytes(content)
+    return folder
+
+
+def _leftovers(tmp_path):
+    return [n for n in os.listdir(tmp_path / "toronto_massing") if n.startswith(".staging-")]
+
+
+def test_only_older_copies_are_deleted(tmp_path):
+    older, newer = _ready_folder(tmp_path, 2097), _ready_folder(tmp_path, 2099)
+    (tmp_path / "toronto_massing" / "notes").mkdir()
+    folder = massing.local_copy(net_for(), str(tmp_path), massing.Edition(2098, f"{DOWNLOADS}/3DMassingShapefile_2098_WGS84.zip", 0))
+    assert folder == str(tmp_path / "toronto_massing" / "2098") and massing._ready(folder)
+    assert not older.exists() and massing._ready(str(newer)) and (tmp_path / "toronto_massing" / "notes").is_dir()
+
+
+def test_a_copy_that_appears_during_the_download_is_kept_not_replaced(tmp_path):
+    real_index = massing._index
+    appeared = []
+
+    def index_then_another_build_finishes(staging):
+        real_index(staging)
+        appeared.append(_ready_folder(tmp_path, 2099, b"theirs"))  # the other Blender instance got there first
+
+    net = net_for()
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(massing, "_index", index_then_another_build_finishes)
+        folder = massing.local_copy(net, str(tmp_path), massing.newest_edition(net))
+    assert folder == str(tmp_path / "toronto_massing" / "2099") and appeared
+    assert (tmp_path / "toronto_massing" / "2099" / "massing.shp").read_bytes() == b"theirs"
+    assert _leftovers(tmp_path) == []
+
+
+def test_a_copy_that_appears_just_before_the_swap_is_kept_not_replaced(tmp_path):
+    real_replace = os.replace
+
+    def another_build_finishes_first(src, dst):
+        _ready_folder(tmp_path, 2099, b"theirs")
+        raise OSError(errno.ENOTEMPTY, "Directory not empty")
+
+    net = net_for()
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(massing.os, "replace", another_build_finishes_first)
+        folder = massing.local_copy(net, str(tmp_path), massing.newest_edition(net))
+    assert (tmp_path / "toronto_massing" / "2099" / "massing.shp").read_bytes() == b"theirs"
+    assert folder == str(tmp_path / "toronto_massing" / "2099") and _leftovers(tmp_path) == []
+    assert os.replace is real_replace
+
+
+def test_a_half_made_folder_is_replaced_but_a_real_failure_still_raises(tmp_path):
+    half = tmp_path / "toronto_massing" / "2099"
+    half.mkdir(parents=True)
+    (half / "massing.shp").write_bytes(b"left by a crashed run")  # not ready: no index
+    net = net_for()
+    folder = massing.local_copy(net, str(tmp_path), massing.newest_edition(net))
+    assert massing._ready(folder) and (half / "massing.shp").read_bytes() != b"left by a crashed run"
+    shutil.rmtree(folder)
+
+    def disk_full(src, dst):
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(massing.os, "replace", disk_full)
+        with pytest.raises(OSError):
+            massing.local_copy(net, str(tmp_path), massing.newest_edition(net))
+    assert _leftovers(tmp_path) == [] and not (tmp_path / "toronto_massing" / "2099").exists()
 
 
 def test_site_parts_come_in_local_metres_with_heights_and_sources(tmp_path):
