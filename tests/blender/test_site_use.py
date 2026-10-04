@@ -114,3 +114,55 @@ def test_the_switches_wait_for_a_site_with_a_photo():
         assert not bpy.ops.ghosttown.use_ground.poll() and not bpy.ops.ghosttown.use_roofs.poll()
     finally:
         ghosttown.unregister()
+
+
+def _enter_edit_mode(ob):
+    bpy.context.view_layer.objects.active = ob
+    ob.select_set(True)
+    bpy.ops.object.mode_set(mode="EDIT")
+
+
+def _state(ob):
+    # Hidden attributes (".uv_select_face" and the like) come and go when Blender enters and leaves Edit Mode.
+    attributes = {a.name for a in ob.data.attributes if not a.name.startswith(".")}
+    return _names(ob), [p.material_index for p in ob.data.polygons], attributes
+
+
+def test_changing_the_limit_in_edit_mode_leaves_buildings_intact():
+    ghosttown.register()
+    try:
+        root, _ = photo_site()
+        settings = bpy.context.scene.ghosttown
+        settings.site = root
+        tower, shed = buildings(root)
+        site_use.apply_roofs(root, "photo", 20.0)
+        before = _state(shed)
+        _enter_edit_mode(shed)
+        try:
+            settings.roof_photo_max_m = 100.0  # the update must not touch the mesh being edited
+        finally:
+            bpy.ops.object.mode_set(mode="OBJECT")
+        assert _state(shed) == before
+        assert all(p.material_index < len(shed.data.materials) for p in shed.data.polygons)
+        assert root["roof_photo_max_m"] == 100.0 and root["use_roofs"] == "photo"
+        assert root["ctx_photo_material"] not in _names(tower)
+        site_use.apply_roofs(root, "photo", 100.0)
+        assert _names(tower)[-1] == root["ctx_photo_material"]
+    finally:
+        ghosttown.unregister()
+
+
+def test_apply_roofs_skips_a_building_in_edit_mode():
+    root, _ = photo_site()
+    tower, shed = buildings(root)
+    site_use.apply_roofs(root, "photo", 20.0)
+    before = _state(shed)
+    _enter_edit_mode(shed)
+    try:
+        site_use.apply_roofs(root, "photo", 100.0)  # the limit now takes in the tower; the shed is being edited
+    finally:
+        bpy.ops.object.mode_set(mode="OBJECT")
+    assert _state(shed) == before
+    assert _names(tower)[-1] == root["ctx_photo_material"]
+    site_use.apply_roofs(root, "plain")
+    assert root["ctx_photo_material"] not in _names(shed) and site_use.INDEX_ATTR not in shed.data.attributes

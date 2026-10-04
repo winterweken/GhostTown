@@ -25,7 +25,7 @@ def _roof_limit_changed(self, context):
     root = site_use.picked(context)
     if root is None or not root.get("ctx_photo_material"):
         return
-    if root.get("use_roofs") == "photo":
+    if root.get("use_roofs") == "photo" and context.mode == "OBJECT":
         site_use.apply_roofs(root, "photo", self.roof_photo_max_m)
     else:
         root["roof_photo_max_m"] = float(self.roof_photo_max_m)

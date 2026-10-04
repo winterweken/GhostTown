@@ -90,14 +90,16 @@ def _photo_roofs(ob, material):
 
 def apply_roofs(root, use, max_m=None):
     """`use` is "photo" or "plain". Photo roofs go on buildings up to the limit (taller ones lean in
-    the photo, so their roof texture would be offset). Returns how many buildings were reset rather
-    than restored exactly."""
+    the photo, so their roof texture would be offset). Buildings in Edit Mode are skipped. Returns how
+    many buildings were reset rather than restored exactly."""
     if max_m is not None:
         root["roof_photo_max_m"] = float(max_m)
     limit = float(root.get("roof_photo_max_m", 20.0))
     material = photo_material(root)
     reset = 0
     for ob in made_objects(root, BUILDING_KINDS):
+        if ob.data.is_editmode:
+            continue  # its mesh data is out of date until the user leaves Edit Mode; leave it as it is
         if not _restore_roofs(ob, material):
             reset += 1
         if use == "photo" and material is not None and float(ob.get("ctx_height_m", 0.0)) <= limit:
