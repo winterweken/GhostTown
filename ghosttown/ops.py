@@ -100,9 +100,16 @@ def import_into_scene(context, path, report):
     if problems:
         report({"ERROR"}, problems[0])
         return None
-    root = scene_build.build(context.scene, doc)
+    root = scene_build.build(context.scene, doc, folder=os.path.dirname(os.path.abspath(path)))
     settings = context.scene.ghosttown
+    settings.site = root
     settings.summary = _summary(doc)
+    photo = doc.get("photo")
+    if photo and root.get("ctx_photo_image"):
+        year = photo.get("year")
+        settings.summary += f", aerial photo {year}" if year else ", aerial photo"
+    elif photo:
+        report({"WARNING"}, "The aerial photo file is missing beside the context file, so the site has no photo.")
     settings.credits = "\n".join(dict.fromkeys(s["credit"] for s in doc["sources"]))
     settings.survey = "\n".join(georef.survey_lines(doc.get("survey")))
     for note in doc["notes"]:

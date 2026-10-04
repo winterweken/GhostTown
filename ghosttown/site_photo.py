@@ -1,0 +1,77 @@
+"""The site's aerial photo in Blender: packed image, straight-down UV maps and the photo material."""
+import bpy
+import numpy as np
+
+from . import materials, site_use
+from .ghosttown_fetch import BUILDING_KINDS, GROUND_KINDS
+
+UV_NAME = "Site photo"
+PREFIX = "Site photo · "
+DEFAULT_ROOF_MAX_M = 20.0
+
+
+def add_uvs(ob, bounds):
+    """A UV map projecting the photo straight down: u and v run 0 to 1 across bounds_m."""
+    me = ob.data
+    xmin, ymin, xmax, ymax = bounds
+    co = np.empty(len(me.vertices) * 3, dtype=np.float32)
+    me.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3)
+    vi = np.empty(len(me.loops), dtype=np.int32)
+    me.loops.foreach_get("vertex_index", vi)
+    uv = np.empty((len(vi), 2), dtype=np.float32)
+    uv[:, 0] = (co[vi, 0] - xmin) / (xmax - xmin)
+    uv[:, 1] = (co[vi, 1] - ymin) / (ymax - ymin)
+    layer = me.uv_layers.get(UV_NAME) or me.uv_layers.new(name=UV_NAME)
+    layer.data.foreach_set("uv", uv.ravel())
+
+
+def _material(label, image):
+    material = bpy.data.materials.new(PREFIX + label)
+    tree = material.node_tree
+    bsdf = next(n for n in tree.nodes if n.bl_idname == "ShaderNodeBsdfPrincipled")
+    bsdf.inputs["Roughness"].default_value = 0.9
+    texture = tree.nodes.new("ShaderNodeTexImage")
+    texture.image = image
+    texture.extension = "CLIP"
+    texture.location = (-420, 260)
+    uvmap = tree.nodes.new("ShaderNodeUVMap")
+    uvmap.uv_map = UV_NAME
+    uvmap.location = (-640, 260)
+    tree.links.new(uvmap.outputs["UV"], texture.inputs["Vector"])
+    tree.links.new(texture.outputs["Color"], bsdf.inputs["Base Color"])
+    material.diffuse_color = materials.COLOURS["ground"] + (1.0,)
+    return material
+
+
+def attach(root, origin, label, path, photo):
+    """Pack the photo into the file, map it onto the site's ground and buildings, record it on the
+    root and origin, and show it on the ground (roofs stay plain)."""
+    image = bpy.data.images.load(path, check_existing=False)
+    image.name = PREFIX + label
+    image.pack()
+    material = _material(label, image)
+    for ob in site_use.made_objects(root, GROUND_KINDS + BUILDING_KINDS):
+        add_uvs(ob, photo["bounds_m"])
+    xmin, ymin, xmax, ymax = (float(v) for v in photo["bounds_m"])
+    root["ctx_photo_image"] = image.name
+    root["ctx_photo_material"] = material.name
+    root["photo_bounds_m"] = [xmin, ymin, xmax, ymax]
+    root["photo_px"] = [int(photo["width_px"]), int(photo["height_px"])]
+    for block in (root, origin):
+        block["photo_year"] = int(photo.get("year") or 0)
+        block["photo_width_m"] = xmax - xmin
+    root["use_roofs"] = "plain"
+    root["roof_photo_max_m"] = DEFAULT_ROOF_MAX_M
+    site_use.apply_ground(root, "photo")
+
+
+def forget(material_name, image_name):
+    """After a site's objects are gone: delete its photo material, then its image, unless something
+    else (a duplicate the user kept, say) still uses them."""
+    material = bpy.data.materials.get(material_name or "")
+    if material is not None and material.users == 0:
+        bpy.data.materials.remove(material)
+    image = bpy.data.images.get(image_name or "")
+    if image is not None and image.users == 0:
+        bpy.data.images.remove(image)

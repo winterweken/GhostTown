@@ -8,7 +8,7 @@ import bpy
 import ghosttown
 from ghosttown import ops, runner
 from ghosttown.ghosttown_fetch import request as rq
-from helpers import FIXTURES
+from helpers import FIXTURES, photo_doc
 
 SLEEPER = [sys.executable, "-c", "import time; time.sleep(30)"]
 
@@ -256,5 +256,39 @@ def test_settings_offer_the_photo_and_a_site_picker_of_context_collections():
         assert props.is_site(settings, site) and not props.is_site(settings, other) and not props.is_site(settings, loose)
         settings.site = site
         assert settings.site == site
+    finally:
+        ghosttown.unregister()
+
+
+def _write_context(doc, folder):
+    path = os.path.join(folder, "context.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(doc, f)
+    return path
+
+
+def test_import_with_a_photo_picks_the_site_and_names_the_photo_year():
+    ghosttown.register()
+    try:
+        folder = tempfile.mkdtemp()
+        path = _write_context(photo_doc(folder), folder)
+        assert bpy.ops.ghosttown.import_context(filepath=path) == {"FINISHED"}
+        settings = bpy.context.scene.ghosttown
+        assert settings.site is not None and settings.site.name == "Context · 320 Bay St"
+        assert settings.site.get("ctx_photo_image") and "aerial photo 2025" in settings.summary
+    finally:
+        ghosttown.unregister()
+
+
+def test_import_without_the_photo_file_still_builds():
+    ghosttown.register()
+    try:
+        folder = tempfile.mkdtemp()
+        doc = photo_doc(folder)
+        os.remove(os.path.join(folder, "photo.jpg"))
+        assert bpy.ops.ghosttown.import_context(filepath=_write_context(doc, folder)) == {"FINISHED"}
+        settings = bpy.context.scene.ghosttown
+        assert settings.site is not None and not settings.site.get("ctx_photo_image")
+        assert "aerial photo" not in settings.summary
     finally:
         ghosttown.unregister()

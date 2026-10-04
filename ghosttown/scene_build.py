@@ -6,10 +6,11 @@ name), so a re-run removes exactly those and keeps everything the user added, du
 linked elsewhere.
 """
 import json
+import os
 
 import bpy
 
-from . import geometry, georef, materials
+from . import geometry, georef, materials, site_photo
 from .ghosttown_fetch import BUILDING_KINDS
 from .ghosttown_fetch import context as ctx
 
@@ -43,7 +44,7 @@ def find_root(scene, label):
     return None
 
 
-def build(scene, doc):
+def build(scene, doc, folder=None):
     label = site_label(doc)
     old = find_root(scene, label)
     if old is not None:
@@ -100,12 +101,18 @@ def build(scene, doc):
     root.objects.link(origin)
     made.append(origin.name)
     root["ctx_objects"] = json.dumps(made)
+    photo = doc.get("photo")
+    if photo and folder:
+        path = os.path.join(folder, photo["file"])
+        if os.path.isfile(path):
+            site_photo.attach(root, origin, label, path, photo)
     return root
 
 
 def remove(root, scene):
     """Delete a context collection and what Ghost Town made in it. The user's objects, duplicates and
     sub-collections are kept; anything that would be left with no parent moves to the scene collection."""
+    photo_assets = (root.get("ctx_photo_material"), root.get("ctx_photo_image"))
     made = set(json.loads(root.get("ctx_objects", "[]")))
     ours = [root] + [c for c in root.children_recursive if c.get("ctx_group")]
     ours_names = {c.name for c in ours}
@@ -134,6 +141,7 @@ def remove(root, scene):
             scene.collection.children.link(child)
 
     bpy.data.batch_remove(doomed + meshes + ours)
+    site_photo.forget(*photo_assets)
 
 
 def _append(acc, verts, faces):
@@ -180,6 +188,7 @@ def _building_object(el):
     ob["ctx_kind"] = el["kind"]
     ob["ctx_source"] = el["id"].split(":", 1)[0]
     ob["ctx_height_source"] = ", ".join(sorted({s["height_source"] for s in el["solids"]}))
+    ob["ctx_height_m"] = round(max(s["z1"] - s["z0"] for s in el["solids"]), 3)
     if repaired:
         ob["ctx_repaired"] = True  # a courtyard or a broken solid was left out to keep the mesh closed
     return ob

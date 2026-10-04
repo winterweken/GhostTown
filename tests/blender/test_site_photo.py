@@ -1,0 +1,99 @@
+import os
+import shutil
+import tempfile
+
+import bpy
+
+from ghosttown import scene_build
+from helpers import load_fixture, photo_doc
+
+SITE = "320 Bay St"
+
+
+def photo_site(address=None):
+    folder = tempfile.mkdtemp()
+    return scene_build.build(bpy.context.scene, photo_doc(folder, address), folder=folder), folder
+
+
+def ground(root):
+    return [ob for ob in root.all_objects if ob.get("ctx_kind") == "road"]
+
+
+def buildings(root):
+    return sorted((ob for ob in root.all_objects if str(ob.get("ctx_kind", "")).startswith("building")),
+                  key=lambda ob: ob["ctx_id"])
+
+
+def test_the_photo_is_packed_and_shown_on_the_ground():
+    root, _ = photo_site()
+    image = bpy.data.images[root["ctx_photo_image"]]
+    assert image.name == f"Site photo · {SITE}" and image.packed_file is not None
+    mat = bpy.data.materials[root["ctx_photo_material"]]
+    assert mat.name == f"Site photo · {SITE}"
+    tex = next(n for n in mat.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage")
+    uvmap = next(n for n in mat.node_tree.nodes if n.bl_idname == "ShaderNodeUVMap")
+    assert tex.image == image and tex.extension == "CLIP" and uvmap.uv_map == "Site photo"
+    road, = ground(root)
+    slot = road.material_slots[0]
+    assert slot.link == "OBJECT" and slot.material == mat and road.data.materials[0].name == "Context - Road"
+    assert root["use_ground"] == "photo" and root["use_roofs"] == "plain" and root["roof_photo_max_m"] == 20.0
+    assert root["photo_year"] == 2025 and root["photo_width_m"] == 300.0
+    assert list(root["photo_px"]) == [128, 128] and list(root["photo_bounds_m"]) == [-150.0, -150.0, 150.0, 150.0]
+    origin, = [ob for ob in root.objects if ob.get("ctx_id") == "origin"]
+    assert origin["photo_year"] == 2025 and origin["photo_width_m"] == 300.0
+
+
+def test_ground_and_buildings_get_a_straight_down_uv_map():
+    root, _ = photo_site()
+    for ob in ground(root) + buildings(root):
+        uv = ob.data.uv_layers["Site photo"]
+        for loop, data in zip(ob.data.loops, uv.data):
+            x, y, _ = ob.data.vertices[loop.vertex_index].co
+            assert abs(data.uv[0] - (x + 150) / 300) < 1e-5 and abs(data.uv[1] - (y + 150) / 300) < 1e-5
+
+
+def test_buildings_record_their_height_for_the_roof_limit():
+    root = scene_build.build(bpy.context.scene, load_fixture("mini_context.json"))
+    tower, shed = buildings(root)
+    assert tower["ctx_height_m"] == 60.3 and shed["ctx_height_m"] == 9.3
+
+
+def test_without_the_photo_file_the_site_builds_without_a_photo():
+    folder = tempfile.mkdtemp()
+    doc = photo_doc(folder)
+    os.remove(os.path.join(folder, "photo.jpg"))
+    root = scene_build.build(bpy.context.scene, doc, folder=folder)
+    assert "ctx_photo_image" not in root and not any(i.name.startswith("Site photo") for i in bpy.data.images)
+    road, = ground(root)
+    assert road.material_slots[0].link == "DATA" and "Site photo" not in road.data.uv_layers
+
+
+def test_without_a_folder_the_photo_is_skipped():
+    root = scene_build.build(bpy.context.scene, photo_doc(tempfile.mkdtemp()))
+    assert "ctx_photo_image" not in root
+
+
+def test_a_rebuild_replaces_the_photo_without_duplicates():
+    photo_site()
+    photo_site()
+    assert [i.name for i in bpy.data.images if i.name.startswith("Site photo")] == [f"Site photo · {SITE}"]
+    assert [m.name for m in bpy.data.materials if m.name.startswith("Site photo")] == [f"Site photo · {SITE}"]
+
+
+def test_removing_a_site_removes_its_photo():
+    root, _ = photo_site()
+    scene_build.remove(root, bpy.context.scene)
+    assert not any(i.name.startswith("Site photo") for i in bpy.data.images)
+    assert not any(m.name.startswith("Site photo") for m in bpy.data.materials)
+
+
+def test_the_photo_survives_saving_and_reopening_the_file():
+    _, folder = photo_site()
+    path = os.path.join(tempfile.mkdtemp(), "site.blend")
+    bpy.ops.wm.save_as_mainfile(filepath=path)
+    shutil.rmtree(folder)  # the cache can be cleared; the photo is in the .blend
+    bpy.ops.wm.open_mainfile(filepath=path)
+    image = bpy.data.images[f"Site photo · {SITE}"]
+    assert image.packed_file is not None and tuple(image.size) == (128, 128)
+    road = next(ob for ob in bpy.data.objects if ob.get("ctx_kind") == "road")
+    assert road.material_slots[0].link == "OBJECT" and road.material_slots[0].material.name == f"Site photo · {SITE}"
