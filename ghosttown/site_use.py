@@ -207,16 +207,18 @@ def count_triangles(root, depsgraph):
     return total
 
 
-_pending = set()
+_scheduled = {}  # site name -> the function its timer will run
 
 
 def count_later(root, delay=0.3):
     """Count the site's triangles shortly after a change: a dragged slider changes many times, and an
-    update callback is no place to evaluate the scene. Returns the scheduled function (tests call it)."""
+    update callback is no place to evaluate the scene. Returns the scheduled function (tests call it).
+    A site counts as pending only while its timer is registered: loading a file drops timers."""
     name = root.name
 
     def run():
-        _pending.discard(name)
+        if _scheduled.get(name) is run:
+            del _scheduled[name]
         site = bpy.data.collections.get(name)
         if site is not None and site.get("ctx_root"):
             count_triangles(site, bpy.context.evaluated_depsgraph_get())
@@ -226,7 +228,9 @@ def count_later(root, delay=0.3):
                         area.tag_redraw()
         return None
 
-    if name not in _pending:
-        _pending.add(name)
-        bpy.app.timers.register(run, first_interval=delay)
+    pending = _scheduled.get(name)
+    if pending is not None and bpy.app.timers.is_registered(pending):
+        return pending
+    _scheduled[name] = run
+    bpy.app.timers.register(run, first_interval=delay)
     return run

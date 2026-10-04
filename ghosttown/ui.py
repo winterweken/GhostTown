@@ -69,7 +69,8 @@ class GHOSTTOWN_PT_main(bpy.types.Panel):
             for i, item in enumerate(settings.results):
                 box.operator("ghosttown.pick", text=item.label).index = i
         layout.prop(settings, "radius")
-        col = layout.column(heading="Fetch")
+        col = layout.column()
+        col.label(text="Fetch")
         col.prop(settings, "fetch_photo")
         col.prop(settings, "fetch_lidar")
         if "build" in runner.ACTIVE:

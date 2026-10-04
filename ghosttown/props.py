@@ -64,8 +64,8 @@ class GhostTownSettings(bpy.types.PropertyGroup):
         description="Toronto: fetch the City's newest aerial photo of the site (one download)")
     fetch_lidar: BoolProperty(
         name="LiDAR roofs (slower)", default=False,
-        description="Ontario: fetch the province's LiDAR and give buildings the City of Toronto's 3D Massing "
-                    "model doesn't cover roofs sampled from it. "
+        description="Ontario: fetch the province's LiDAR and sample roofs from it for buildings the City of "
+                    "Toronto's 3D Massing model doesn't cover. "
                     "A large download; the first request can take a minute")
     site: PointerProperty(
         type=bpy.types.Collection, name="Site", poll=is_site, update=_site_picked,

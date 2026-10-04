@@ -390,3 +390,30 @@ def test_triangle_counts_read_well_and_the_warning_says_what_to_do():
     from ghosttown import ui
     assert ui.triangles_text(1_400_000) == "1.4 M" and ui.triangles_text(86_000) == "86,000"
     assert " ".join(ui.HEAVY) == "Heavy for Revit: lower Roof detail or use Flat roofs before exporting."
+
+
+def test_a_recount_is_scheduled_again_once_a_file_load_has_dropped_its_timer():
+    from ghosttown import site_use
+    from test_site_lidar import lidar_site
+    ghosttown.register()
+    timers = []
+    try:
+        root, _ = lidar_site()
+        first = site_use.count_later(root)
+        timers.append(first)
+        assert bpy.app.timers.is_registered(first)
+        bpy.app.timers.unregister(first)  # what loading a file does to a pending timer
+        second = site_use.count_later(root)
+        timers.append(second)
+        assert bpy.app.timers.is_registered(second)
+        root["ctx_triangles"] = -1
+        second()  # what the timer would run
+        assert root["ctx_triangles"] == site_use.count_triangles(root, bpy.context.evaluated_depsgraph_get()) > 0
+        third = site_use.count_later(root)
+        timers.append(third)
+        assert bpy.app.timers.is_registered(third) and site_use.count_later(root) is third  # one timer per site
+    finally:
+        for fn in timers:
+            if bpy.app.timers.is_registered(fn):
+                bpy.app.timers.unregister(fn)
+        ghosttown.unregister()
