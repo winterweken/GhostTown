@@ -27,7 +27,7 @@ Ghost Town is a free, open-source extension for Blender 5.2 and later. It is at 
 
 | Where the site is | Buildings | Terrain | Ground, trees, lot lines | Address search |
 |---|---|---|---|---|
-| **City of Toronto** | City data: stepped tiers with measured heights | NRCan elevation, 2 m grid | Roads, sidewalks, parking, rail, water, parks, trees, parcels | Yes |
+| **City of Toronto** | City 3D Massing model, newest edition: stepped parts with measured heights | NRCan elevation, 2 m grid | Roads, sidewalks, parking, rail, water, parks, trees, parcels | Yes |
 | **Elsewhere in Canada** | OpenStreetMap | NRCan elevation where available | Plain ground only | Not yet (type coordinates) |
 | **Rest of the world** | OpenStreetMap | Flat | Plain ground only | Not yet (type coordinates) |
 
@@ -122,7 +122,7 @@ you used. The panel lists them after every build.
 
 | Source | Used for | Credit |
 |---|---|---|
-| City of Toronto open data | Buildings, ground, trees, parcels, addresses, city boundary | Contains information licensed under the Open Government Licence – Toronto |
+| City of Toronto open data | Buildings (3D Massing, newest yearly edition), ground, trees, parcels, addresses, city boundary | Contains information licensed under the Open Government Licence – Toronto |
 | Natural Resources Canada (HRDEM) | Terrain | Contains information licensed under the Open Government Licence – Canada |
 | OpenStreetMap | Buildings outside Toronto | © OpenStreetMap contributors (ODbL) |
 
@@ -132,10 +132,12 @@ More detail is in [CREDITS.md](CREDITS.md).
 heights are derived from aerial data, some are guessed, and lot lines are approximate. Check anything
 you rely on against a survey.
 
-**Privacy.** Ghost Town contacts only `gis.toronto.ca`, `datacube.services.geo.ca` and
-`overpass-api.de`, and only when you press the search button or Build Context. It sends what the query
-needs (the address you search for, or the location and radius you build) and nothing else. Answers are
-cached on your computer for 30 days.
+**Privacy.** Ghost Town contacts only `gis.toronto.ca` and the City's open data portal
+(`ckan0.cf.opendata.inter.prod-toronto.ca`), `datacube.services.geo.ca` and `overpass-api.de`, and only when
+you press the search button or Build Context. It sends what the query needs (the address you search for, or
+the location and radius you build) and nothing else. Answers are cached on your computer for 30 days. The
+City's 3D Massing model is downloaded once per yearly edition (81 MB, about 300 MB unpacked in the cache
+folder) and kept until a newer edition comes out.
 
 Ghost Town is an independent project. It is not affiliated with or endorsed by the City of Toronto,
 Natural Resources Canada or OpenStreetMap.
@@ -146,8 +148,6 @@ Natural Resources Canada or OpenStreetMap.
 - Buildings are flat-topped prisms: no roof shapes, and canopies and kiosks are left out.
 - Bridges and elevated rail are draped onto the ground.
 - A stream is flat at one level along its length instead of following its valley.
-- Where the City's data leaves a gap between roof levels, Ghost Town fills it at the height of the
-  neighbouring roof.
 - Rebuilding a site resets colours you changed on the `Context - …` materials.
 
 ## How it works
