@@ -166,3 +166,10 @@ def test_the_recorded_slice_keeps_its_lidar_buildings(tmp_path):
     net = FakeNet({"toronto": router({"package_show?id=3d-massing": package(2025), "3DMassingShapefile_": SUBSET})})
     parts, _ = massing.fetch(net, str(tmp_path), BAY, 150)
     assert sum(p.source == "toronto_massing_lidar" for p in parts) >= 50
+
+
+def test_min_height_is_a_lidar_statistic_not_a_raised_base(tmp_path):
+    row = dict(_row(12.0, 92.0, 80.0, "Lidar-Derived"), MIN_HEIGHT=5.8, MAX_HEIGHT=19.9)
+    parts, _ = massing.fetch(net_for(zip_bytes=zipped([(part(square(0, 0, 10), 1.0)[0], row)])), str(tmp_path), F, 300)
+    p, = parts
+    assert p.base == 0.0 and p.height == pytest.approx(12.0)

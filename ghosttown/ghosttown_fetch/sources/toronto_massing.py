@@ -5,7 +5,8 @@ city-wide shapefile per year (2025: 81 MB zipped, 428,184 parts), in Web Mercato
 Ghost Town downloads an edition once, keeps the unpacked files and an index of every part's box in the
 cache folder, and reads only a site's parts from them. An older edition is deleted once a newer one is
 ready; a copy that can't be read is deleted so the next build downloads it again. Heights come from
-AVG_HEIGHT, with HEIGHT_MSL − SURF_ELEV only as a fallback.
+AVG_HEIGHT, with HEIGHT_MSL − SURF_ELEV only as a fallback. Every part stands on the ground: MIN_HEIGHT
+is the lowest LiDAR return over a footprint, not a raised base, and is ignored.
 """
 import io
 import json
@@ -162,7 +163,7 @@ def site_parts(folder, frame, radius_m):
             except shapely.errors.GEOSException:
                 local = []  # one part the geometry library can't repair is left out
             if local:
-                parts.append(Part(int(i), local, float(height), float(row.get("MIN_HEIGHT") or 0.0),
+                parts.append(Part(int(i), local, float(height), 0.0,  # MIN_HEIGHT is the lowest LiDAR return over the footprint, not a raised base
                                   SOURCES.get(row.get("HEIGHT_SRC") or "", "toronto_massing")))
         del attributes  # release the map before it closes
     return parts
