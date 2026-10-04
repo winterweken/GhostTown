@@ -15,6 +15,7 @@ import os
 import re
 import shutil
 import tempfile
+import urllib.parse
 import zipfile
 from collections import namedtuple
 
@@ -28,6 +29,8 @@ from ..net import SourceError
 
 PACKAGE = "https://ckan0.cf.opendata.inter.prod-toronto.ca/api/3/action/package_show?id=3d-massing"
 _EDITION = re.compile(r"3DMassingShapefile_(\d{4})_WGS84\.zip")
+HOST = "ckan0.cf.opendata.inter.prod-toronto.ca"
+MAX_UNPACKED_BYTES = 2 * 1024 ** 3
 FOLDER = "toronto_massing"
 STEM = "massing"
 MIN_HEIGHT_M = 0.5
@@ -55,6 +58,16 @@ def _size(value):
         return 0
 
 
+def _from_the_city(url):
+    """Only an https download from the City's open data portal or a toronto.ca site is followed."""
+    try:
+        parts = urllib.parse.urlsplit(url)
+        host = parts.hostname or ""
+    except ValueError:
+        return False
+    return parts.scheme == "https" and (host == HOST or host.endswith(".toronto.ca"))
+
+
 def newest_edition(net):
     doc = json.loads(net.get(PACKAGE, source="toronto", check=_check_package))
     found = []
@@ -62,7 +75,7 @@ def newest_edition(net):
         if not isinstance(resource, dict):
             continue
         m = _EDITION.fullmatch(str(resource.get("name", "")))
-        if m and isinstance(resource.get("url"), str) and resource["url"]:
+        if m and isinstance(resource.get("url"), str) and _from_the_city(resource["url"]):
             found.append(Edition(int(m.group(1)), resource["url"], _size(resource.get("size"))))
     if not found:
         raise SourceError("The City's open data portal lists no 3D Massing shapefile.")
@@ -71,11 +84,16 @@ def newest_edition(net):
 
 def _check_zip(body):
     try:
-        names = zipfile.ZipFile(io.BytesIO(body)).namelist()
+        members = zipfile.ZipFile(io.BytesIO(body)).infolist()
     except zipfile.BadZipFile:
         raise SourceError("The City's 3D Massing download isn't a whole zip file.") from None
-    if not all(any(n.lower().endswith(ext) for n in names) for ext in (".shp", ".shx", ".dbf")):
+    names = [m.filename.lower() for m in members]
+    if not all(any(n.endswith(ext) for n in names) for ext in (".shp", ".shx", ".dbf")):
         raise SourceError("The City's 3D Massing download is missing part of the shapefile.")
+    if sum(n.endswith(".shp") for n in names) > 1:
+        raise SourceError("The City's 3D Massing download holds more than one shapefile.")
+    if sum(m.file_size for m in members) > MAX_UNPACKED_BYTES:
+        raise SourceError("The City's 3D Massing download unpacks to more than 2 GB.")
 
 
 def _ready(folder):

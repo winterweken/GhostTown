@@ -15,13 +15,14 @@ from fakes import FakeNet, router
 from shapefile_samples import part, square, zipped
 
 F = Frame(43.65, -79.38)
+DOWNLOADS = "https://ckan0.cf.opendata.inter.prod-toronto.ca/dataset/x/resource/y/download"
 
 
 def package(*years):
     """A CKAN package_show answer listing these shapefile editions (and a multipatch to ignore)."""
     resources = [{"name": f"3DMassingShapefile_{y}_WGS84.zip", "size": 81415175,
-                  "url": f"https://portal.example/download/3DMassingShapefile_{y}_WGS84.zip"} for y in years]
-    resources.append({"name": "3DMassingMultipatch_2099_WGS84.zip", "url": "https://portal.example/m.zip"})
+                  "url": f"{DOWNLOADS}/3DMassingShapefile_{y}_WGS84.zip"} for y in years]
+    resources.append({"name": "3DMassingMultipatch_2099_WGS84.zip", "url": f"{DOWNLOADS}/m.zip"})
     return json.dumps({"success": True, "result": {"resources": resources}}).encode("utf-8")
 
 
@@ -34,7 +35,7 @@ def net_for(zip_bytes=ZIP, years=(2024, 2099)):
 
 def test_the_newest_shapefile_edition_is_chosen():
     edition = massing.newest_edition(net_for())
-    assert edition == massing.Edition(2099, "https://portal.example/download/3DMassingShapefile_2099_WGS84.zip", 81415175)
+    assert edition == massing.Edition(2099, f"{DOWNLOADS}/3DMassingShapefile_2099_WGS84.zip", 81415175)
 
 
 @pytest.mark.parametrize("answer", [b"<html>", json.dumps({"success": False}).encode(),
@@ -45,9 +46,36 @@ def test_no_edition_is_a_source_error(answer):
 
 
 def test_odd_entries_in_the_listing_are_skipped_not_fatal():
-    good = {"name": "3DMassingShapefile_2099_WGS84.zip", "url": "https://portal.example/z.zip", "size": "about 80 MB"}
+    good = {"name": "3DMassingShapefile_2099_WGS84.zip", "url": f"{DOWNLOADS}/z.zip", "size": "about 80 MB"}
     answer = json.dumps({"success": True, "result": {"resources": ["not a resource", None, good]}}).encode()
-    assert massing.newest_edition(FakeNet({"toronto": answer})) == massing.Edition(2099, "https://portal.example/z.zip", 0)
+    assert massing.newest_edition(FakeNet({"toronto": answer})) == massing.Edition(2099, f"{DOWNLOADS}/z.zip", 0)
+
+
+def _listing(*urls):
+    resources = [{"name": f"3DMassingShapefile_{2090 + i}_WGS84.zip", "url": url} for i, url in enumerate(urls)]
+    return FakeNet({"toronto": json.dumps({"success": True, "result": {"resources": resources}}).encode("utf-8")})
+
+
+@pytest.mark.parametrize("url", [
+    "http://ckan0.cf.opendata.inter.prod-toronto.ca/d/3DMassingShapefile_2099_WGS84.zip",  # not https
+    "https://portal.example/d/3DMassingShapefile_2099_WGS84.zip",  # a foreign host
+    "https://evil-toronto.ca/d/3DMassingShapefile_2099_WGS84.zip",  # ends in toronto.ca but not .toronto.ca
+    "https://toronto.ca.evil.example/d/3DMassingShapefile_2099_WGS84.zip",
+    "https://ckan0.cf.opendata.inter.prod-toronto.ca@evil.example/d/3DMassingShapefile_2099_WGS84.zip",
+    "ftp://www.toronto.ca/d/3DMassingShapefile_2099_WGS84.zip",
+    "//www.toronto.ca/d/3DMassingShapefile_2099_WGS84.zip",
+    "https://[bad/3DMassingShapefile_2099_WGS84.zip"])
+def test_an_edition_from_a_strange_url_is_skipped(url):
+    good = f"{DOWNLOADS}/3DMassingShapefile_2090_WGS84.zip"
+    assert massing.newest_edition(_listing(good, url)).url == good
+    with pytest.raises(SourceError, match="lists no 3D Massing"):
+        massing.newest_edition(_listing(url))
+
+
+@pytest.mark.parametrize("url", ["https://ckan0.cf.opendata.inter.prod-toronto.ca/d/z.zip", "https://www.toronto.ca/d/z.zip",
+                                 "https://OPEN.Toronto.CA/d/z.zip"])
+def test_https_downloads_from_the_city_are_accepted(url):
+    assert massing.newest_edition(_listing(url)).url == url
 
 
 def test_first_use_downloads_unpacks_and_indexes_then_reuses_the_copy(tmp_path):
@@ -63,8 +91,8 @@ def test_first_use_downloads_unpacks_and_indexes_then_reuses_the_copy(tmp_path):
 
 
 def test_a_newer_edition_replaces_the_old_copy(tmp_path):
-    old = massing.local_copy(net_for(), str(tmp_path), massing.Edition(2098, "https://portal.example/3DMassingShapefile_2098_WGS84.zip", 0))
-    new = massing.local_copy(net_for(), str(tmp_path), massing.Edition(2099, "https://portal.example/3DMassingShapefile_2099_WGS84.zip", 0))
+    old = massing.local_copy(net_for(), str(tmp_path), massing.Edition(2098, f"{DOWNLOADS}/3DMassingShapefile_2098_WGS84.zip", 0))
+    new = massing.local_copy(net_for(), str(tmp_path), massing.Edition(2099, f"{DOWNLOADS}/3DMassingShapefile_2099_WGS84.zip", 0))
     assert not os.path.exists(old) and os.path.isdir(new)
 
 
@@ -95,6 +123,40 @@ def test_a_zip_without_the_shapefile_is_refused(tmp_path):
         z.writestr("readme.txt", b"no shapes here")
     with pytest.raises(SourceError, match="missing"):
         massing.fetch(net_for(zip_bytes=buffer.getvalue()), str(tmp_path), F, 300)
+
+
+def _zip_with(*names):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as z:
+        for name in names:
+            z.writestr(name, b"x")
+    return buffer, buffer.getvalue()
+
+
+def test_a_zip_with_two_shapefiles_is_refused(tmp_path):
+    _, body = _zip_with("a.shp", "a.shx", "a.dbf", "b.shp")
+    with pytest.raises(SourceError, match="more than one"):
+        massing._check_zip(body)
+    with pytest.raises(SourceError, match="more than one"):
+        massing.fetch(net_for(zip_bytes=body), str(tmp_path), F, 300)
+    assert not (tmp_path / "toronto_massing" / "2099").exists()
+
+
+def test_a_zip_that_unpacks_to_over_2_gb_is_refused(tmp_path):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as z:
+        for name in ("a.shp", "a.shx", "a.dbf"):
+            z.writestr(name, b"x")
+        z.filelist[0].file_size = 3 * 1024 ** 3  # what a zip bomb's directory claims
+    with pytest.raises(SourceError, match="unpacks to more than 2 GB"):
+        massing._check_zip(buffer.getvalue())
+    with pytest.raises(SourceError, match="2 GB"):
+        massing.fetch(net_for(zip_bytes=buffer.getvalue()), str(tmp_path), F, 300)
+    assert not (tmp_path / "toronto_massing" / "2099").exists()
+
+
+def test_a_zip_with_one_shapefile_passes_the_check():
+    massing._check_zip(ZIP)
 
 
 def test_an_unreadable_copy_is_deleted_and_fetched_again(tmp_path):
