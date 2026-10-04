@@ -18,6 +18,9 @@ class ShapefileError(ValueError):
 def check_header(shp):
     if len(shp) < 100 or struct.unpack_from(">i", shp, 0)[0] != 9994:
         raise ShapefileError("not a shapefile")
+    declared_words = struct.unpack_from(">i", shp, 24)[0]
+    if len(shp) < declared_words * 2:
+        raise ShapefileError(f"truncated shapefile: declared {declared_words * 2} bytes, got {len(shp)}")
     shape_type = struct.unpack_from("<i", shp, 32)[0]
     if shape_type not in POLYGON_TYPES:
         raise ShapefileError(f"shape type {shape_type} isn't polygons")
@@ -27,6 +30,9 @@ def record_offsets(shx):
     """Byte offset of each record's header in the .shp, from the .shx index."""
     if len(shx) < 100 or (len(shx) - 100) % 8 or struct.unpack_from(">i", shx, 0)[0] != 9994:
         raise ShapefileError("not a shapefile index")
+    declared_words = struct.unpack_from(">i", shx, 24)[0]
+    if len(shx) < declared_words * 2:
+        raise ShapefileError(f"truncated shapefile index: declared {declared_words * 2} bytes, got {len(shx)}")
     words = np.frombuffer(shx, dtype=">i4", offset=100).reshape(-1, 2)
     return words[:, 0].astype(np.int64) * 2
 
@@ -35,21 +41,27 @@ def bounding_boxes(shp, offsets):
     """(n, 4) [xmin, ymin, xmax, ymax] per record; NaN rows for null shapes."""
     out = np.full((len(offsets), 4), np.nan)
     for i, offset in enumerate(offsets):
-        content = int(offset) + 8
-        if struct.unpack_from("<i", shp, content)[0] in POLYGON_TYPES:
-            out[i] = struct.unpack_from("<4d", shp, content + 4)
+        try:
+            content = int(offset) + 8
+            if struct.unpack_from("<i", shp, content)[0] in POLYGON_TYPES:
+                out[i] = struct.unpack_from("<4d", shp, content + 4)
+        except (struct.error, ValueError) as e:
+            raise ShapefileError(f"record at byte {offset} is damaged ({e})") from None
     return out
 
 
 def polygon_rings(shp, offset):
     """The record's rings as (k, 2) arrays (copies); [] for a null shape."""
-    content = int(offset) + 8
-    if struct.unpack_from("<i", shp, content)[0] not in POLYGON_TYPES:
-        return []
-    nparts, npoints = struct.unpack_from("<2i", shp, content + 36)
-    starts = list(struct.unpack_from(f"<{nparts}i", shp, content + 44)) + [npoints]
-    points = np.frombuffer(shp, dtype="<f8", count=npoints * 2, offset=content + 44 + 4 * nparts).reshape(-1, 2)
-    return [points[starts[k]:starts[k + 1]].copy() for k in range(nparts)]
+    try:
+        content = int(offset) + 8
+        if struct.unpack_from("<i", shp, content)[0] not in POLYGON_TYPES:
+            return []
+        nparts, npoints = struct.unpack_from("<2i", shp, content + 36)
+        starts = list(struct.unpack_from(f"<{nparts}i", shp, content + 44)) + [npoints]
+        points = np.frombuffer(shp, dtype="<f8", count=npoints * 2, offset=content + 44 + 4 * nparts).reshape(-1, 2)
+        return [points[starts[k]:starts[k + 1]].copy() for k in range(nparts)]
+    except (struct.error, ValueError) as e:
+        raise ShapefileError(f"record at byte {offset} is damaged ({e})") from None
 
 
 def _twice_signed_area(ring):
@@ -87,6 +99,8 @@ class DBF:
             raise ShapefileError("not a dBase table")
         self.data, self.encoding = data, encoding
         self.count, self.header_len, self.record_len = struct.unpack_from("<IHH", data, 4)
+        if len(data) < self.header_len + self.count * self.record_len:
+            raise ShapefileError(f"truncated dBase table: expected {self.header_len + self.count * self.record_len} bytes, got {len(data)}")
         self.fields, pos, start = [], 32, 1
         while pos + 32 <= self.header_len and data[pos] != 0x0D:
             name = bytes(data[pos:pos + 11]).split(b"\0")[0].decode("ascii", "replace")

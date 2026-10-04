@@ -68,3 +68,28 @@ def test_damaged_files_are_refused(damage):
             shapefile.check_header(shp[:32] + struct.pack("<i", 1) + shp[36:])  # points, not polygons
         else:
             shapefile.record_offsets(shx[:-3])
+
+
+def test_truncated_shp_refused_by_check_header():
+    shp, _, _ = write([part(square(0, 0, 10), 9.0)])
+    with pytest.raises(shapefile.ShapefileError):
+        shapefile.check_header(shp[:150])
+
+
+def test_truncated_shx_refused_by_record_offsets():
+    _, shx, _ = write([part(square(0, 0, 10), 9.0)])
+    with pytest.raises(shapefile.ShapefileError):
+        shapefile.record_offsets(shx[:-8])
+
+
+def test_truncated_dbf_refused_by_dbf_init():
+    _, _, dbf = write([part(square(0, 0, 10), 9.0)])
+    with pytest.raises(shapefile.ShapefileError):
+        shapefile.DBF(dbf[:-40])
+
+
+def test_record_read_past_truncated_buffer_raises_shapefile_error():
+    shp, shx, _ = write([part(square(0, 0, 10), 9.0)])
+    offsets = shapefile.record_offsets(shx)
+    with pytest.raises(shapefile.ShapefileError):
+        shapefile.polygon_rings(shp[:120], offsets[0])
