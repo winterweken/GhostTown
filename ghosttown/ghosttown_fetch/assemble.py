@@ -12,7 +12,7 @@ from . import context as ctx
 from . import terrain as terrain_mod
 from .frame import Frame
 from .net import SourceError
-from .sources import osm, toronto
+from .sources import osm, toronto, toronto_photo
 
 KIND_LAYERS = {"road": "roads", "sidewalk": "sidewalks", "parking": "parking", "rail": "rail",
                "green": "green", "water": "water"}
@@ -128,6 +128,19 @@ def assemble(request, net, *, progress=None):
 
     if tried and failed == tried:
         raise NothingFetched(" ".join(n["text"] for n in doc["notes"] if n["level"] == "warn"))
+
+    if where == "toronto" and "photo" in layers:
+        progress("Site photo", 75)
+        try:
+            doc["photo"] = toronto_photo.fetch(net, frame, radius, request["out_dir"])
+        except SourceError as e:
+            ctx.note(doc, "warn", "city_photo", f"{e} The site has no aerial photo.")
+        except OSError as e:
+            ctx.note(doc, "warn", "city_photo", f"The aerial photo couldn't be saved ({e}). The site has no aerial photo.")
+        else:
+            ctx.add_source(doc, "toronto")
+            year = doc["photo"]["year"]
+            ctx.note(doc, "info", "city_photo", f"Aerial photo: City of Toronto, {year or 'current year'}.")
 
     progress("Ground", 80)
     plain = "terrain" in layers

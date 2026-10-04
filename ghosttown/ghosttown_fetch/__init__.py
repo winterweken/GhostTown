@@ -15,7 +15,7 @@ GROUND_KINDS = ("water", "road", "sidewalk", "parking", "rail", "green", "ground
 KINDS = BUILDING_KINDS + GROUND_KINDS + ("tree", "parcel", "parcel_on_site")
 
 LAYERS = ("buildings", "terrain", "roads", "sidewalks", "parking", "rail",
-          "green", "water", "trees", "parcels")
+          "green", "water", "trees", "parcels", "photo")
 RADIUS_RANGE_M = (50.0, 1000.0)
 SITE_LIMIT_M = 2000.0  # site outlines must sit within this distance of the centre
 

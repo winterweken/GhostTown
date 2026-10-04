@@ -77,6 +77,8 @@ def validate(doc):
         return problems
     if doc.get("survey") is not None:
         problems += _survey_problems(doc["survey"])
+    if doc.get("photo") is not None:
+        problems += _photo_problems(doc["photo"])
     for el in doc["elements"]:
         problems += _element_problems(el)
         if len(problems) >= _MAX_PROBLEMS:
@@ -89,6 +91,22 @@ def _survey_problems(point):
     if not (isinstance(point, dict) and all(_num(point.get(k)) for k in ("easting_m", "northing_m", "grid_angle_deg"))
             and (point.get("elevation_m") is None or _num(point["elevation_m"]))):
         return ["The survey point needs a numeric easting, northing and grid angle."]
+    return []
+
+
+def _photo_problems(photo):
+    """The photo is optional (older files have none) but must say where it is and what it covers.
+    The file must sit beside context.json: no folders in its name."""
+    bounds = photo.get("bounds_m") if isinstance(photo, dict) else None
+    ok = (isinstance(photo, dict) and isinstance(photo.get("file"), str) and photo["file"].strip()
+          and "/" not in photo["file"] and "\\" not in photo["file"] and photo["file"] not in (".", "..")
+          and isinstance(bounds, list) and len(bounds) == 4 and all(_num(v) for v in bounds)
+          and bounds[0] < bounds[2] and bounds[1] < bounds[3]
+          and all(isinstance(photo.get(k), int) and not isinstance(photo.get(k), bool) and photo[k] > 0
+                  for k in ("width_px", "height_px"))
+          and (photo.get("year") is None or (isinstance(photo["year"], int) and not isinstance(photo["year"], bool))))
+    if not ok:
+        return ["The photo needs a file name beside context.json, a pixel size and bounds_m [xmin, ymin, xmax, ymax]."]
     return []
 
 
