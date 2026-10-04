@@ -12,3 +12,7 @@ Recorded with `uv run python tools/record_fixtures.py`. Answers are gzipped exac
   Licence – Toronto.
 - `bay/massing_subset.zip`: a slice of the City of Toronto 3D Massing model (2025), recorded by
   `tools/record_massing_fixture.py`. Contains information licensed under the Open Government Licence – Toronto.
+- `ontario/bay_*.tif.gz`, `ontario/lake_none.tif`: Geospatial Ontario's lidar-derived surface and terrain models
+  (`ws.geoservices.lrc.gov.on.ca`, ImageServer `exportImage`, a ±40 m box at 0.5 m around 320 Bay St),
+  recorded by `tools/record_lidar_fixture.py`; `lake_none.tif` is the service's empty answer out in Lake
+  Ontario. Contains information licensed under the Open Government Licence – Ontario.
