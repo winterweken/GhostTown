@@ -1,5 +1,6 @@
-"""Minimal GeoTIFF reader for NRCan elevation: one band of uncompressed 32-bit floats, striped or tiled
-(with padding), in either byte order, georeferenced by ModelPixelScale and ModelTiepoint."""
+"""Minimal GeoTIFF reader for elevation grids (NRCan, Ontario's LiDAR): one band of uncompressed 32-bit
+floats, striped or tiled (with padding), in either byte order, georeferenced by ModelPixelScale and
+ModelTiepoint. Tiles a sparse file leaves out (offset or byte count 0) have no data."""
 import struct
 
 import numpy as np
@@ -88,10 +89,13 @@ def _tiled(data, dtype, w, h, tags):
     tw, th = _one(tags, 322, 0), _one(tags, 323, 0)
     across, down = -(-w // tw), -(-h // th)
     offsets = tags[324]
-    if len(offsets) < across * down:
+    counts = tags.get(325, offsets)
+    if len(offsets) < across * down or len(counts) < across * down:
         raise ValueError("missing tiles")
-    canvas = np.empty((down * th, across * tw), dtype=dtype)
+    canvas = np.full((down * th, across * tw), np.nan, dtype=dtype)
     for k in range(across * down):
+        if offsets[k] == 0 or counts[k] == 0:
+            continue  # left out of a sparse file: no data there
         row, col = divmod(k, across)
         block = np.frombuffer(data, dtype=dtype, count=tw * th, offset=offsets[k]).reshape(th, tw)
         canvas[row * th:(row + 1) * th, col * tw:(col + 1) * tw] = block
