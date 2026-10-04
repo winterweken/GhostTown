@@ -10,3 +10,5 @@ Recorded with `uv run python tools/record_fixtures.py`. Answers are gzipped exac
   The London file is NRCan's 1×1 placeholder for a site outside Canada.
 - `bay/toronto_*.json.gz`: City of Toronto open data. Contains information licensed under the Open Government
   Licence – Toronto.
+- `bay/massing_subset.zip`: a slice of the City of Toronto 3D Massing model (2025), recorded by
+  `tools/record_massing_fixture.py`. Contains information licensed under the Open Government Licence – Toronto.

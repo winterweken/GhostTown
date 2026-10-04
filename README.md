@@ -48,7 +48,7 @@ Everything is in metres, with x east, y north, the address at the origin and z =
 
 ![Downtown Toronto around 320 Bay St](media/downtown.jpg)
 
-*320 Bay St, Toronto, 300 m radius: 64 buildings in 773 tiers.*
+*320 Bay St, Toronto, 300 m radius.*
 
 ## Install
 
@@ -137,7 +137,9 @@ you rely on against a survey.
 you press the search button or Build Context. It sends what the query needs (the address you search for, or
 the location and radius you build) and nothing else. Answers are cached on your computer for 30 days. The
 City's 3D Massing model is downloaded once per yearly edition (81 MB, about 300 MB unpacked in the cache
-folder) and kept until a newer edition comes out.
+folder) and kept until a newer edition comes out. It lives in the cache folder (Preferences › Cache folder;
+by default the extension's own folder); deleting its `toronto_massing` folder is safe, and the next Toronto
+build downloads it again.
 
 Ghost Town is an independent project. It is not affiliated with or endorsed by the City of Toronto,
 Natural Resources Canada or OpenStreetMap.
@@ -145,7 +147,7 @@ Natural Resources Canada or OpenStreetMap.
 ## Known limits
 
 - Outside Toronto there are no roads, trees or parcels yet, and outside Canada the ground is flat.
-- Buildings are flat-topped prisms: no roof shapes, and canopies and kiosks are left out.
+- Buildings are flat-topped prisms: no roof shapes.
 - Bridges and elevated rail are draped onto the ground.
 - A stream is flat at one level along its length instead of following its valley.
 - Rebuilding a site resets colours you changed on the `Context - …` materials.
