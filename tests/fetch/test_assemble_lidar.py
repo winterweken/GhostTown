@@ -1,8 +1,10 @@
 import numpy as np
 import pytest
+import shapely
 
 from ghosttown_fetch import DEFAULT_LAYERS
 from ghosttown_fetch import context as ctx
+from ghosttown_fetch import lidar_roofs
 from ghosttown_fetch.assemble import CITY_MODEL_ONLY, LIDAR_STAGE, assemble
 from ghosttown_fetch.frame import Frame
 from ghosttown_fetch.net import SourceError
@@ -81,6 +83,17 @@ def test_a_site_outside_the_surveys_has_no_lidar(tmp_path):
 def test_too_little_lidar_under_the_buildings_counts_as_none(tmp_path):
     doc = assemble(_req(tmp_path, layers=WITH_LIDAR), _net(_lidar(gaps=lambda x, y: (x > -20) & (x < 20))))
     assert "lidar" not in doc and _notes(doc, "info") == [f"Ontario has no LiDAR here. {FLAT_ROOFS}"]
+
+
+def test_a_geometry_error_in_the_coverage_check_is_a_warning_and_the_build_goes_on(tmp_path, monkeypatch):
+    def boom(*args, **kw):
+        raise shapely.errors.GEOSException("boom")
+
+    monkeypatch.setattr(lidar_roofs, "coverage", boom)
+    doc = assemble(_req(tmp_path, layers=WITH_LIDAR), _net(_lidar(tops=[(0, 0, 10, 10, 22.0)])))
+    assert "lidar" not in doc and "toronto:building:7" in {e["id"] for e in doc["elements"]}
+    assert _notes(doc, "warn") == [f"The LiDAR roofs couldn't be built (boom). {FLAT_ROOFS}"]
+    assert not (tmp_path / "o" / "lidar_roofs.npz").exists()
 
 
 def test_the_progress_line_warns_the_first_request_is_slow(tmp_path):

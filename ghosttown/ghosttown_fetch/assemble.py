@@ -92,6 +92,9 @@ def _lidar(doc, net, frame, radius, out_dir, progress):
     except SourceError as e:
         ctx.note(doc, "warn", "lidar", f"{e} {FLAT_ROOFS}")
         return
+    except shapely.errors.GEOSException as e:
+        ctx.note(doc, "warn", "lidar", f"The LiDAR roofs couldn't be built ({str(e)[:80]}). {FLAT_ROOFS}")
+        return
     progress("LiDAR roofs", 78)
     try:
         arrays, counts = lidar_roofs.build(doc["elements"], heights, cell)

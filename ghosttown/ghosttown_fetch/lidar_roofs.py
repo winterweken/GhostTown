@@ -350,7 +350,10 @@ def build(elements, heights, cell):
         for s in el["solids"]:
             ground = s.get("ground", s["z0"] + SINK_M)
             city = s["height_source"].startswith("toronto")
-            made = roof_solid(s["rings"], s["z0"], s["z1"], ground, heights, cell, city)
+            try:
+                made = roof_solid(s["rings"], s["z0"], s["z1"], ground, heights, cell, city)
+            except shapely.errors.GEOSException:  # the geometry library chokes on this outline: flat top
+                made = None
             if made is None:
                 flat += 1
                 made = prism(s["rings"], s["z0"], s["z1"])

@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+import shapely
 
 from ghosttown_fetch import context as ctx
 from ghosttown_fetch import lidar_roofs as roofs
@@ -127,6 +128,25 @@ def test_a_solid_whose_roof_cant_be_built_keeps_a_flat_closed_top(monkeypatch):
     assert counts == {"buildings": 1, "triangles": 12, "flat": 1}
     v, f = arrays["verts"], arrays["faces"]
     assert closed_outward(v.astype(float), f) and sorted(set(v[:, 2].tolist())) == [pytest.approx(-0.3), 18.0]
+
+
+def test_one_solid_the_geometry_library_chokes_on_keeps_a_flat_top_and_the_rest_keep_their_roofs(monkeypatch):
+    real = roofs.roof_solid
+
+    def choke_on_the_low_solid(rings, z0, z1, *rest):
+        if z1 == 12.0:
+            raise shapely.errors.GEOSException("boom")
+        return real(rings, z0, z1, *rest)
+
+    monkeypatch.setattr(roofs, "roof_solid", choke_on_the_low_solid)
+    els = [ctx.element("a", "building", solids=[solid(square(0, 0, 10), 18.0), solid(square(10, 0, 10), 12.0)])]
+    arrays, counts = roofs.build(els, FLAT20, 0.5)
+    assert list(arrays["building_ids"]) == ["a"] and counts["buildings"] == 1 and counts["flat"] == 1
+    v, f = arrays["verts"], arrays["faces"]
+    assert roofs.closed(f) and closed_outward(v.astype(float), f) and counts["triangles"] == len(f)
+    roof = v[arrays["interior"].astype(bool)]
+    assert len(roof) and np.allclose(roof[:, 2], 20.0)  # the first solid's roof follows the LiDAR
+    assert 12.0 in v[:, 2] and (v[v[:, 0] > 10][:, 2] <= 12.0).all()  # the second keeps its flat top
 
 
 def test_no_buildings_no_arrays():
