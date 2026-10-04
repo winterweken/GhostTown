@@ -110,8 +110,12 @@ def _lidar(doc, net, frame, radius, out_dir, progress):
     doc["lidar"] = {"file": lidar_roofs.FILE, "cell_m": cell, "year": None, "source": "ontario",
                     "buildings": counts["buildings"], "triangles": counts["triangles"], "kinds": list(BUILDING_KINDS)}
     ctx.add_source(doc, "ontario")
-    ctx.note(doc, "info", "lidar", f"LiDAR roofs: Geospatial Ontario, {counts['buildings']} buildings, "
-                                   f"{counts['triangles']:,} triangles.")
+    text = f"LiDAR roofs: Geospatial Ontario, {counts['buildings']} buildings, {counts['triangles']:,} triangles."
+    if counts["newer"] == 1:
+        text += " 1 building part is newer than the LiDAR survey and keeps a flat top."
+    elif counts["newer"]:
+        text += f" {counts['newer']:,} building parts are newer than the LiDAR survey and keep flat tops."
+    ctx.note(doc, "info", "lidar", text)
 
 
 def assemble(request, net, *, progress=None):

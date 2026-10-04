@@ -194,6 +194,8 @@ Natural Resources Canada, the Province of Ontario or OpenStreetMap.
 - Buildings are flat-topped prisms unless they have LiDAR roofs (Ontario, outside the City of Toronto's 3D
   Massing model), and LiDAR roofs carry no roof planes, just measured points.
 - Trees over a roof raise that part of a LiDAR roof.
+- A building newer than the province's LiDAR survey keeps its flat top in LiDAR mode, and one surveyed while
+  under construction can show a partly built roof.
 - Bridges and elevated rail are draped onto the ground.
 - A stream is flat at one level along its length instead of following its valley.
 - Rebuilding a site resets colours you changed on the `Context - …` materials.

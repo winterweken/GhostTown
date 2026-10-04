@@ -11,10 +11,10 @@ from ghosttown_fetch.net import SourceError
 from ghosttown_fetch.sources import ontario_lidar
 from fakes import FakeNet, router
 from lidar_samples import LAKE_NONE, rasters
-from test_assemble import FAR, OSM, _city, _req
+from test_assemble import FAR, OSM, TIER, _city, _req
 from test_assemble_massing import _massing
 from tiff_samples import east_slope_tiff
-from toronto_samples import LAT0, LON0, page
+from toronto_samples import LAT0, LON0, page, square
 
 F = Frame(LAT0, LON0)
 WITH_LIDAR = list(DEFAULT_LAYERS) + ["lidar"]
@@ -46,6 +46,24 @@ def test_city_outlines_get_lidar_roofs_beside_the_context(tmp_path):
         assert block["buildings"] == 1 and block["triangles"] == len(data["faces"])
     assert "ontario" in {s["key"] for s in doc["sources"]} and ctx.validate(doc) == []
     assert _notes(doc, "info") and not _notes(doc, "warn")
+    assert "newer" not in " ".join(_notes(doc, "info"))  # a roof the survey did see needs no second sentence
+
+
+def test_a_building_over_bare_ground_is_newer_than_the_survey_and_the_note_says_so(tmp_path):
+    doc = assemble(_req(tmp_path, layers=WITH_LIDAR), _net(_lidar()))  # the survey saw only ground there
+    assert doc["lidar"]["buildings"] == 1 and (tmp_path / "o" / "lidar_roofs.npz").exists() and ctx.validate(doc) == []
+    info, = _notes(doc, "info")
+    assert info.startswith("LiDAR roofs: Geospatial Ontario, 1 buildings, 12 triangles. ")
+    assert info.endswith(" 1 building part is newer than the LiDAR survey and keeps a flat top.")
+
+
+def test_the_note_counts_the_building_parts_newer_than_the_survey(tmp_path):
+    second = square(30, 0, 10, BUILDINGID=8, OBJECTID=11, DERIVED_HEIGHT=20.0, SUBTYPE_DESC="Building Outline")
+    toronto = _city(**{"BUILDINGID IN": page(TIER, second), "cot_geospatial3/FeatureServer/2/": page(TIER, second)})
+    doc = assemble(_req(tmp_path, layers=WITH_LIDAR), _net(_lidar(), toronto=toronto))
+    assert doc["lidar"]["buildings"] == 2
+    info, = _notes(doc, "info")
+    assert info.endswith(" 2 building parts are newer than the LiDAR survey and keep flat tops.")
 
 
 def test_osm_buildings_in_ontario_get_lidar_roofs_too(tmp_path):

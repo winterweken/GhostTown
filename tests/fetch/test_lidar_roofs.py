@@ -125,7 +125,7 @@ def test_a_solid_without_its_ground_measures_up_from_its_base():
 def test_a_solid_whose_roof_cant_be_built_keeps_a_flat_closed_top(monkeypatch):
     monkeypatch.setattr(roofs, "roof_solid", lambda *args: None)
     arrays, counts = roofs.build([ctx.element("a", "building", solids=[solid(square(0, 0, 10), 18.0)])], FLAT20, 0.5)
-    assert counts == {"buildings": 1, "triangles": 12, "flat": 1}
+    assert counts == {"buildings": 1, "triangles": 12, "flat": 1, "newer": 0}
     v, f = arrays["verts"], arrays["faces"]
     assert closed_outward(v.astype(float), f) and sorted(set(v[:, 2].tolist())) == [pytest.approx(-0.3), 18.0]
 
@@ -149,8 +149,52 @@ def test_one_solid_the_geometry_library_chokes_on_keeps_a_flat_top_and_the_rest_
     assert 12.0 in v[:, 2] and (v[v[:, 0] > 10][:, 2] <= 12.0).all()  # the second keeps its flat top
 
 
+def east_of(x_edge, low, high):
+    """Heights above ground that are `low` west of x_edge and `high` east of it."""
+    return Field(lambda x, y: np.where(x < x_edge, low, high))
+
+
+@pytest.mark.parametrize("source", ["osm_levels", "toronto_derived"])
+def test_a_building_newer_than_the_survey_keeps_its_flat_top(source):
+    ground_under_70_percent = east_of(7.0, 0.5, 30.0)
+    s = solid(square(0, 0, 10), 48.0, source=source)
+    arrays, counts = roofs.build([ctx.element("a", "building", solids=[s])], ground_under_70_percent, 0.5)
+    assert counts == {"buildings": 1, "triangles": 12, "flat": 0, "newer": 1}
+    v, f = arrays["verts"], arrays["faces"]
+    assert closed_outward(v.astype(float), f) and sorted(set(v[:, 2].tolist())) == [pytest.approx(-0.3), 48.0]
+
+
+def test_a_building_with_ground_under_less_than_half_of_it_gets_its_lidar_roof():
+    ground_under_30_percent = east_of(3.0, 0.5, 30.0)
+    s = solid(square(0, 0, 10), 48.0, source="osm_levels")
+    arrays, counts = roofs.build([ctx.element("a", "building", solids=[s])], ground_under_30_percent, 0.5)
+    assert counts["newer"] == 0 and counts["flat"] == 0 and counts["triangles"] > 12
+    assert arrays["verts"][:, 2].max() == pytest.approx(30.0)
+
+
+def test_a_guessed_height_keeps_following_the_lidar_down_to_the_ground():
+    s = solid(square(0, 0, 10), 9.0, "building_guessed", "guessed")
+    arrays, counts = roofs.build([ctx.element("a", "building_guessed", solids=[s])], east_of(100.0, 0.0, 30.0), 0.5)
+    assert counts["newer"] == 0 and counts["flat"] == 0
+    assert np.allclose(arrays["verts"][arrays["interior"].astype(bool)][:, 2], 2.0)  # the 2 m floor
+
+
+def test_no_lidar_under_most_of_a_known_height_building_keeps_its_flat_top():
+    missing_under_70_percent = Field(lambda x, y: np.where(x < 3, 30.0, np.nan))
+    s = solid(square(0, 0, 10), 48.0, source="osm_height")
+    arrays, counts = roofs.build([ctx.element("a", "building", solids=[s])], missing_under_70_percent, 0.5)
+    assert counts == {"buildings": 1, "triangles": 12, "flat": 0, "newer": 1}
+    assert sorted(set(arrays["verts"][:, 2].tolist())) == [pytest.approx(-0.3), 48.0]
+
+
+def test_a_footprint_smaller_than_a_cell_is_judged_at_its_own_point():
+    s = solid(square(0.1, 0.1, 0.3), 48.0, source="osm_levels")
+    _, counts = roofs.build([ctx.element("a", "building", solids=[s])], east_of(100.0, 0.5, 30.0), 0.5)
+    assert counts["newer"] == 1
+
+
 def test_no_buildings_no_arrays():
-    assert roofs.build([], FLAT20, 0.5) == (None, {"buildings": 0, "triangles": 0, "flat": 0})
+    assert roofs.build([], FLAT20, 0.5) == (None, {"buildings": 0, "triangles": 0, "flat": 0, "newer": 0})
 
 
 def test_the_file_reads_back_without_pickles(tmp_path):

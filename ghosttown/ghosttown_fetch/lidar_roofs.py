@@ -10,8 +10,10 @@ cut cells are triangulated where the outline crosses them (the ground layout's m
 outline sample the LiDAR half a cell inside, so eaves don't pick up the ground or trees beside the
 building. Walls run from the solid's base up to the roof along the roof's own edge, courtyards
 included, and a flat bottom closes the mesh, so every solid is closed by construction. A solid that
-can't be made that way keeps its flat top. Heights are the solid's own ground plus the LiDAR's height
-above ground, so the roofs sit on Ghost Town's terrain.
+can't be made that way keeps its flat top, and so does one the survey predates: a building of known
+height with ground or no LiDAR under most of its footprint, which would otherwise shrink to a 2 m slab.
+Heights are the solid's own ground plus the LiDAR's height above ground, so the roofs sit on Ghost
+Town's terrain.
 """
 import io
 import math
@@ -34,6 +36,7 @@ OTHER_RANGE_M = (2.0, 400.0)  # other buildings keep LiDAR heights within this r
 MIN_WALL_M = 0.05      # a roof point never comes closer than this to the solid's base
 COVERAGE_STEP_M = 2.0
 MIN_COVERAGE = 0.05    # less LiDAR than this under the footprints counts as none
+PREDATES_SHARE = 0.5   # ground or no LiDAR under more than this share of a known-height footprint: built after the survey
 
 
 def _snap(v, cell):
@@ -335,14 +338,31 @@ def coverage(heights, elements, step_m=COVERAGE_STEP_M):
     return float(np.isfinite(heights.sample(xs, ys)).mean())
 
 
+def predates(rings, heights, cell):
+    """True when the survey looks older than the building: more than PREDATES_SHARE of the points every
+    `cell` metres inside the outline have no LiDAR or stand under CITY_GROUND_M above the ground."""
+    outline = Polygon(rings[0])
+    minx, miny, maxx, maxy = outline.bounds
+    gx, gy = np.meshgrid(np.arange(minx, maxx, cell), np.arange(miny, maxy, cell))
+    gx, gy = gx.ravel(), gy.ravel()
+    inside = shapely.contains_xy(outline, gx, gy)
+    xs, ys = gx[inside], gy[inside]
+    if xs.size == 0:
+        xs, ys = shapely.get_coordinates(shapely.point_on_surface(outline)).T
+    above = heights.sample(xs, ys)
+    return float(np.mean(~(above >= CITY_GROUND_M))) > PREDATES_SHARE
+
+
 def build(elements, heights, cell):
     """(arrays, counts) for every wanted building, or (None, counts) when there is none. Arrays follow
     the npz layout: verts, faces (indices within each building), face_kind (index into kinds), interior,
-    building_ids, vert_start and face_start (each building's slice), kinds. counts: buildings, triangles
-    and flat (solids that kept their flat top)."""
+    building_ids, vert_start and face_start (each building's slice), kinds. counts: buildings, triangles,
+    flat (solids whose roof couldn't be built, which kept their flat top) and newer (solids of known
+    height that the survey predates, which kept their flat top too: the LiDAR under most of them is the
+    ground or missing). A solid with a guessed height follows the LiDAR wherever it is."""
     verts, faces, face_kind, interior, ids = [], [], [], [], []
     vert_start, face_start = [0], [0]
-    flat = 0
+    flat = newer = 0
     for el in elements:
         if not wanted(el):
             continue
@@ -350,12 +370,17 @@ def build(elements, heights, cell):
         for s in el["solids"]:
             ground = s.get("ground", s["z0"] + SINK_M)
             city = s["height_source"].startswith("toronto")
+            survey_is_older = False
             try:
-                made = roof_solid(s["rings"], s["z0"], s["z1"], ground, heights, cell, city)
+                survey_is_older = s["height_source"] != "guessed" and predates(s["rings"], heights, cell)
+                made = None if survey_is_older else roof_solid(s["rings"], s["z0"], s["z1"], ground, heights, cell, city)
             except shapely.errors.GEOSException:  # the geometry library chokes on this outline: flat top
                 made = None
             if made is None:
-                flat += 1
+                if survey_is_older:
+                    newer += 1
+                else:
+                    flat += 1
                 made = prism(s["rings"], s["z0"], s["z1"])
                 if made is None:
                     continue
@@ -370,7 +395,7 @@ def build(elements, heights, cell):
             ids.append(el["id"])
             vert_start.append(vert_start[-1] + nv)
             face_start.append(face_start[-1] + nf)
-    counts = {"buildings": len(ids), "triangles": face_start[-1], "flat": flat}
+    counts = {"buildings": len(ids), "triangles": face_start[-1], "flat": flat, "newer": newer}
     if not ids:
         return None, counts
     arrays = {
