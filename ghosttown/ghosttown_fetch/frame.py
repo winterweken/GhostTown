@@ -36,3 +36,10 @@ def lonlat_to_merc(lon, lat):
     lon = np.asarray(lon, dtype=float)
     lat = np.asarray(lat, dtype=float)
     return A * np.radians(lon), A * np.log(np.tan(np.pi / 4 + np.radians(lat) / 2))
+
+
+def merc_to_lonlat(x, y):
+    """lon/lat degrees from Web Mercator (EPSG:3857) metres; the inverse of lonlat_to_merc."""
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    return np.degrees(x / A), np.degrees(2 * np.arctan(np.exp(y / A)) - np.pi / 2)
