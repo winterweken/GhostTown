@@ -168,6 +168,6 @@ def fetch(net, cache_dir, frame, radius_m, progress=None):
         return site_parts(folder, frame, radius_m), edition.year
     except SourceError:
         raise
-    except (OSError, ValueError, KeyError, EOFError, zipfile.BadZipFile, shapely.errors.GEOSException) as e:
+    except Exception as e:  # not BaseException: Ctrl-C still stops the build
         shutil.rmtree(folder, ignore_errors=True)
         raise SourceError(f"The City's 3D Massing model couldn't be read ({type(e).__name__}: {e}).") from None

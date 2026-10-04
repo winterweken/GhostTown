@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import struct
 import zipfile
 
 import pytest
@@ -111,3 +112,19 @@ def test_a_damaged_part_is_repaired_or_skipped_not_fatal(tmp_path):
     good = part(square(50, 0, 10), 12.0)
     parts, _ = massing.fetch(net_for(zip_bytes=zipped([bow_tie, good])), str(tmp_path), F, 300)
     assert 1 in [p.record for p in parts] and all(poly.is_valid for p in parts for poly in p.polygons)
+
+
+def test_a_corrupt_member_that_passes_the_zip_check_falls_back_cleanly(tmp_path):
+    data = zipped([part(square(7 * i, 3 * (i % 5), 5 + i % 4), 10.0 + i) for i in range(60)])
+    z = zipfile.ZipFile(io.BytesIO(data))
+    info = next(i for i in z.infolist() if i.filename.endswith(".shp"))
+    name_len, extra_len = struct.unpack_from("<HH", data, info.header_offset + 26)
+    start = info.header_offset + 30 + name_len + extra_len
+    assert info.compress_size > 200  # long enough to damage well inside the stream
+    middle = start + info.compress_size // 2
+    damaged = data[:middle] + b"\xff" * 16 + data[middle + 16:]
+    massing._check_zip(damaged)  # the directory is intact, so the download check passes
+    with pytest.raises(SourceError):
+        massing.fetch(net_for(zip_bytes=damaged), str(tmp_path), F, 300)
+    root = tmp_path / "toronto_massing"
+    assert not root.exists() or os.listdir(root) == []
