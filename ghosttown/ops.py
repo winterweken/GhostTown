@@ -4,9 +4,9 @@ import re
 import time
 
 import bpy
-from bpy.props import IntProperty, StringProperty
+from bpy.props import EnumProperty, IntProperty, StringProperty
 
-from . import georef, prefs, runner, scene_build
+from . import georef, prefs, runner, scene_build, site_use
 from .ghosttown_fetch import context as ctx
 from .ghosttown_fetch import request as rq
 from .ghosttown_fetch import LAYERS
@@ -299,6 +299,50 @@ class GHOSTTOWN_OT_copy_survey(bpy.types.Operator):
     def execute(self, context):
         context.window_manager.clipboard = context.scene.ghosttown.survey
         self.report({"INFO"}, "Copied the survey point.")
+        return {"FINISHED"}
+
+
+def _has_photo(context):
+    root = site_use.picked(context)
+    return context.mode == "OBJECT" and root is not None and bool(root.get("ctx_photo_material"))
+
+
+class GHOSTTOWN_OT_use_ground(bpy.types.Operator):
+    bl_idname = "ghosttown.use_ground"
+    bl_label = "Ground"
+    bl_description = "Show the aerial photo, or the colours by kind, on the picked site's ground"
+    bl_options = {"REGISTER", "UNDO"}
+
+    use: EnumProperty(items=(("colours", "Colours", "Colours by kind, as exported"),
+                             ("photo", "Photo", "The aerial photo")))
+
+    @classmethod
+    def poll(cls, context):
+        return _has_photo(context)
+
+    def execute(self, context):
+        site_use.apply_ground(site_use.picked(context), self.use)
+        return {"FINISHED"}
+
+
+class GHOSTTOWN_OT_use_roofs(bpy.types.Operator):
+    bl_idname = "ghosttown.use_roofs"
+    bl_label = "Roofs"
+    bl_description = "Put the aerial photo on the roofs of the picked site's lower buildings, or keep them plain"
+    bl_options = {"REGISTER", "UNDO"}
+
+    use: EnumProperty(items=(("plain", "Plain", "Roofs keep their building colours"),
+                             ("photo", "Photo", "The aerial photo on roofs, up to the height limit")))
+
+    @classmethod
+    def poll(cls, context):
+        return _has_photo(context)
+
+    def execute(self, context):
+        reset = site_use.apply_roofs(site_use.picked(context), self.use, context.scene.ghosttown.roof_photo_max_m)
+        if reset:
+            self.report({"WARNING"}, f"{reset} edited buildings couldn't get their exact roof materials back; "
+                                     "their roofs now use their first material.")
         return {"FINISHED"}
 
 
