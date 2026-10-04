@@ -1,4 +1,6 @@
 """The site's aerial photo in Blender: packed image, straight-down UV maps and the photo material."""
+import os
+
 import bpy
 import numpy as np
 
@@ -75,3 +77,23 @@ def forget(material_name, image_name):
     image = bpy.data.images.get(image_name or "")
     if image is not None and image.users == 0:
         bpy.data.images.remove(image)
+
+
+def save(root, directory):
+    """Write the site's photo as '<site> photo.jpg', plus a world file (.jgw) in the model's own
+    metres, origin at the site centre. Returns (jpg path, jgw path, width in metres)."""
+    image = bpy.data.images.get(root.get("ctx_photo_image", ""))
+    if image is None or image.packed_file is None:
+        raise ValueError("the photo isn't in this file")
+    stem = bpy.path.clean_name(root.get("ctx_label", "site")) + " photo"
+    xmin, ymin, xmax, ymax = (float(v) for v in root["photo_bounds_m"])
+    width_px, height_px = (int(v) for v in root["photo_px"])
+    os.makedirs(directory, exist_ok=True)
+    jpg = os.path.join(directory, stem + ".jpg")
+    with open(jpg, "wb") as f:
+        f.write(image.packed_file.data)
+    px, py = (xmax - xmin) / width_px, (ymax - ymin) / height_px
+    jgw = os.path.join(directory, stem + ".jgw")
+    with open(jgw, "w", encoding="ascii") as f:
+        f.write(f"{px:.6f}\n0.000000\n0.000000\n{-py:.6f}\n{xmin + px / 2:.6f}\n{ymax - py / 2:.6f}\n")
+    return jpg, jgw, xmax - xmin

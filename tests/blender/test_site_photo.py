@@ -4,8 +4,9 @@ import tempfile
 
 import bpy
 
-from ghosttown import scene_build
-from helpers import load_fixture, photo_doc
+import ghosttown
+from ghosttown import scene_build, site_photo
+from helpers import load_fixture, photo_doc, PHOTO
 
 SITE = "320 Bay St"
 
@@ -97,3 +98,30 @@ def test_the_photo_survives_saving_and_reopening_the_file():
     assert image.packed_file is not None and tuple(image.size) == (128, 128)
     road = next(ob for ob in bpy.data.objects if ob.get("ctx_kind") == "road")
     assert road.material_slots[0].link == "OBJECT" and road.material_slots[0].material.name == f"Site photo · {SITE}"
+
+
+def test_save_writes_the_photo_and_a_world_file_in_model_coordinates():
+    root, _ = photo_site()
+    out = tempfile.mkdtemp()
+    jpg, jgw, width = site_photo.save(root, out)
+    assert os.path.basename(jpg) == "320_Bay_St photo.jpg" and os.path.basename(jgw) == "320_Bay_St photo.jgw"
+    assert width == 300.0
+    with open(jpg, "rb") as saved, open(PHOTO, "rb") as original:
+        assert saved.read() == original.read()
+    with open(jgw, encoding="ascii") as f:
+        a, d, b, e, c, f_ = (float(v) for v in f.read().split())
+    pixel = 300.0 / 128
+    assert abs(a - pixel) < 1e-6 and d == 0 and b == 0 and abs(e + pixel) < 1e-6
+    assert abs(c - (-150 + pixel / 2)) < 1e-6 and abs(f_ - (150 - pixel / 2)) < 1e-6
+
+
+def test_the_save_operator_writes_for_the_picked_site():
+    ghosttown.register()
+    try:
+        root, _ = photo_site()
+        bpy.context.scene.ghosttown.site = root
+        out = tempfile.mkdtemp()
+        assert bpy.ops.ghosttown.save_photo(directory=out) == {"FINISHED"}
+        assert sorted(os.listdir(out)) == ["320_Bay_St photo.jgw", "320_Bay_St photo.jpg"]
+    finally:
+        ghosttown.unregister()

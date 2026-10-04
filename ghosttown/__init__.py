@@ -14,6 +14,7 @@ _CLASSES = (
     ops.GHOSTTOWN_OT_copy_survey,
     ops.GHOSTTOWN_OT_use_ground,
     ops.GHOSTTOWN_OT_use_roofs,
+    ops.GHOSTTOWN_OT_save_photo,
     ops.GHOSTTOWN_OT_cancel,
     ui.GHOSTTOWN_PT_main,
     ui.GHOSTTOWN_PT_site,

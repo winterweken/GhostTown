@@ -136,3 +136,4 @@ class GHOSTTOWN_PT_site(bpy.types.Panel):
             if root.get("use_roofs") == "photo":
                 box.prop(settings, "roof_photo_max_m")
                 box.label(text="Taller buildings lean in the photo.", icon="INFO")
+            box.operator("ghosttown.save_photo", icon="EXPORT")

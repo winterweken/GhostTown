@@ -6,7 +6,7 @@ import time
 import bpy
 from bpy.props import EnumProperty, IntProperty, StringProperty
 
-from . import georef, prefs, runner, scene_build, site_use
+from . import georef, prefs, runner, scene_build, site_photo, site_use
 from .ghosttown_fetch import context as ctx
 from .ghosttown_fetch import request as rq
 from .ghosttown_fetch import LAYERS
@@ -344,6 +344,33 @@ class GHOSTTOWN_OT_use_roofs(bpy.types.Operator):
         if reset:
             self.report({"WARNING"}, f"{reset} edited buildings couldn't get their exact roof materials back; "
                                      "their roofs now use their first material.")
+        return {"FINISHED"}
+
+
+class GHOSTTOWN_OT_save_photo(bpy.types.Operator):
+    bl_idname = "ghosttown.save_photo"
+    bl_label = "Save Site Photo…"
+    bl_description = "Save the picked site's aerial photo and a world file, to place under the model in Revit or CAD"
+
+    directory: StringProperty(subtype="DIR_PATH")
+
+    @classmethod
+    def poll(cls, context):
+        root = site_use.picked(context)
+        return root is not None and bool(root.get("ctx_photo_image"))
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {"RUNNING_MODAL"}
+
+    def execute(self, context):
+        try:
+            jpg, _jgw, width = site_photo.save(site_use.picked(context), bpy.path.abspath(self.directory))
+        except (OSError, ValueError) as e:
+            self.report({"ERROR"}, f"Couldn't save the photo ({e}).")
+            return {"CANCELLED"}
+        self.report({"INFO"}, f"Saved {os.path.basename(jpg)}. In Revit, set the image width to {width:g} m "
+                              "and centre it on the origin.")
         return {"FINISHED"}
 
 
