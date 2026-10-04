@@ -8,14 +8,14 @@ import bpy
 import ghosttown
 from ghosttown import ops, runner
 from ghosttown.ghosttown_fetch import request as rq
-from helpers import FIXTURES
+from helpers import FIXTURES, photo_doc
 
 SLEEPER = [sys.executable, "-c", "import time; time.sleep(30)"]
 
 
 class Settings:
-    def __init__(self, location, site_name="", radius="300"):
-        self.location, self.site_name, self.radius = location, site_name, radius
+    def __init__(self, location, site_name="", radius="300", fetch_photo=True):
+        self.location, self.site_name, self.radius, self.fetch_photo = location, site_name, radius, fetch_photo
 
 
 def test_register_and_unregister_twice():
@@ -212,22 +212,127 @@ def test_the_panel_icon_loads_and_unloads_with_the_add_on():
     assert not ui.icon_loaded() and ui.icon_id() == 0
 
 
-def test_import_shows_the_survey_point_and_copy_puts_it_on_the_clipboard():
+def test_the_survey_point_comes_from_the_picked_site_and_copies():
     ghosttown.register()
     try:
+        from ghosttown import georef
         bpy.ops.ghosttown.import_context(filepath=os.path.join(FIXTURES, "mini_context.json"))
-        survey = bpy.context.scene.ghosttown.survey
-        assert survey.splitlines()[:2] == ["WGS 84 / UTM zone 17N (EPSG:32617)", "Easting 630564.787 m"]
+        lines = georef.survey_lines(georef.survey_from(bpy.context.scene.ghosttown.site))
+        assert lines[:2] == ["WGS 84 / UTM zone 17N (EPSG:32617)", "Easting 630564.787 m"]
         assert bpy.ops.ghosttown.copy_survey() == {"FINISHED"}
         if not bpy.app.background:  # background mode has no clipboard: writes are dropped
-            assert bpy.context.window_manager.clipboard == survey
+            assert bpy.context.window_manager.clipboard == "\n".join(lines)
     finally:
         ghosttown.unregister()
 
 
-def test_copy_survey_waits_for_a_build_with_a_survey_point():
+def test_copy_survey_waits_for_a_picked_site_with_a_survey_point():
     ghosttown.register()
     try:
-        assert bpy.context.scene.ghosttown.survey == "" and not bpy.ops.ghosttown.copy_survey.poll()
+        assert bpy.context.scene.ghosttown.site is None and not bpy.ops.ghosttown.copy_survey.poll()
+    finally:
+        ghosttown.unregister()
+
+
+def test_the_site_panel_sits_under_the_main_panel_with_real_icons():
+    ghosttown.register()
+    try:
+        from ghosttown import ui
+        assert ui.GHOSTTOWN_PT_site.bl_parent_id == "GHOSTTOWN_PT_main"
+        assert hasattr(bpy.types, "GHOSTTOWN_PT_site") and not hasattr(bpy.context.scene.ghosttown, "survey")
+        icons = bpy.types.UILayout.bl_rna.functions["label"].parameters["icon"].enum_items.keys()
+        assert all(name in icons for name in ui.SITE_ICONS)
+    finally:
+        ghosttown.unregister()
+
+
+def test_the_solid_view_hint_is_in_the_panel_and_the_readme():
+    from ghosttown import ui
+    readme = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "README.md")
+    with open(readme, encoding="utf-8") as f:
+        assert ui.SOLID_HINT in f.read()
+    assert "Material Preview" in ui.SOLID_HINT and "Color: Texture" in ui.SOLID_HINT
+
+
+def test_the_roof_reset_warning_agrees_with_the_count():
+    assert ops.roofs_reset_warning(1).startswith("1 edited building couldn't get its exact")
+    assert ops.roofs_reset_warning(3).startswith("3 edited buildings couldn't get their exact")
+
+
+def test_the_photo_is_fetched_unless_turned_off():
+    with_photo = ops.make_request(Settings("43.649667, -79.380991"), "/tmp/gt-cache", now=0)
+    without = ops.make_request(Settings("43.649667, -79.380991", fetch_photo=False), "/tmp/gt-cache", now=0)
+    assert rq.validate(with_photo) == [] and rq.validate(without) == []
+    assert set(with_photo["layers"]) - set(without["layers"]) == {"photo"}
+
+
+def test_settings_offer_the_photo_and_a_site_picker_of_context_collections():
+    ghosttown.register()
+    try:
+        from ghosttown import props
+        settings = bpy.context.scene.ghosttown
+        assert settings.fetch_photo is True and settings.site is None
+        site = bpy.data.collections.new("Context · Test")
+        site["ctx_root"] = True
+        other = bpy.data.collections.new("My stuff")
+        loose = bpy.data.collections.new("Context · Elsewhere")
+        loose["ctx_root"] = True  # not linked into this scene
+        for coll in (site, other):
+            bpy.context.scene.collection.children.link(coll)
+        assert props.is_site(settings, site) and not props.is_site(settings, other) and not props.is_site(settings, loose)
+        settings.site = site
+        assert settings.site == site
+    finally:
+        ghosttown.unregister()
+
+
+def _write_context(doc, folder):
+    path = os.path.join(folder, "context.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(doc, f)
+    return path
+
+
+def test_import_with_a_photo_picks_the_site_and_names_the_photo_year():
+    ghosttown.register()
+    try:
+        folder = tempfile.mkdtemp()
+        path = _write_context(photo_doc(folder), folder)
+        assert bpy.ops.ghosttown.import_context(filepath=path) == {"FINISHED"}
+        settings = bpy.context.scene.ghosttown
+        assert settings.site is not None and settings.site.name == "Context · 320 Bay St"
+        assert settings.site.get("ctx_photo_image") and "aerial photo 2025" in settings.summary
+    finally:
+        ghosttown.unregister()
+
+
+def test_import_without_the_photo_file_still_builds():
+    ghosttown.register()
+    try:
+        folder = tempfile.mkdtemp()
+        doc = photo_doc(folder)
+        os.remove(os.path.join(folder, "photo.jpg"))
+        assert bpy.ops.ghosttown.import_context(filepath=_write_context(doc, folder)) == {"FINISHED"}
+        settings = bpy.context.scene.ghosttown
+        assert settings.site is not None and not settings.site.get("ctx_photo_image")
+        assert "aerial photo" not in settings.summary
+    finally:
+        ghosttown.unregister()
+
+
+def test_import_of_a_damaged_photo_builds_without_it_and_says_why():
+    ghosttown.register()
+    try:
+        folder = tempfile.mkdtemp()
+        doc = photo_doc(folder)
+        with open(os.path.join(folder, "photo.jpg"), "wb") as f:
+            f.write(bytes(2048))  # not a picture at all
+        reports = []
+        root = ops.import_into_scene(bpy.context, _write_context(doc, folder), lambda level, text: reports.append((level, text)))
+        settings = bpy.context.scene.ghosttown
+        assert root is not None and settings.site == root and not root.get("ctx_photo_image")
+        assert "aerial photo" not in settings.summary
+        assert ({"WARNING"}, "The aerial photo file is missing or unreadable beside the context file, "
+                             "so the site has no photo.") in reports
     finally:
         ghosttown.unregister()

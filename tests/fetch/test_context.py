@@ -91,3 +91,19 @@ def test_survey_is_optional_but_must_hold_numbers_when_present():
     assert ctx.validate(doc) == []
     doc["survey"]["northing_m"] = "4834419"
     assert ctx.validate(doc) == ["The survey point needs a numeric easting, northing and grid angle."]
+
+
+def test_photo_is_optional_but_must_be_well_formed():
+    doc = ctx.new(rq.build(centre={"lat": 43.65, "lon": -79.38}, radius_m=150, cache_dir="/c", out_dir="/o"),
+                  region="toronto", terrain_source="flat")
+    good = {"file": "photo.jpg", "year": 2025, "width_px": 3750, "height_px": 3750,
+            "bounds_m": [-150.0, -150.0, 150.0, 150.0], "source": "toronto"}
+    for fine in (good, dict(good, year=None)):
+        doc["photo"] = fine
+        assert ctx.validate(doc) == []
+    for bad in (dict(good, file="../photo.jpg"), dict(good, file="C:photo.jpg"), dict(good, file=""),
+                dict(good, bounds_m=[1, 0, 0, 1]),
+                dict(good, bounds_m=[0, 0, 1]), dict(good, width_px=0), dict(good, year="2025")):
+        doc["photo"] = bad
+        assert ctx.validate(doc) == [
+            "The photo needs a file name beside context.json, a pixel size and bounds_m [xmin, ymin, xmax, ymax]."]

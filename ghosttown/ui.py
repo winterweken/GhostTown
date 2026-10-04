@@ -2,7 +2,7 @@ import os
 
 import bpy
 
-from . import runner
+from . import georef, runner, site_use
 
 ICON_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons", "ghosttown.png")
 _previews = None
@@ -69,6 +69,9 @@ class GHOSTTOWN_PT_main(bpy.types.Panel):
             for i, item in enumerate(settings.results):
                 box.operator("ghosttown.pick", text=item.label).index = i
         layout.prop(settings, "radius")
+        row = layout.row(align=True)
+        row.label(text="Fetch")
+        row.prop(settings, "fetch_photo")
         if "build" in runner.ACTIVE:
             layout.label(text=runner.STATUS.get("build", "Working…"), icon="TIME")
             layout.operator("ghosttown.cancel", icon="CANCEL")
@@ -82,11 +85,58 @@ class GHOSTTOWN_PT_main(bpy.types.Panel):
             box.label(text=settings.summary, icon="CHECKMARK")
             for line in settings.credits.splitlines():
                 box.label(text=line)
-        if settings.survey:
+
+
+SITE_ICONS = ("EMPTY_AXIS", "COPYDOWN", "IMAGE_DATA", "INFO", "EXPORT")
+# The default Solid view colours by material, so it never shows the photo on the ground.
+SOLID_HINT = "Shows in Material Preview, or Solid view with Color: Texture."
+
+
+def _choice(layout, label, operator, current, options):
+    row = layout.row(align=True)
+    row.label(text=label)
+    for value, text in options:
+        row.operator(operator, text=text, depress=current == value).use = value
+
+
+class GHOSTTOWN_PT_site(bpy.types.Panel):
+    bl_idname = "GHOSTTOWN_PT_site"
+    bl_label = "Site"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "Ghost Town"
+    bl_parent_id = "GHOSTTOWN_PT_main"
+
+    @classmethod
+    def poll(cls, context):
+        return any(c.get("ctx_root") for c in context.scene.collection.children_recursive)
+
+    def draw(self, context):
+        layout = self.layout
+        settings = context.scene.ghosttown
+        layout.prop(settings, "site")
+        root = site_use.picked(context)
+        if root is None:
+            return
+        point = georef.survey_from(root)
+        if point:
             box = layout.box()
             row = box.row()
             row.label(text="Survey point (for Revit)", icon="EMPTY_AXIS")
             row.operator("ghosttown.copy_survey", text="", icon="COPYDOWN")
             col = box.column(align=True)
-            for line in settings.survey.splitlines():
+            for line in georef.survey_lines(point):
                 col.label(text=line)
+        if site_use.has_photo(root):
+            box = layout.box()
+            year = root.get("photo_year") or 0
+            box.label(text=f"Aerial photo {year}" if year else "Aerial photo", icon="IMAGE_DATA")
+            _choice(box, "Ground", "ghosttown.use_ground", root.get("use_ground"),
+                    (("colours", "Colours"), ("photo", "Photo")))
+            box.label(text=SOLID_HINT, icon="INFO")
+            _choice(box, "Roofs", "ghosttown.use_roofs", root.get("use_roofs"),
+                    (("plain", "Plain"), ("photo", "Photo")))
+            if root.get("use_roofs") == "photo":
+                box.prop(settings, "roof_photo_max_m")
+                box.label(text="Taller buildings lean in the photo.", icon="INFO")
+            box.operator("ghosttown.save_photo", icon="EXPORT")

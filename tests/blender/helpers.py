@@ -1,14 +1,27 @@
 import json
 import os
+import shutil
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 FIXTURES = os.path.join(HERE, "fixtures")
+PHOTO = os.path.join(ROOT, "tests", "fetch", "fixtures", "bay", "photo_128.jpg")
 
 
 def load_fixture(name):
     with open(os.path.join(FIXTURES, name), encoding="utf-8") as f:
         return json.load(f)
+
+
+def photo_doc(folder, address=None):
+    """The mini context with a 128 px photo covering ±150 m, copied into `folder` beside it."""
+    doc = load_fixture("mini_context.json")
+    if address is not None:
+        doc["address"] = address
+    shutil.copy(PHOTO, os.path.join(folder, "photo.jpg"))
+    doc["photo"] = {"file": "photo.jpg", "year": 2025, "width_px": 128, "height_px": 128,
+                    "bounds_m": [-150.0, -150.0, 150.0, 150.0], "source": "toronto"}
+    return doc
 
 
 def mesh_arrays(ob):

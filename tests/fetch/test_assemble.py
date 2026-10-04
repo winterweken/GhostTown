@@ -10,6 +10,7 @@ from osm_samples import body, way
 from osm_samples import square as osm_square
 from tiff_samples import east_slope_tiff
 from toronto_samples import LAT0, LON0, page, point, polygon, square
+import photo_samples
 
 OUTLINE = "Building Outline"
 CITY = polygon([(-3000, -3000), (3000, -3000), (3000, 3000), (-3000, 3000)], AREA_NAME="Toronto")
@@ -35,6 +36,7 @@ def _city(**overrides):
         "cot_geospatial27/FeatureServer/36/": page(square(-20, -20, 40, OBJECTID=3, PARCELID=55)),
         "FeatureServer/": page(),
     }
+    table.update(photo_samples.ANSWERS)
     table.update(overrides)
     return router(table)
 
