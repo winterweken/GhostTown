@@ -99,8 +99,10 @@ executable first. Install the zip as above.
    to fetch the province's LiDAR and give buildings outside the City of Toronto's 3D Massing model a
    second, measured roof. It is a large download, and the province's server can take a minute to answer
    the first request.
-6. Press **Build Context**. A 300 m site takes about 10 seconds and a 1000 m site about 20. Cancel or
-   Esc stops it, and Ctrl+Z removes a finished build in one step.
+6. Press **Build Context**. A 300 m site takes about 10 seconds and a 1000 m site about 20. With **LiDAR
+   roofs** ticked a build takes a few minutes more, because the province's server is slow to send the LiDAR
+   (a 300 m site in Hamilton took about 4 minutes). Cancel or Esc stops it, and Ctrl+Z removes a finished
+   build in one step.
 
 Building the same site again replaces what Ghost Town made and keeps anything you added, including
 your own objects and collections inside the context collection.
@@ -180,7 +182,8 @@ comes out. It lives in the cache folder (Preferences › Cache folder; by defaul
 deleting its `toronto_massing` folder is safe, and the next Toronto build downloads it again. With
 **Aerial photo** ticked, the photo comes from `gis.toronto.ca` with the build and is kept inside the .blend
 file, which adds up to about 5 MB. LiDAR answers (10–30 MB a site) are cached like the rest, and LiDAR roofs
-are kept inside the .blend file, about 40 MB for a 300 m downtown site (less with File › Save's compression).
+are kept inside the .blend file, about 20 to 30 MB for a dense 300 m site (less with Compress, in File › Save
+As or Preferences › Save & Load).
 
 Ghost Town is an independent project. It is not affiliated with or endorsed by the City of Toronto,
 Natural Resources Canada, the Province of Ontario or OpenStreetMap.

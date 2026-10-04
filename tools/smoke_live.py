@@ -40,7 +40,8 @@ os.makedirs(req["out_dir"])
 path = os.path.join(req["out_dir"], "request.json")
 with open(path, "w", encoding="utf-8") as f:
     json.dump(req, f)
-result = runner.run_blocking(["fetch", path], work_dir=req["out_dir"], extra_paths=wheels, timeout=300)
+result = runner.run_blocking(["fetch", path], work_dir=req["out_dir"], extra_paths=wheels,
+                             timeout=900 if with_lidar else 300)
 print("FETCH", result)
 assert result["ok"], result
 
