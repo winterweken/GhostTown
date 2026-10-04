@@ -90,6 +90,22 @@ def test_a_rebuild_replaces_the_photo_even_when_its_objects_are_gone():
     assert [m.name for m in bpy.data.materials if m.name.startswith("Site photo")] == [f"Site photo · {SITE}"]
 
 
+def test_a_rebuild_first_returns_the_site_to_plain_so_a_kept_duplicate_is_clean():
+    root, _ = photo_site()
+    _tower, shed = buildings(root)
+    names = [m.name for m in shed.data.materials]
+    site_use.apply_roofs(root, "photo", 100.0)
+    assert site_use.INDEX_ATTR in shed.data.attributes
+    twin = shed.copy()  # an Alt+D linked duplicate: it shares the mesh
+    bpy.context.scene.collection.objects.link(twin)
+    photo_site()
+    assert twin.data.users == 1 and [m.name for m in twin.data.materials] == names
+    assert site_use.INDEX_ATTR not in twin.data.attributes
+    assert all(p.material_index < len(names) for p in twin.data.polygons)
+    assert [i.name for i in bpy.data.images if i.name.startswith("Site photo")] == [f"Site photo · {SITE}"]
+    assert [m.name for m in bpy.data.materials if m.name.startswith("Site photo")] == [f"Site photo · {SITE}"]
+
+
 def test_removing_a_site_removes_its_photo():
     root, _ = photo_site()
     scene_build.remove(root, bpy.context.scene)
