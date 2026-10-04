@@ -17,8 +17,25 @@ def made_objects(root, kinds):
     return [ob for ob in root.all_objects if ob.name in names and ob.get("ctx_kind") in kinds]
 
 
+def _photo_block(root, id_key, name_key, blocks):
+    if id_key in root:
+        return root[id_key]  # the pointer; None once the datablock has been deleted
+    return blocks.get(root.get(name_key, ""))  # files made before the pointers existed
+
+
 def photo_material(root):
-    return bpy.data.materials.get(root.get("ctx_photo_material", ""))
+    """The site's photo material, or None when it is gone."""
+    return _photo_block(root, "ctx_photo_material_id", "ctx_photo_material", bpy.data.materials)
+
+
+def photo_image(root):
+    """The site's photo image, or None when it is gone."""
+    return _photo_block(root, "ctx_photo_image_id", "ctx_photo_image", bpy.data.images)
+
+
+def has_photo(root):
+    """True while the site's photo material exists, which is what the photo switches need."""
+    return photo_material(root) is not None
 
 
 def apply_ground(root, use):

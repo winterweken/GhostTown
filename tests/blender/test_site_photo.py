@@ -5,7 +5,7 @@ import tempfile
 import bpy
 
 import ghosttown
-from ghosttown import scene_build, site_photo
+from ghosttown import scene_build, site_photo, site_use
 from helpers import load_fixture, photo_doc, PHOTO
 
 SITE = "320 Bay St"
@@ -81,6 +81,15 @@ def test_a_rebuild_replaces_the_photo_without_duplicates():
     assert [m.name for m in bpy.data.materials if m.name.startswith("Site photo")] == [f"Site photo · {SITE}"]
 
 
+def test_a_rebuild_replaces_the_photo_even_when_its_objects_are_gone():
+    root, _ = photo_site()
+    for ob in ground(root):
+        bpy.data.objects.remove(ob)
+    photo_site()
+    assert [i.name for i in bpy.data.images if i.name.startswith("Site photo")] == [f"Site photo · {SITE}"]
+    assert [m.name for m in bpy.data.materials if m.name.startswith("Site photo")] == [f"Site photo · {SITE}"]
+
+
 def test_removing_a_site_removes_its_photo():
     root, _ = photo_site()
     scene_build.remove(root, bpy.context.scene)
@@ -98,6 +107,24 @@ def test_the_photo_survives_saving_and_reopening_the_file():
     assert image.packed_file is not None and tuple(image.size) == (128, 128)
     road = next(ob for ob in bpy.data.objects if ob.get("ctx_kind") == "road")
     assert road.material_slots[0].link == "OBJECT" and road.material_slots[0].material.name == f"Site photo · {SITE}"
+
+
+def test_the_photo_outlives_the_objects_that_showed_it():
+    root, folder = photo_site()
+    for ob in ground(root):
+        bpy.data.objects.remove(ob)  # nothing draws the photo now, and roofs are plain
+    site_use.apply_roofs(root, "plain")
+    shutil.rmtree(folder)
+    path = os.path.join(tempfile.mkdtemp(), "site.blend")
+    for _ in range(2):  # a datablock nothing uses is dropped on save, so it takes two rounds to notice
+        bpy.ops.wm.save_as_mainfile(filepath=path)
+        bpy.ops.wm.open_mainfile(filepath=path)
+    root = next(c for c in bpy.data.collections if c.get("ctx_root"))
+    assert bpy.data.images.get(f"Site photo · {SITE}") and bpy.data.materials.get(f"Site photo · {SITE}")
+    assert site_use.has_photo(root) and site_use.photo_image(root).packed_file is not None
+    tower, _shed = buildings(root)
+    site_use.apply_roofs(root, "photo", 100.0)
+    assert [m.name for m in tower.data.materials][-1] == f"Site photo · {SITE}"
 
 
 def test_save_writes_the_photo_and_a_world_file_in_model_coordinates():

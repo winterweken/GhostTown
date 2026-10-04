@@ -58,6 +58,10 @@ def attach(root, origin, label, path, photo):
     xmin, ymin, xmax, ymax = (float(v) for v in photo["bounds_m"])
     root["ctx_photo_image"] = image.name
     root["ctx_photo_material"] = material.name
+    # Pointers hold a real user each, so the photo stays in the file when no object shows it, and go
+    # when the root collection is removed.
+    root["ctx_photo_image_id"] = image
+    root["ctx_photo_material_id"] = material
     root["photo_bounds_m"] = [xmin, ymin, xmax, ymax]
     root["photo_px"] = [int(photo["width_px"]), int(photo["height_px"])]
     for block in (root, origin):
@@ -82,7 +86,7 @@ def forget(material_name, image_name):
 def save(root, directory):
     """Write the site's photo as '<site> photo.jpg', plus a world file (.jgw) in the model's own
     metres, origin at the site centre. Returns (jpg path, jgw path, width in metres)."""
-    image = bpy.data.images.get(root.get("ctx_photo_image", ""))
+    image = site_use.photo_image(root)
     if image is None or image.packed_file is None:
         raise ValueError("the photo isn't in this file")
     stem = bpy.path.clean_name(root.get("ctx_label", "site")) + " photo"

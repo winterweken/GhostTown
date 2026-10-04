@@ -116,6 +116,29 @@ def test_the_switches_wait_for_a_site_with_a_photo():
         ghosttown.unregister()
 
 
+def test_without_its_material_a_site_has_no_photo_and_the_switches_wait():
+    ghosttown.register()
+    try:
+        root, _ = photo_site()
+        bpy.context.scene.ghosttown.site = root
+        assert site_use.has_photo(root) and bpy.ops.ghosttown.use_ground.poll() and bpy.ops.ghosttown.use_roofs.poll()
+        bpy.data.materials.remove(site_use.photo_material(root))
+        assert not site_use.has_photo(root) and site_use.photo_material(root) is None
+        assert not bpy.ops.ghosttown.use_ground.poll() and not bpy.ops.ghosttown.use_roofs.poll()
+        assert site_use.photo_image(root) is not None and bpy.ops.ghosttown.save_photo.poll()
+        bpy.data.images.remove(site_use.photo_image(root))
+        assert not bpy.ops.ghosttown.save_photo.poll()
+    finally:
+        ghosttown.unregister()
+
+
+def test_an_older_file_finds_the_photo_by_name():
+    root, _ = photo_site()
+    del root["ctx_photo_material_id"], root["ctx_photo_image_id"]
+    assert site_use.photo_material(root).name == root["ctx_photo_material"]
+    assert site_use.photo_image(root).name == root["ctx_photo_image"]
+
+
 def _enter_edit_mode(ob):
     bpy.context.view_layer.objects.active = ob
     ob.select_set(True)

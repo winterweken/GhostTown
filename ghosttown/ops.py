@@ -305,7 +305,7 @@ class GHOSTTOWN_OT_copy_survey(bpy.types.Operator):
 
 def _has_photo(context):
     root = site_use.picked(context)
-    return context.mode == "OBJECT" and root is not None and bool(root.get("ctx_photo_material"))
+    return context.mode == "OBJECT" and root is not None and site_use.has_photo(root)
 
 
 class GHOSTTOWN_OT_use_ground(bpy.types.Operator):
@@ -357,7 +357,7 @@ class GHOSTTOWN_OT_save_photo(bpy.types.Operator):
     @classmethod
     def poll(cls, context):
         root = site_use.picked(context)
-        return root is not None and bool(root.get("ctx_photo_image"))
+        return root is not None and site_use.photo_image(root) is not None
 
     def invoke(self, context, event):
         context.window_manager.fileselect_add(self)

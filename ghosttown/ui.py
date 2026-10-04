@@ -125,7 +125,7 @@ class GHOSTTOWN_PT_site(bpy.types.Panel):
             col = box.column(align=True)
             for line in georef.survey_lines(point):
                 col.label(text=line)
-        if root.get("ctx_photo_material"):
+        if site_use.has_photo(root):
             box = layout.box()
             year = root.get("photo_year") or 0
             box.label(text=f"Aerial photo {year}" if year else "Aerial photo", icon="IMAGE_DATA")
