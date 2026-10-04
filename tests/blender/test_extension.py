@@ -417,3 +417,12 @@ def test_a_recount_is_scheduled_again_once_a_file_load_has_dropped_its_timer():
             if bpy.app.timers.is_registered(fn):
                 bpy.app.timers.unregister(fn)
         ghosttown.unregister()
+
+
+def test_the_readme_explains_lidar_roofs_and_the_revit_budget():
+    from ghosttown import ui
+    readme = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "README.md")
+    with open(readme, encoding="utf-8") as f:
+        text = f.read()
+    assert " ".join(ui.HEAVY) in text and "ws.geoservices.lrc.gov.on.ca" in text
+    assert "Contains information licensed under the Open Government Licence – Ontario" in text
