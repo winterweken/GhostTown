@@ -3,8 +3,9 @@
 City Planning publishes it on the open data portal under the Open Government Licence – Toronto, as one
 city-wide shapefile per year (2025: 81 MB zipped, 428,184 parts), in Web Mercator despite its name.
 Ghost Town downloads an edition once, keeps the unpacked files and an index of every part's box in the
-cache folder, and reads only a site's parts from them. An older edition is deleted once a newer one is
-ready; a copy that can't be read is deleted so the next build downloads it again. Heights come from
+cache folder, and reads only a site's parts from them. An older edition is deleted once a newer one has
+been read; a copy that can't be read is deleted so the next build downloads it again. When the newest
+edition can't be listed, downloaded or read, the newest saved copy is used. Heights come from
 AVG_HEIGHT, with HEIGHT_MSL − SURF_ELEV only as a fallback. Every part stands on the ground: MIN_HEIGHT
 is the lowest LiDAR return over a footprint, not a raised base, and is ignored.
 """
@@ -118,9 +119,17 @@ def _year_folders(root):
     return {int(name): os.path.join(root, name) for name in os.listdir(root) if re.fullmatch("[0-9]{4}", name)}
 
 
-def local_copy(net, cache_dir, edition, progress=None):
-    """The folder with the edition's massing.shp/.shx/.dbf and its index, downloaded the first time.
-    Another build can finish the same edition meanwhile: a ready folder is never replaced or deleted."""
+def _prune(root, year):
+    """Delete the copies of editions older than year."""
+    for old_year, old in _year_folders(root).items():
+        if old_year < year:
+            shutil.rmtree(old, ignore_errors=True)
+
+
+def local_copy(net, cache_dir, edition, progress=None, prune=True):
+    """The folder with the edition's massing.shp/.shx/.dbf and its index, downloaded the first time, and the
+    older editions deleted unless prune is False. Another build can finish the same edition meanwhile: a
+    ready folder is never replaced or deleted."""
     root = os.path.join(cache_dir, FOLDER)
     folder = os.path.join(root, str(edition.year))
     if not _ready(folder):
@@ -147,9 +156,8 @@ def local_copy(net, cache_dir, edition, progress=None):
                         raise
         finally:
             shutil.rmtree(staging, ignore_errors=True)  # nothing left to remove after a successful swap
-    for year, old in _year_folders(root).items():
-        if year < edition.year:
-            shutil.rmtree(old, ignore_errors=True)
+    if prune:
+        _prune(root, edition.year)
     return folder
 
 
@@ -200,16 +208,32 @@ def site_parts(folder, frame, radius_m):
     return parts
 
 
-def fetch(net, cache_dir, frame, radius_m, progress=None):
-    """(parts, edition year) for the square around a circle of radius_m. Every failure is a SourceError;
-    a local copy that can't be read is deleted so the next build downloads it again."""
-    edition = newest_edition(net)
-    folder = os.path.join(cache_dir, FOLDER, str(edition.year))
+def fetch(net, cache_dir, frame, radius_m, progress=None, note=None):
+    """(parts, edition year) for the square around a circle of radius_m. When the newest edition can't be
+    listed, downloaded or read, the newest ready copy in the cache is used instead, and note(text), if given,
+    says so. Every other failure is a SourceError; a local copy that can't be read is deleted so the next
+    build downloads it again."""
+    folder = None
     try:
-        folder = local_copy(net, cache_dir, edition, progress)
-        return site_parts(folder, frame, radius_m), edition.year
-    except SourceError:
-        raise
+        edition = newest_edition(net)
+        folder = local_copy(net, cache_dir, edition, progress, prune=False)
+        parts = site_parts(folder, frame, radius_m)
+        _prune(os.path.join(cache_dir, FOLDER), edition.year)  # the older edition stays until the newer one has been read
+        return parts, edition.year
     except Exception as e:  # not BaseException: Ctrl-C still stops the build
-        shutil.rmtree(folder, ignore_errors=True)
-        raise SourceError(f"The City's 3D Massing model couldn't be read ({type(e).__name__}: {e}).") from None
+        reason = e if isinstance(e, SourceError) else SourceError(
+            f"The City's 3D Massing model couldn't be read ({type(e).__name__}: {e}).")
+        if folder:
+            shutil.rmtree(folder, ignore_errors=True)  # a copy that was ready but can't be read
+    saved = _year_folders(os.path.join(cache_dir, FOLDER))
+    for year in sorted(saved, reverse=True):
+        if _ready(saved[year]):
+            try:
+                parts = site_parts(saved[year], frame, radius_m)
+            except Exception:
+                shutil.rmtree(saved[year], ignore_errors=True)
+                continue
+            if note:
+                note(f"{reason} Ghost Town used its saved {year} 3D Massing model instead.")
+            return parts, year
+    raise reason

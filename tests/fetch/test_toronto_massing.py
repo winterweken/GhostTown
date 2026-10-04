@@ -325,3 +325,89 @@ def test_a_part_whose_height_is_not_a_finite_number_is_dropped(tmp_path):
     table = shapefile.DBF((tmp_path / "toronto_massing" / "2099" / "massing.dbf").read_bytes())
     assert table.record(0)["AVG_HEIGHT"] == inf  # the file really holds inf
     assert [(p.record, p.height) for p in parts] == [(3, pytest.approx(15.0))]
+
+
+DOWN = SourceError("City of Toronto answered HTTP 503; try again in a minute.")
+
+
+def _portal_down(net):
+    net.answers["toronto"] = router({"package_show?id=3d-massing": DOWN})
+    return net
+
+
+def test_the_saved_copy_is_used_when_the_portal_cannot_be_asked(tmp_path):
+    net = net_for(years=(2099,))
+    massing.fetch(net, str(tmp_path), F, 300)
+    notes = []
+    parts, year = massing.fetch(_portal_down(net), str(tmp_path), F, 300, note=notes.append)
+    assert year == 2099 and [p.record for p in parts] == [0]
+    assert notes == [f"{DOWN} Ghost Town used its saved 2099 3D Massing model instead."]
+
+
+def test_fetching_a_newer_edition_removes_the_older_copy_once_it_has_been_read(tmp_path):
+    massing.fetch(net_for(years=(2098,)), str(tmp_path), F, 300)
+    notes = []
+    _, year = massing.fetch(net_for(years=(2098, 2099)), str(tmp_path), F, 300, note=notes.append)
+    assert year == 2099 and os.listdir(tmp_path / "toronto_massing") == ["2099"] and notes == []
+
+
+def test_a_fresh_edition_that_works_adds_no_note(tmp_path):
+    notes = []
+    massing.fetch(net_for(), str(tmp_path), F, 300, note=notes.append)
+    assert notes == []
+
+
+def test_the_saved_copy_is_used_when_the_newest_edition_is_damaged(tmp_path):
+    massing.fetch(net_for(years=(2098,)), str(tmp_path), F, 300)
+    notes = []
+    net = net_for(zip_bytes=b"PK\x03\x04 truncated", years=(2098, 2099))
+    parts, year = massing.fetch(net, str(tmp_path), F, 300, note=notes.append)
+    assert year == 2098 and [p.record for p in parts] == [0]
+    assert massing._ready(str(tmp_path / "toronto_massing" / "2098")) and not (tmp_path / "toronto_massing" / "2099").exists()
+    assert len(notes) == 1 and "whole zip" in notes[0] and notes[0].endswith("Ghost Town used its saved 2098 3D Massing model instead.")
+
+
+def test_the_saved_copy_is_used_when_the_newest_edition_cannot_be_unpacked(tmp_path):
+    massing.fetch(net_for(years=(2098,)), str(tmp_path), F, 300)
+    data = zipped([part(square(7 * i, 3 * (i % 5), 5 + i % 4), 10.0 + i) for i in range(60)])
+    z = zipfile.ZipFile(io.BytesIO(data))
+    info = next(i for i in z.infolist() if i.filename.endswith(".shp"))
+    name_len, extra_len = struct.unpack_from("<HH", data, info.header_offset + 26)
+    middle = info.header_offset + 30 + name_len + extra_len + info.compress_size // 2
+    damaged = data[:middle] + b"\xff" * 16 + data[middle + 16:]  # passes the download check, fails to unpack
+    parts, year = massing.fetch(net_for(zip_bytes=damaged, years=(2098, 2099)), str(tmp_path), F, 300)
+    assert year == 2098 and [p.record for p in parts] == [0]
+    assert os.listdir(tmp_path / "toronto_massing") == ["2098"]
+
+
+def test_a_newest_copy_that_cannot_be_read_is_deleted_but_not_the_older_one(tmp_path):
+    older = massing.local_copy(net_for(), str(tmp_path), massing.Edition(2098, f"{DOWNLOADS}/3DMassingShapefile_2098_WGS84.zip", 0))
+    newer = _ready_folder(tmp_path, 2099, b"not an index")  # looks ready, but nothing in it reads
+    notes = []
+    parts, year = massing.fetch(net_for(years=(2098, 2099)), str(tmp_path), F, 300, note=notes.append)
+    assert year == 2098 and [p.record for p in parts] == [0]
+    assert not newer.exists() and massing._ready(older)
+    assert len(notes) == 1 and "saved 2098" in notes[0]
+
+
+def test_an_unreadable_saved_copy_is_deleted_and_the_next_older_one_is_used(tmp_path):
+    older = massing.local_copy(net_for(), str(tmp_path), massing.Edition(2097, f"{DOWNLOADS}/3DMassingShapefile_2097_WGS84.zip", 0))
+    newer = _ready_folder(tmp_path, 2098, b"not an index")
+    parts, year = massing.fetch(_portal_down(net_for()), str(tmp_path), F, 300)
+    assert year == 2097 and [p.record for p in parts] == [0] and not newer.exists() and massing._ready(older)
+
+
+@pytest.mark.parametrize("saved", [None, "half made", "unreadable"])
+def test_without_a_usable_saved_copy_a_portal_failure_is_a_source_error(tmp_path, saved):
+    if saved == "half made":
+        folder = tmp_path / "toronto_massing" / "2098"
+        folder.mkdir(parents=True)
+        (folder / "massing.shp").write_bytes(b"left by a crashed run")  # no index: not ready
+    elif saved == "unreadable":
+        folder = _ready_folder(tmp_path, 2098, b"not an index")
+    notes = []
+    with pytest.raises(SourceError, match="HTTP 503"):
+        massing.fetch(_portal_down(net_for()), str(tmp_path), F, 300, note=notes.append)
+    assert notes == []
+    if saved == "unreadable":
+        assert not folder.exists()  # a copy that can't be read is deleted

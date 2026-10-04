@@ -35,6 +35,19 @@ def test_the_massing_copy_is_reused_on_the_next_build(tmp_path):
     assert sum("3DMassingShapefile_" in url for url, _, _ in net.calls) == 1
 
 
+def test_the_saved_massing_copy_is_used_when_the_portal_is_down_later(tmp_path):
+    assemble(_req(tmp_path), _net(toronto=_massing()))
+    net = _net()  # _city() answers the portal with HTTP 503
+    doc = assemble(_req(tmp_path), net)
+    assert _building_ids(doc) == ["toronto:massing:2099:0", "toronto:massing:2099:2"]
+    texts = [n["text"] for n in doc["notes"] if n["code"] == "city_massing" and n["level"] == "info"]
+    assert len(texts) == 2 and "used its saved 2099 3D Massing model" in texts[0]
+    assert "Buildings: City of Toronto 3D Massing 2099." in texts
+    assert not any(n["code"] == "city_massing" and n["level"] == "warn" for n in doc["notes"])
+    assert not any("cot_geospatial3/FeatureServer/2/" in url for url, _, _ in net.calls)  # no outline query
+    assert ctx.validate(doc) == []
+
+
 def test_without_the_massing_model_the_outlines_are_used_with_one_warning(tmp_path):
     doc = assemble(_req(tmp_path), _net())  # _city() answers the portal with HTTP 503
     assert "toronto:building:7" in _building_ids(doc)

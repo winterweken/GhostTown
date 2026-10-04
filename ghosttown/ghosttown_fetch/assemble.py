@@ -42,10 +42,12 @@ def _region(net, frame, radius):
 
 
 def _city_buildings(net, request, frame, radius, progress, doc):
-    """("massing", parts, year) from the City's newest 3D Massing edition, else ("outlines", features,
-    None) from the older topographic outlines, with one warning saying so."""
+    """("massing", parts, year) from the City's newest 3D Massing edition (or, when that can't be had, the
+    newest one saved on this computer, with a note saying so), else ("outlines", features, None) from the
+    older topographic outlines, with one warning saying so."""
     try:
-        parts, year = toronto_massing.fetch(net, request["cache_dir"], frame, radius + toronto.WHOLE_MARGIN_M, progress)
+        parts, year = toronto_massing.fetch(net, request["cache_dir"], frame, radius + toronto.WHOLE_MARGIN_M, progress,
+                                            note=lambda text: ctx.note(doc, "info", "city_massing", text))
     except SourceError as e:
         ctx.note(doc, "warn", "city_massing", f"{e} Using the City's older building outlines instead.")
         return "outlines", toronto.fetch_buildings(net, frame.lat0, frame.lon0, radius), None
