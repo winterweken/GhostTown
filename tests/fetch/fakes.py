@@ -9,9 +9,11 @@ class FakeNet:
     def __init__(self, answers):
         self.answers = answers
         self.calls = []
+        self.keeps = []
 
-    def get(self, url, *, source, data=None, check=None, timeout=120):
+    def get(self, url, *, source, data=None, check=None, timeout=120, keep=True):
         self.calls.append((url, source, data))
+        self.keeps.append(keep)
         answer = self.answers[source]
         if callable(answer):
             answer = answer(url, data)
