@@ -9,6 +9,10 @@ from .ghosttown_fetch import BUILDING_KINDS, GROUND_KINDS
 
 ROOF_NORMAL_Z = 0.5             # faces pointing up at least this much count as roof (pitched ones too)
 INDEX_ATTR = "ctx_material_index"
+FLAT_KEY, LIDAR_KEY = "ctx_mesh_flat", "ctx_mesh_lidar"  # a building's two meshes, when it has LiDAR roofs
+ROOF_GROUP = "roof interior"    # LiDAR roof vertices off the outline: the only ones Roof detail may move
+DETAIL_MODIFIER = "Ghost Town roof detail"
+SITE_KINDS = BUILDING_KINDS + GROUND_KINDS + ("tree", "parcel", "parcel_on_site")
 
 
 def made_objects(root, kinds):
@@ -123,3 +127,19 @@ def apply_roofs(root, use, max_m=None):
             _photo_roofs(ob, material)
     root["use_roofs"] = use
     return reset
+
+
+def meshes_of(ob):
+    """The meshes a building can show: the one in use, and the other roof shape when it has LiDAR roofs."""
+    out = [ob.data]
+    for key in (FLAT_KEY, LIDAR_KEY):
+        me = ob.get(key)
+        if me is not None and me not in out:
+            out.append(me)
+    return out
+
+
+def has_lidar(root):
+    """True while the site's buildings have LiDAR roofs to switch to."""
+    return root.get("use_roof_shapes") in ("flat", "lidar") and any(
+        ob.get(LIDAR_KEY) is not None for ob in made_objects(root, BUILDING_KINDS))
