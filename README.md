@@ -162,7 +162,7 @@ City's 3D Massing model is downloaded once per yearly edition (81 MB, about 300 
 folder) and kept until a newer edition comes out. It lives in the cache folder (Preferences › Cache folder;
 by default the extension's own folder); deleting its `toronto_massing` folder is safe, and the next Toronto
 build downloads it again. With **Aerial photo** ticked, the photo comes from `gis.toronto.ca` with the build
-and is kept inside the .blend file, which makes the file larger.
+and is kept inside the .blend file, which adds up to about 5 MB.
 
 Ghost Town is an independent project. It is not affiliated with or endorsed by the City of Toronto,
 Natural Resources Canada or OpenStreetMap.
