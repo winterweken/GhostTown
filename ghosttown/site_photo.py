@@ -48,15 +48,25 @@ def _material(label, image):
 
 def attach(root, origin, label, path, photo):
     """Pack the photo into the file, map it onto the site's ground and buildings, record it on the
-    root and origin, and show it on the ground (roofs stay plain)."""
+    root and origin, and show it on the ground (roofs stay plain). Raises RuntimeError when Blender
+    can't read the file and ValueError when it reads as an empty image; nothing is left behind."""
     image = bpy.data.images.load(path, check_existing=False)
-    image.name = PREFIX + label
-    image.pack()
-    # A name of its own, relative to the .blend: not the cache path, and not "photo.jpg" shared by every site.
-    image.filepath_raw = "//" + bpy.path.clean_name(label) + " photo.jpg"
-    material = _material(label, image)
-    for ob in site_use.made_objects(root, GROUND_KINDS + BUILDING_KINDS):
-        add_uvs(ob, photo["bounds_m"])
+    material = None
+    try:
+        if min(image.size) == 0:  # a damaged file loads as 0 x 0
+            raise ValueError("the photo file isn't a readable picture")
+        image.name = PREFIX + label
+        image.pack()
+        # A name of its own, relative to the .blend: not the cache path, and not "photo.jpg" shared by every site.
+        image.filepath_raw = "//" + bpy.path.clean_name(label) + " photo.jpg"
+        material = _material(label, image)
+        for ob in site_use.made_objects(root, GROUND_KINDS + BUILDING_KINDS):
+            add_uvs(ob, photo["bounds_m"])
+    except Exception:
+        if material is not None:
+            bpy.data.materials.remove(material)
+        bpy.data.images.remove(image)
+        raise
     xmin, ymin, xmax, ymax = (float(v) for v in photo["bounds_m"])
     root["ctx_photo_image"] = image.name
     root["ctx_photo_material"] = material.name

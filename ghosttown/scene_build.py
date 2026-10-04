@@ -105,7 +105,10 @@ def build(scene, doc, folder=None):
     if photo and folder:
         path = os.path.join(folder, photo["file"])
         if os.path.isfile(path):
-            site_photo.attach(root, origin, label, path, photo)
+            try:
+                site_photo.attach(root, origin, label, path, photo)
+            except (RuntimeError, ValueError):
+                pass  # a photo file Blender can't read: the site builds without a photo
     return root
 
 

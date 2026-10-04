@@ -313,3 +313,21 @@ def test_import_without_the_photo_file_still_builds():
         assert "aerial photo" not in settings.summary
     finally:
         ghosttown.unregister()
+
+
+def test_import_of_a_damaged_photo_builds_without_it_and_says_why():
+    ghosttown.register()
+    try:
+        folder = tempfile.mkdtemp()
+        doc = photo_doc(folder)
+        with open(os.path.join(folder, "photo.jpg"), "wb") as f:
+            f.write(bytes(2048))  # not a picture at all
+        reports = []
+        root = ops.import_into_scene(bpy.context, _write_context(doc, folder), lambda level, text: reports.append((level, text)))
+        settings = bpy.context.scene.ghosttown
+        assert root is not None and settings.site == root and not root.get("ctx_photo_image")
+        assert "aerial photo" not in settings.summary
+        assert ({"WARNING"}, "The aerial photo file is missing or unreadable beside the context file, "
+                             "so the site has no photo.") in reports
+    finally:
+        ghosttown.unregister()

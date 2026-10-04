@@ -69,6 +69,33 @@ def test_without_the_photo_file_the_site_builds_without_a_photo():
     assert road.material_slots[0].link == "DATA" and "Site photo" not in road.data.uv_layers
 
 
+def _assert_built_without_a_photo(root):
+    assert "ctx_photo_image" not in root and "ctx_photo_material" not in root and "use_ground" not in root
+    assert not bpy.data.images and not any(m.name.startswith("Site photo") for m in bpy.data.materials)
+    road, = ground(root)
+    assert road.material_slots[0].link == "DATA" and "Site photo" not in road.data.uv_layers
+
+
+def test_a_damaged_photo_file_builds_the_site_without_a_photo():
+    folder = tempfile.mkdtemp()
+    doc = photo_doc(folder)
+    with open(os.path.join(folder, "photo.jpg"), "wb") as f:
+        f.write(bytes(2048))  # Blender loads this as a 0 x 0 image
+    _assert_built_without_a_photo(scene_build.build(bpy.context.scene, doc, folder=folder))
+
+
+def test_an_unreadable_photo_file_builds_the_site_without_a_photo():
+    folder = tempfile.mkdtemp()
+    doc = photo_doc(folder)
+    path = os.path.join(folder, "photo.jpg")
+    os.chmod(path, 0)  # Blender raises RuntimeError: Cannot read
+    try:
+        root = scene_build.build(bpy.context.scene, doc, folder=folder)
+    finally:
+        os.chmod(path, 0o644)
+    _assert_built_without_a_photo(root)
+
+
 def test_without_a_folder_the_photo_is_skipped():
     root = scene_build.build(bpy.context.scene, photo_doc(tempfile.mkdtemp()))
     assert "ctx_photo_image" not in root

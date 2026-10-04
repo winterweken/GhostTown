@@ -109,7 +109,8 @@ def import_into_scene(context, path, report):
         year = photo.get("year")
         settings.summary += f", aerial photo {year}" if year else ", aerial photo"
     elif photo:
-        report({"WARNING"}, "The aerial photo file is missing beside the context file, so the site has no photo.")
+        report({"WARNING"}, "The aerial photo file is missing or unreadable beside the context file, "
+                            "so the site has no photo.")
     settings.credits = "\n".join(dict.fromkeys(s["credit"] for s in doc["sources"]))
     for note in doc["notes"]:
         if note["level"] == "warn":
