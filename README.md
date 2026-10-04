@@ -41,6 +41,8 @@ Each build makes one collection, `Context · <site>`:
   The pieces share their edges, so there are no cracks or overlaps. Water lies flat at its shoreline.
 - **Trees:** a trunk and a low-poly crown each, sized from the City's tree heights, merged into one object.
 - **Parcels:** lot lines draped 15 cm above the ground.
+- **Aerial photo** (Toronto): the City's newest aerial photo of the site, kept inside the .blend file,
+  for the ground and low roofs. See [Use](#use).
 - **Materials:** one per kind, named `Context - Building`, `Context - Road`, and so on. A building whose
   height had to be guessed is orange (`Context - Building (height guessed)`).
 - **Location:** a `Context origin` empty at 0,0,0 holding the latitude, longitude, ground elevation above
@@ -142,7 +144,7 @@ you used. The panel lists them after every build.
 
 | Source | Used for | Credit |
 |---|---|---|
-| City of Toronto open data | Buildings (3D Massing, newest yearly edition), ground, trees, parcels, addresses, city boundary | Contains information licensed under the Open Government Licence – Toronto |
+| City of Toronto open data | Buildings (3D Massing, newest yearly edition), aerial photo, ground, trees, parcels, addresses, city boundary | Contains information licensed under the Open Government Licence – Toronto |
 | Natural Resources Canada (HRDEM) | Terrain | Contains information licensed under the Open Government Licence – Canada |
 | OpenStreetMap | Buildings outside Toronto | © OpenStreetMap contributors (ODbL) |
 
@@ -159,7 +161,8 @@ the location and radius you build) and nothing else. Answers are cached on your 
 City's 3D Massing model is downloaded once per yearly edition (81 MB, about 300 MB unpacked in the cache
 folder) and kept until a newer edition comes out. It lives in the cache folder (Preferences › Cache folder;
 by default the extension's own folder); deleting its `toronto_massing` folder is safe, and the next Toronto
-build downloads it again.
+build downloads it again. With **Aerial photo** ticked, the photo comes from `gis.toronto.ca` with the build
+and is kept inside the .blend file, which makes the file larger.
 
 Ghost Town is an independent project. It is not affiliated with or endorsed by the City of Toronto,
 Natural Resources Canada or OpenStreetMap.
