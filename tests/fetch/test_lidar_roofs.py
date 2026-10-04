@@ -84,6 +84,21 @@ def test_a_tree_crown_over_part_of_a_roof_is_trimmed():
     assert z.max() <= 8.0 + roofs.RIDGE_M + 1e-6 and np.median(z) == pytest.approx(8.0)
 
 
+def test_a_tower_over_part_of_a_large_building_is_not_trimmed():
+    tower = Field(lambda x, y: np.where((x > 20) & (y > 20), 90.0, 20.0))  # a 20 x 20 m tower on a 40 x 40 m podium
+    v, f, inner = roofs.roof_solid([square(0, 0, 40)], -0.3, 20.0, 0.0, tower, 0.5, city=False)
+    assert closed_outward(v, f)
+    z = v[inner][:, 2]
+    assert z.max() == pytest.approx(90.0) and np.median(z) == pytest.approx(20.0)
+
+
+@pytest.mark.parametrize("size, top", [(20.0, 8.0 + 3.0), (20.5, 25.0)])  # 400 m2 is a house, 420 m2 is not
+def test_the_trim_stops_above_house_size(size, top):
+    crown = Field(lambda x, y: np.where((x > 0.7 * size) & (y > 0.7 * size), 25.0, 8.0))
+    v, f, inner = roofs.roof_solid([square(0, 0, size)], -0.3, 9.0, 0.0, crown, 0.5, city=False)
+    assert v[inner][:, 2].max() == pytest.approx(top)
+
+
 def test_a_pitched_roof_keeps_its_ridge_under_the_trim():
     ridge = Field(lambda x, y: 15.0 - np.abs(y - 5.0))  # eaves 10 m, ridge 15 m
     v, f, inner = roofs.roof_solid([square(0, 0, 10)], -0.3, 9.0, 0.0, ridge, 0.5, city=False)

@@ -13,8 +13,9 @@ included, and a flat bottom closes the mesh, so every solid is closed by constru
 can't be made that way keeps its flat top, and so does one the survey predates: a building of known
 height with ground or no LiDAR under most of its footprint, which would otherwise shrink to a 2 m slab.
 Heights are the solid's own ground plus the LiDAR's height above ground, so the roofs sit on Ghost
-Town's terrain. Other buildings' roofs are trimmed to their own median height plus 3 m, so a tree crown
-over part of a roof doesn't raise it.
+Town's terrain. Other buildings' house-sized roofs (up to 400 m2) are trimmed to their own median
+height plus 3 m, so a tree crown over part of a roof doesn't raise it; larger buildings keep their
+towers, wings and rooftop structures.
 """
 import io
 import math
@@ -36,6 +37,7 @@ CITY_GROUND_M = 2.0    # ...and this close to the ground is a gap; both take the
 OTHER_RANGE_M = (2.0, 400.0)  # other buildings keep LiDAR heights within this range above the ground
 MIN_WALL_M = 0.05      # a roof point never comes closer than this to the solid's base
 RIDGE_M = 3.0          # other buildings' roofs stop this far above their own median: tree crowns over part of a roof go, ridges stay
+HOUSE_MAX_M2 = 400.0   # the trim is for houses under trees; larger buildings keep towers, wings and rooftop structures
 COVERAGE_STEP_M = 2.0
 MIN_COVERAGE = 0.05    # less LiDAR than this under the footprints counts as none
 PREDATES_SHARE = 0.5   # ground or no LiDAR under more than this share of a known-height footprint: built after the survey
@@ -205,7 +207,8 @@ def _heights(xy, edge, poly, z0, z1, ground, heights, cell, city):
         above = np.where(keep, above, own)
     else:
         above = np.where(np.isfinite(above), np.clip(above, *OTHER_RANGE_M), own)
-        above = np.minimum(above, float(np.median(above)) + RIDGE_M)
+        if poly.area <= HOUSE_MAX_M2:
+            above = np.minimum(above, float(np.median(above)) + RIDGE_M)
     return np.maximum(ground + above, z0 + MIN_WALL_M)
 
 
