@@ -304,6 +304,13 @@ class GHOSTTOWN_OT_copy_survey(bpy.types.Operator):
         return {"FINISHED"}
 
 
+def roofs_reset_warning(count):
+    if count == 1:
+        return "1 edited building couldn't get its exact roof materials back; its roofs now use its first material."
+    return (f"{count} edited buildings couldn't get their exact roof materials back; "
+            "their roofs now use their first material.")
+
+
 def _has_photo(context):
     root = site_use.picked(context)
     return context.mode == "OBJECT" and root is not None and site_use.has_photo(root)
@@ -343,8 +350,7 @@ class GHOSTTOWN_OT_use_roofs(bpy.types.Operator):
     def execute(self, context):
         reset = site_use.apply_roofs(site_use.picked(context), self.use, context.scene.ghosttown.roof_photo_max_m)
         if reset:
-            self.report({"WARNING"}, f"{reset} edited buildings couldn't get their exact roof materials back; "
-                                     "their roofs now use their first material.")
+            self.report({"WARNING"}, roofs_reset_warning(reset))
         return {"FINISHED"}
 
 

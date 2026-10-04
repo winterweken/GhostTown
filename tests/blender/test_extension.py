@@ -254,6 +254,11 @@ def test_the_solid_view_hint_is_in_the_panel_and_the_readme():
     assert "Material Preview" in ui.SOLID_HINT and "Color: Texture" in ui.SOLID_HINT
 
 
+def test_the_roof_reset_warning_agrees_with_the_count():
+    assert ops.roofs_reset_warning(1).startswith("1 edited building couldn't get its exact")
+    assert ops.roofs_reset_warning(3).startswith("3 edited buildings couldn't get their exact")
+
+
 def test_the_photo_is_fetched_unless_turned_off():
     with_photo = ops.make_request(Settings("43.649667, -79.380991"), "/tmp/gt-cache", now=0)
     without = ops.make_request(Settings("43.649667, -79.380991", fetch_photo=False), "/tmp/gt-cache", now=0)
