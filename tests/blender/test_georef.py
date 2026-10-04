@@ -23,3 +23,12 @@ def test_survey_lines_for_a_west_angle_no_angle_and_an_unknown_elevation():
 
 def test_no_survey_lines_without_a_survey_point():
     assert georef.survey_lines(None) == []
+
+
+def test_survey_from_reads_the_stored_properties_back():
+    block = {"survey_epsg": "EPSG:2952", "survey_name": "NAD83(CSRS) / MTM zone 10", "survey_easting_m": 314400.285,
+             "survey_northing_m": 4834420.675, "survey_elevation_m": 84.712, "survey_grid_angle_deg": 0.082146}
+    assert georef.survey_from(block) == POINT
+    del block["survey_elevation_m"]
+    assert georef.survey_from(block)["elevation_m"] is None
+    assert georef.survey_from({"lat": 43.65}) is None

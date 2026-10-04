@@ -111,7 +111,6 @@ def import_into_scene(context, path, report):
     elif photo:
         report({"WARNING"}, "The aerial photo file is missing beside the context file, so the site has no photo.")
     settings.credits = "\n".join(dict.fromkeys(s["credit"] for s in doc["sources"]))
-    settings.survey = "\n".join(georef.survey_lines(doc.get("survey")))
     for note in doc["notes"]:
         if note["level"] == "warn":
             report({"WARNING"}, note["text"])
@@ -294,10 +293,12 @@ class GHOSTTOWN_OT_copy_survey(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return bool(context.scene.ghosttown.survey)
+        root = site_use.picked(context)
+        return root is not None and georef.survey_from(root) is not None
 
     def execute(self, context):
-        context.window_manager.clipboard = context.scene.ghosttown.survey
+        point = georef.survey_from(site_use.picked(context))
+        context.window_manager.clipboard = "\n".join(georef.survey_lines(point))
         self.report({"INFO"}, "Copied the survey point.")
         return {"FINISHED"}
 

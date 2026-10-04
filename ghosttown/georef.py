@@ -29,6 +29,15 @@ def props(doc):
     return p
 
 
+def survey_from(block):
+    """The survey point stored on a context collection or origin empty, in survey_lines' form."""
+    if "survey_epsg" not in block:
+        return None
+    return {"epsg": block["survey_epsg"], "name": block["survey_name"],
+            "easting_m": block["survey_easting_m"], "northing_m": block["survey_northing_m"],
+            "elevation_m": block.get("survey_elevation_m"), "grid_angle_deg": block["survey_grid_angle_deg"]}
+
+
 def survey_lines(point):
     """Where the origin sits on the survey grid, as the panel shows it and Copy puts it on the clipboard."""
     if not point:

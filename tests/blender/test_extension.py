@@ -212,23 +212,36 @@ def test_the_panel_icon_loads_and_unloads_with_the_add_on():
     assert not ui.icon_loaded() and ui.icon_id() == 0
 
 
-def test_import_shows_the_survey_point_and_copy_puts_it_on_the_clipboard():
+def test_the_survey_point_comes_from_the_picked_site_and_copies():
     ghosttown.register()
     try:
+        from ghosttown import georef
         bpy.ops.ghosttown.import_context(filepath=os.path.join(FIXTURES, "mini_context.json"))
-        survey = bpy.context.scene.ghosttown.survey
-        assert survey.splitlines()[:2] == ["WGS 84 / UTM zone 17N (EPSG:32617)", "Easting 630564.787 m"]
+        lines = georef.survey_lines(georef.survey_from(bpy.context.scene.ghosttown.site))
+        assert lines[:2] == ["WGS 84 / UTM zone 17N (EPSG:32617)", "Easting 630564.787 m"]
         assert bpy.ops.ghosttown.copy_survey() == {"FINISHED"}
         if not bpy.app.background:  # background mode has no clipboard: writes are dropped
-            assert bpy.context.window_manager.clipboard == survey
+            assert bpy.context.window_manager.clipboard == "\n".join(lines)
     finally:
         ghosttown.unregister()
 
 
-def test_copy_survey_waits_for_a_build_with_a_survey_point():
+def test_copy_survey_waits_for_a_picked_site_with_a_survey_point():
     ghosttown.register()
     try:
-        assert bpy.context.scene.ghosttown.survey == "" and not bpy.ops.ghosttown.copy_survey.poll()
+        assert bpy.context.scene.ghosttown.site is None and not bpy.ops.ghosttown.copy_survey.poll()
+    finally:
+        ghosttown.unregister()
+
+
+def test_the_site_panel_sits_under_the_main_panel_with_real_icons():
+    ghosttown.register()
+    try:
+        from ghosttown import ui
+        assert ui.GHOSTTOWN_PT_site.bl_parent_id == "GHOSTTOWN_PT_main"
+        assert hasattr(bpy.types, "GHOSTTOWN_PT_site") and not hasattr(bpy.context.scene.ghosttown, "survey")
+        icons = bpy.types.UILayout.bl_rna.functions["label"].parameters["icon"].enum_items.keys()
+        assert all(name in icons for name in ui.SITE_ICONS)
     finally:
         ghosttown.unregister()
 
