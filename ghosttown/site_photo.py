@@ -48,17 +48,26 @@ def _material(label, image):
 
 def attach(root, origin, label, path, photo):
     """Pack the photo into the file, map it onto the site's ground and buildings, record it on the
-    root and origin, and show it on the ground (roofs stay plain). Raises RuntimeError when Blender
-    can't read the file and ValueError when it reads as an empty image; nothing is left behind."""
-    image = bpy.data.images.load(path, check_existing=False)
+    root and origin, and show it on the ground (roofs stay plain). Raises RuntimeError when the file
+    can't be read and ValueError when it isn't a picture; nothing is left behind.
+
+    The image is made empty and packed from the file's bytes, with its path already set: Blender takes
+    the packed record's path from the image's path at pack time, so loading from the cache folder would
+    leave that path in the .blend and make Unpack Resources write every site to the same 'photo.jpg'."""
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+    except OSError as e:
+        raise RuntimeError(f"Cannot read '{path}': {e}") from e
+    image = bpy.data.images.new(PREFIX + label, 4, 4)
     material = None
     try:
-        if min(image.size) == 0:  # a damaged file loads as 0 x 0
-            raise ValueError("the photo file isn't a readable picture")
-        image.name = PREFIX + label
-        image.pack()
-        # A name of its own, relative to the .blend: not the cache path, and not "photo.jpg" shared by every site.
+        image.source = "FILE"
+        # Beside the .blend, one name per site: where Unpack Resources puts it and what Save Site Photo reads.
         image.filepath_raw = "//" + bpy.path.clean_name(label) + " photo.jpg"
+        image.pack(data=data, data_len=len(data))
+        if min(image.size) == 0:  # a damaged file decodes to 0 x 0
+            raise ValueError("the photo file isn't a readable picture")
         material = _material(label, image)
         for ob in site_use.made_objects(root, GROUND_KINDS + BUILDING_KINDS):
             add_uvs(ob, photo["bounds_m"])

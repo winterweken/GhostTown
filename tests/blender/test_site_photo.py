@@ -180,6 +180,45 @@ def test_the_packed_image_is_named_for_its_site_and_not_for_the_cache():
     assert site_use.photo_image(other).filepath != image.filepath
 
 
+def test_the_saved_blend_holds_no_path_to_the_cache_folder():
+    root, folder = photo_site()
+    blend = os.path.join(tempfile.mkdtemp(), "site.blend")
+    bpy.ops.wm.save_as_mainfile(filepath=blend, compress=False)  # plain, so its bytes can be searched
+    with open(blend, "rb") as f:
+        saved = f.read()
+    assert os.path.basename(folder).encode() not in saved and folder.encode() not in saved
+    assert b"320_Bay_St photo.jpg" in saved
+
+
+def test_two_sites_unpack_to_two_files_with_their_own_bytes():
+    first, _ = photo_site()
+    folder = tempfile.mkdtemp()
+    doc = photo_doc(folder, "Second site")
+    with open(PHOTO, "rb") as f:
+        original = f.read()
+    with open(os.path.join(folder, "photo.jpg"), "wb") as f:
+        f.write(original + bytes(16))  # bytes after the end of the picture: still the same picture, other file
+    second = scene_build.build(bpy.context.scene, doc, folder=folder)
+    bpy.ops.wm.save_as_mainfile(filepath=os.path.join(tempfile.mkdtemp(), "site.blend"))
+    paths = []
+    for root, expected in ((first, original), (second, original + bytes(16))):
+        image = site_use.photo_image(root)
+        image.unpack(method="WRITE_LOCAL")
+        paths.append(bpy.path.abspath(image.filepath))
+        with open(paths[-1], "rb") as f:
+            assert f.read() == expected
+    assert paths[0] != paths[1] and [os.path.basename(p) for p in paths] == ["320_Bay_St photo.jpg", "Second_site photo.jpg"]
+
+
+def test_the_packed_photo_keeps_its_size_and_colour_space():
+    root, _ = photo_site()
+    image = site_use.photo_image(root)
+    assert image.packed_file is not None and tuple(image.size) == (128, 128) and image.source == "FILE"
+    assert image.colorspace_settings.name == "sRGB"
+    with open(PHOTO, "rb") as f:
+        assert image.packed_file.data == f.read()
+
+
 def test_save_reads_the_photo_from_disk_after_unpacking_resources():
     root, _ = photo_site()
     blend_dir = tempfile.mkdtemp()
