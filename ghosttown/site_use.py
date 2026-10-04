@@ -143,3 +143,65 @@ def has_lidar(root):
     """True while the site's buildings have LiDAR roofs to switch to."""
     return root.get("use_roof_shapes") in ("flat", "lidar") and any(
         ob.get(LIDAR_KEY) is not None for ob in made_objects(root, BUILDING_KINDS))
+
+
+def _detail(ob, ratio):
+    """Roof detail on one building: a Decimate (Collapse) modifier limited to the roof interior, so walls
+    and eaves stay put; only while the building shows its LiDAR roof, and none at 100 %."""
+    mod = ob.modifiers.get(DETAIL_MODIFIER)
+    lidar = ob.get(LIDAR_KEY)
+    if ratio >= 1.0 or lidar is None or ob.data != lidar:
+        if mod is not None:
+            ob.modifiers.remove(mod)
+        return
+    if mod is None:
+        mod = ob.modifiers.new(DETAIL_MODIFIER, "DECIMATE")
+        mod.decimate_type = "COLLAPSE"
+        mod.vertex_group = ROOF_GROUP
+        mod.use_collapse_triangulate = True
+    mod.ratio = ratio
+
+
+def apply_roof_shapes(root, use):
+    """`use` is "lidar" or "flat": each building shows that mesh. The roof photo choice moves to the mesh
+    now shown (the other is left plain), and Roof detail follows. Buildings in Edit Mode are skipped.
+    Returns how many buildings were reset rather than restored exactly."""
+    material = photo_material(root)
+    photo = root.get("use_roofs") == "photo" and material is not None
+    limit = float(root.get("roof_photo_max_m", 20.0))
+    ratio = float(root.get("roof_detail", 1.0))
+    reset = 0
+    for ob in made_objects(root, BUILDING_KINDS):
+        target = ob.get(LIDAR_KEY if use == "lidar" else FLAT_KEY)
+        if target is None or ob.data.is_editmode:
+            continue
+        if ob.data != target:
+            if photo and not _restore_roofs(ob, material):
+                reset += 1
+            ob.data = target
+            if photo and float(ob.get("ctx_height_m", 0.0)) <= limit:
+                _photo_roofs(ob, material)
+        _detail(ob, ratio)
+    root["use_roof_shapes"] = use
+    return reset
+
+
+def apply_roof_detail(root, ratio):
+    """Roof detail from 5 % to 100 % on every building showing its LiDAR roof."""
+    ratio = min(1.0, max(0.05, float(ratio)))
+    root["roof_detail"] = ratio
+    for ob in made_objects(root, BUILDING_KINDS):
+        _detail(ob, ratio)
+
+
+def count_triangles(root, depsgraph):
+    """The triangles the site exports with modifiers applied (buildings, ground, trees; parcels are
+    lines), stored on the root as ctx_triangles. Never call this while a panel draws."""
+    total = 0
+    for ob in made_objects(root, SITE_KINDS):
+        me = ob.evaluated_get(depsgraph).data
+        sizes = np.empty(len(me.polygons), dtype=np.int32)
+        me.polygons.foreach_get("loop_total", sizes)
+        total += int(np.clip(sizes - 2, 0, None).sum())
+    root["ctx_triangles"] = total
+    return total
