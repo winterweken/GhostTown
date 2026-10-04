@@ -14,8 +14,8 @@ SLEEPER = [sys.executable, "-c", "import time; time.sleep(30)"]
 
 
 class Settings:
-    def __init__(self, location, site_name="", radius="300"):
-        self.location, self.site_name, self.radius = location, site_name, radius
+    def __init__(self, location, site_name="", radius="300", fetch_photo=True):
+        self.location, self.site_name, self.radius, self.fetch_photo = location, site_name, radius, fetch_photo
 
 
 def test_register_and_unregister_twice():
@@ -229,5 +229,32 @@ def test_copy_survey_waits_for_a_build_with_a_survey_point():
     ghosttown.register()
     try:
         assert bpy.context.scene.ghosttown.survey == "" and not bpy.ops.ghosttown.copy_survey.poll()
+    finally:
+        ghosttown.unregister()
+
+
+def test_the_photo_is_fetched_unless_turned_off():
+    with_photo = ops.make_request(Settings("43.649667, -79.380991"), "/tmp/gt-cache", now=0)
+    without = ops.make_request(Settings("43.649667, -79.380991", fetch_photo=False), "/tmp/gt-cache", now=0)
+    assert rq.validate(with_photo) == [] and rq.validate(without) == []
+    assert set(with_photo["layers"]) - set(without["layers"]) == {"photo"}
+
+
+def test_settings_offer_the_photo_and_a_site_picker_of_context_collections():
+    ghosttown.register()
+    try:
+        from ghosttown import props
+        settings = bpy.context.scene.ghosttown
+        assert settings.fetch_photo is True and settings.site is None
+        site = bpy.data.collections.new("Context · Test")
+        site["ctx_root"] = True
+        other = bpy.data.collections.new("My stuff")
+        loose = bpy.data.collections.new("Context · Elsewhere")
+        loose["ctx_root"] = True  # not linked into this scene
+        for coll in (site, other):
+            bpy.context.scene.collection.children.link(coll)
+        assert props.is_site(settings, site) and not props.is_site(settings, other) and not props.is_site(settings, loose)
+        settings.site = site
+        assert settings.site == site
     finally:
         ghosttown.unregister()

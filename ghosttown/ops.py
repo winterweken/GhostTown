@@ -9,6 +9,7 @@ from bpy.props import IntProperty, StringProperty
 from . import georef, prefs, runner, scene_build
 from .ghosttown_fetch import context as ctx
 from .ghosttown_fetch import request as rq
+from .ghosttown_fetch import LAYERS
 
 OFFLINE = "Online access is off. Turn on Preferences › System › Network › Allow Online Access."
 MISSING_SHAPELY = ("Ghost Town's shapely library isn't installed. Disable and re-enable Ghost Town in "
@@ -50,10 +51,15 @@ def _stamp(now=None):
     return time.strftime("%Y%m%d-%H%M%S", time.localtime(now))
 
 
+def request_layers(settings):
+    """Every layer, less the photo when the user turned it off."""
+    return [layer for layer in LAYERS if layer != "photo" or getattr(settings, "fetch_photo", True)]
+
+
 def make_request(settings, cache_dir, overpass_url="", now=None):
     lat, lon = parse_location(settings.location)
     return rq.build(centre={"lat": lat, "lon": lon}, address=settings.site_name.strip(),
-                    radius_m=float(settings.radius), cache_dir=cache_dir,
+                    radius_m=float(settings.radius), cache_dir=cache_dir, layers=request_layers(settings),
                     out_dir=os.path.join(cache_dir, "runs", _stamp(now)), overpass_url=overpass_url)
 
 

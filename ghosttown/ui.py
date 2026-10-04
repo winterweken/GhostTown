@@ -69,6 +69,9 @@ class GHOSTTOWN_PT_main(bpy.types.Panel):
             for i, item in enumerate(settings.results):
                 box.operator("ghosttown.pick", text=item.label).index = i
         layout.prop(settings, "radius")
+        row = layout.row(align=True)
+        row.label(text="Fetch")
+        row.prop(settings, "fetch_photo")
         if "build" in runner.ACTIVE:
             layout.label(text=runner.STATUS.get("build", "Working…"), icon="TIME")
             layout.operator("ghosttown.cancel", icon="CANCEL")

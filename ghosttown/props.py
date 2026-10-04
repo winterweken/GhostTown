@@ -1,5 +1,5 @@
 import bpy
-from bpy.props import CollectionProperty, EnumProperty, StringProperty
+from bpy.props import BoolProperty, CollectionProperty, EnumProperty, PointerProperty, StringProperty
 
 RADII = [
     ("150", "150 m", "A block or two"),
@@ -7,6 +7,11 @@ RADII = [
     ("500", "500 m", "A wider area"),
     ("1000", "1000 m", "Large area; slower"),
 ]
+
+
+def is_site(settings, collection):
+    """The Site picker lists only this scene's Ghost Town context collections."""
+    return bool(collection.get("ctx_root")) and collection in settings.id_data.collection.children_recursive
 
 
 class GhostTownResult(bpy.types.PropertyGroup):
@@ -27,3 +32,9 @@ class GhostTownSettings(bpy.types.PropertyGroup):
     credits: StringProperty(name="Data credits")
     survey: StringProperty(name="Survey point", description="The context origin on the survey grid, for Revit's survey point")
     results: CollectionProperty(type=GhostTownResult)
+    fetch_photo: BoolProperty(
+        name="Aerial photo", default=True,
+        description="Toronto: fetch the City's newest aerial photo of the site (one download)")
+    site: PointerProperty(
+        type=bpy.types.Collection, name="Site", poll=is_site,
+        description="The Ghost Town site whose data the Site panel shows")
