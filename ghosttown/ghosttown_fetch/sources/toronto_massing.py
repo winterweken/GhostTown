@@ -4,7 +4,8 @@ City Planning publishes it on the open data portal under the Open Government Lic
 city-wide shapefile per year (2025: 81 MB zipped, 428,184 parts), in Web Mercator despite its name.
 Ghost Town downloads an edition once, keeps the unpacked files and an index of every part's box in the
 cache folder, and reads only a site's parts from them. An older edition is deleted once a newer one is
-ready; a copy that can't be read is deleted so the next build downloads it again.
+ready; a copy that can't be read is deleted so the next build downloads it again. Heights come from
+AVG_HEIGHT, with HEIGHT_MSL − SURF_ELEV only as a fallback.
 """
 import io
 import json
@@ -127,6 +128,15 @@ def _to_local(frame):
     return convert
 
 
+def _height(row):
+    """AVG_HEIGHT, the City's height for the part; HEIGHT_MSL - SURF_ELEV only when it is missing.
+    The elevations are blank on some site-plan and 3D-model parts and wrong on some LiDAR ones."""
+    avg = row.get("AVG_HEIGHT")
+    if avg is not None and avg > 0:
+        return float(avg)
+    return (row.get("HEIGHT_MSL") or 0.0) - (row.get("SURF_ELEV") or 0.0)
+
+
 def site_parts(folder, frame, radius_m):
     """Every part over 0.5 m tall whose box meets the square around the circle of radius_m."""
     table = np.load(os.path.join(folder, STEM + ".npy"))
@@ -142,8 +152,8 @@ def site_parts(folder, frame, radius_m):
         attributes = shapefile.DBF(dbf)
         for i in rows:
             row = attributes.record(int(i))
-            height = (row.get("HEIGHT_MSL") or 0.0) - (row.get("SURF_ELEV") or 0.0)
-            if height <= MIN_HEIGHT_M:
+            height = _height(row)
+            if not height > MIN_HEIGHT_M:  # also drops NaN
                 continue
             local = []
             try:

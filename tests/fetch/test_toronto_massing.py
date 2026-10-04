@@ -144,3 +144,25 @@ def test_the_recorded_slice_reads_back_as_real_parts(tmp_path):
     at_address = [p for p in parts if any(poly.contains(Point(0, 0)) for poly in p.polygons)]
     assert at_address and max(p.height for p in at_address) == pytest.approx(75.85, abs=0.5)
     assert all(poly.is_valid for p in parts for poly in p.polygons)
+
+
+def _row(avg, msl, surf, source="3D Model"):
+    return {"MIN_HEIGHT": 0.0, "MAX_HEIGHT": 0.0, "AVG_HEIGHT": avg, "HEIGHT_MSL": msl, "SURF_ELEV": surf,
+            "HEIGHT_SRC": source, "BLDG_SRC": source, "LONGITUDE": -79.38, "LATITUDE": 43.65}
+
+
+def test_heights_come_from_avg_height_even_when_the_elevations_are_blank_or_wrong(tmp_path):
+    records = [
+        (part(square(0, 0, 10), 1.0)[0], _row(186.0, 0.0, 0.0)),                               # elevations blank
+        (part(square(20, 0, 10), 1.0)[0], _row(5.1396, 4.8684, 140.29389, "Lidar-Derived")),   # MSL nonsense
+        (part(square(40, 0, 10), 1.0)[0], _row(None, 92.0, 80.0, "Lidar-Derived")),            # no AVG: fall back
+        (part(square(60, 0, 10), 1.0)[0], _row(0.4, 0.0, 0.0)),                                 # too low: dropped
+    ]
+    parts, _ = massing.fetch(net_for(zip_bytes=zipped(records)), str(tmp_path), F, 300)
+    assert {p.record: round(p.height, 4) for p in parts} == {0: 186.0, 1: 5.1396, 2: 12.0}
+
+
+def test_the_recorded_slice_keeps_its_lidar_buildings(tmp_path):
+    net = FakeNet({"toronto": router({"package_show?id=3d-massing": package(2025), "3DMassingShapefile_": SUBSET})})
+    parts, _ = massing.fetch(net, str(tmp_path), BAY, 150)
+    assert sum(p.source == "toronto_massing_lidar" for p in parts) >= 50
