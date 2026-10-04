@@ -92,6 +92,15 @@ def test_a_tower_over_part_of_a_large_building_is_not_trimmed():
     assert z.max() == pytest.approx(90.0) and np.median(z) == pytest.approx(20.0)
 
 
+def test_a_tower_part_with_a_house_footprint_is_not_trimmed():
+    part = Field(lambda x, y: np.where((x > 13) & (y > 14), 122.0, 110.0))  # the crown of a 110 m tower
+    ring = [[0, 0], [19, 0], [19, 20], [0, 20]]  # 380 m2
+    v, f, inner = roofs.roof_solid([ring], -0.3, 110.0, 0.0, part, 0.5, city=False)
+    assert closed_outward(v, f)
+    z = v[inner][:, 2]
+    assert z.max() == pytest.approx(122.0) and np.median(z) == pytest.approx(110.0)
+
+
 @pytest.mark.parametrize("size, top", [(20.0, 8.0 + 3.0), (20.5, 25.0)])  # 400 m2 is a house, 420 m2 is not
 def test_the_trim_stops_above_house_size(size, top):
     crown = Field(lambda x, y: np.where((x > 0.7 * size) & (y > 0.7 * size), 25.0, 8.0))
