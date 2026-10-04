@@ -12,7 +12,7 @@ from . import context as ctx
 from . import terrain as terrain_mod
 from .frame import Frame
 from .net import SourceError
-from .sources import osm, toronto
+from .sources import osm, toronto, toronto_massing
 
 KIND_LAYERS = {"road": "roads", "sidewalk": "sidewalks", "parking": "parking", "rail": "rail",
                "green": "green", "water": "water"}
@@ -39,6 +39,18 @@ def _region(net, frame, radius):
         return where, ("info", "boundary", "Part of the circle is in the City of Toronto, but City data is used only "
                                            "for sites centred in Toronto.")
     return where, None
+
+
+def _city_buildings(net, request, frame, radius, progress, doc):
+    """("massing", parts, year) from the City's newest 3D Massing edition, else ("outlines", features,
+    None) from the older topographic outlines, with one warning saying so."""
+    try:
+        parts, year = toronto_massing.fetch(net, request["cache_dir"], frame, radius + toronto.WHOLE_MARGIN_M, progress)
+    except SourceError as e:
+        ctx.note(doc, "warn", "city_massing", f"{e} Using the City's older building outlines instead.")
+        return "outlines", toronto.fetch_buildings(net, frame.lat0, frame.lon0, radius), None
+    ctx.note(doc, "info", "city_massing", f"Buildings: City of Toronto 3D Massing {year}.")
+    return "massing", parts, year
 
 
 def assemble(request, net, *, progress=None):
@@ -96,10 +108,14 @@ def assemble(request, net, *, progress=None):
     if where == "toronto":
         if "buildings" in layers:
             found = attempt("City buildings", 25, "city_buildings", "toronto",
-                            lambda: toronto.fetch_buildings(net, lat, lon, radius))
+                            lambda: _city_buildings(net, request, frame, radius, progress, doc))
             if found is not None:
-                doc["elements"].extend(built("city_buildings", "City buildings",
-                                             lambda: buildings.from_toronto(found, frame, terrain, radius)))
+                how, data, year = found
+                if how == "massing":
+                    make = lambda: buildings.from_massing(data, terrain, radius, year)  # noqa: E731
+                else:
+                    make = lambda: buildings.from_toronto(data, frame, terrain, radius)  # noqa: E731
+                doc["elements"].extend(built("city_buildings", "City buildings", make))
         kinds = [kind for kind, layer in KIND_LAYERS.items() if layer in layers]
         if kinds:
             skipped = []
