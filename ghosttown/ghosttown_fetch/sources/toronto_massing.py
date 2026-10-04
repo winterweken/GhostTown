@@ -10,6 +10,7 @@ is the lowest LiDAR return over a footprint, not a raised base, and is ignored.
 """
 import io
 import json
+import math
 import mmap
 import os
 import re
@@ -184,7 +185,7 @@ def site_parts(folder, frame, radius_m):
         for i in rows:
             row = attributes.record(int(i))
             height = _height(row)
-            if not height > MIN_HEIGHT_M:  # also drops NaN
+            if not (math.isfinite(height) and height > MIN_HEIGHT_M):  # inf and NaN are dropped too
                 continue
             local = []
             try:

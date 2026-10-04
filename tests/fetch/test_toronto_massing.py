@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 from shapely.geometry import Point
 
+from ghosttown_fetch import shapefile
 from ghosttown_fetch.frame import Frame
 from ghosttown_fetch.net import SourceError
 from ghosttown_fetch.sources import toronto_massing as massing
@@ -310,3 +311,17 @@ def test_min_height_is_a_lidar_statistic_not_a_raised_base(tmp_path):
     parts, _ = massing.fetch(net_for(zip_bytes=zipped([(part(square(0, 0, 10), 1.0)[0], row)])), str(tmp_path), F, 300)
     p, = parts
     assert p.base == 0.0 and p.height == pytest.approx(12.0)
+
+
+def test_a_part_whose_height_is_not_a_finite_number_is_dropped(tmp_path):
+    inf = float("inf")
+    records = [
+        (part(square(0, 0, 10), 1.0)[0], _row(inf, 0.0, 0.0)),        # AVG_HEIGHT is inf
+        (part(square(20, 0, 10), 1.0)[0], _row(None, inf, 80.0)),     # no AVG: the fallback is inf
+        (part(square(40, 0, 10), 1.0)[0], _row(None, inf, inf)),      # the fallback is NaN
+        (part(square(60, 0, 10), 1.0)[0], _row(15.0, 95.0, 80.0)),    # a normal part
+    ]
+    parts, _ = massing.fetch(net_for(zip_bytes=zipped(records)), str(tmp_path), F, 300)
+    table = shapefile.DBF((tmp_path / "toronto_massing" / "2099" / "massing.dbf").read_bytes())
+    assert table.record(0)["AVG_HEIGHT"] == inf  # the file really holds inf
+    assert [(p.record, p.height) for p in parts] == [(3, pytest.approx(15.0))]
