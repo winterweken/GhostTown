@@ -42,7 +42,7 @@ Each build makes one collection, `Context · <site>`:
 - **Materials:** one per kind, named `Context - Building`, `Context - Road`, and so on. A building whose
   height had to be guessed is orange (`Context - Building (height guessed)`).
 - **Location:** a `Context origin` empty at 0,0,0 holding the latitude, longitude, ground elevation above
-  sea level and the data credits.
+  sea level, the origin's survey grid coordinates and the data credits.
 
 Everything is in metres, with x east, y north, the address at the origin and z = 0 at its ground level.
 
@@ -102,8 +102,18 @@ metres, closed building solids, outlines cleaned of edges under 3 mm, and stable
 - **FBX:** tick **Loose Edges** if you want the parcel lines.
 - In Revit, import **origin to origin**. The material names become the layers or materials you control
   under Object Styles › Imported Objects.
-- To place the model at its true height, use `ground_at_centre_m` on the `Context origin` empty: it is
-  the elevation above sea level of z = 0.
+- **Survey point.** The model stays at the origin, which is the site's latitude and longitude at ground
+  level. After a build, the panel shows where that origin sits on the survey grid, and its copy button
+  puts the values on the clipboard. The grid is the City's own in Toronto (NAD83(CSRS) / MTM zone 10,
+  EPSG:2952) and the site's UTM zone elsewhere. The same values are on the `Context origin` empty as
+  `survey_easting_m`, `survey_northing_m`, `survey_elevation_m` and `survey_grid_angle_deg`.
+- To set Revit's survey point, go to **Manage › Coordinates › Specify Coordinates at Point**, pick the
+  model's origin, and enter the northing, easting and elevation. Ghost Town's +y is true north, while
+  Revit's true north is the survey grid's north; enter the grid angle as the **Angle from Project North
+  to True North**, East or West as the panel says.
+- The elevation is the height above sea level of z = 0 (`ground_at_centre_m`). Latitude and longitude
+  are used as given, which matches the City's data; positions from OpenStreetMap or a phone can be 1–2 m
+  off. The survey point lines up context, not a legal survey.
 
 ## Data and credits
 

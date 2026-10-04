@@ -163,3 +163,21 @@ def test_a_courtyard_touching_the_facade_is_still_a_closed_solid():
     root = _build(doc)
     ob, = root.children[f"Buildings · {SITE}"].objects
     assert closed_and_outward(*mesh_arrays(ob))
+
+
+def test_survey_point_on_collection_and_origin_empty():
+    root = _build()
+    origin, = [ob for ob in root.objects if ob.get("ctx_id") == "origin"]
+    for block in (root, origin):
+        assert block["survey_epsg"] == "EPSG:32617" and block["survey_name"] == "WGS 84 / UTM zone 17N"
+        assert block["survey_easting_m"] == 630564.787 and block["survey_northing_m"] == 4834236.788
+        assert block["survey_elevation_m"] == 84.7 and block["survey_grid_angle_deg"] == 1.117674
+        assert block["true_north_deg"] == 0.0
+
+
+def test_an_older_context_without_a_survey_point_still_builds():
+    doc = load_fixture("mini_context.json")
+    del doc["survey"]
+    root = _build(doc)
+    origin, = [ob for ob in root.objects if ob.get("ctx_id") == "origin"]
+    assert not [k for k in origin.keys() if k.startswith("survey_")] and origin["lat"] == 43.649667

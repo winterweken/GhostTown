@@ -25,4 +25,5 @@ class GhostTownSettings(bpy.types.PropertyGroup):
     radius: EnumProperty(name="Radius", items=RADII, default="300")
     summary: StringProperty(name="Last build")
     credits: StringProperty(name="Data credits")
+    survey: StringProperty(name="Survey point", description="The context origin on the survey grid, for Revit's survey point")
     results: CollectionProperty(type=GhostTownResult)

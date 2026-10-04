@@ -17,7 +17,35 @@ def props(doc):
     }
     if doc.get("ground_at_centre_m") is not None:
         p["ground_at_centre_m"] = float(doc["ground_at_centre_m"])
+    point = doc.get("survey")
+    if point:
+        p["survey_epsg"] = point["epsg"]
+        p["survey_name"] = point["name"]
+        p["survey_easting_m"] = float(point["easting_m"])
+        p["survey_northing_m"] = float(point["northing_m"])
+        if point.get("elevation_m") is not None:
+            p["survey_elevation_m"] = float(point["elevation_m"])
+        p["survey_grid_angle_deg"] = float(point["grid_angle_deg"])
     return p
+
+
+def survey_lines(point):
+    """Where the origin sits on the survey grid, as the panel shows it and Copy puts it on the clipboard."""
+    if not point:
+        return []
+    angle = point["grid_angle_deg"]
+    if round(abs(angle), 4) == 0:
+        north = "Grid north is true north"
+    else:
+        north = f"Grid north {abs(angle):.4f}° {'east' if angle > 0 else 'west'} of true north"
+    elevation = point.get("elevation_m")
+    return [
+        f"{point['name']} ({point['epsg']})",
+        f"Easting {point['easting_m']:.3f} m",
+        f"Northing {point['northing_m']:.3f} m",
+        "Elevation unknown (no terrain data)" if elevation is None else f"Elevation {elevation:.3f} m above sea level",
+        north,
+    ]
 
 
 def apply(id_block, values):

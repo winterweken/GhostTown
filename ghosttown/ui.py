@@ -82,3 +82,11 @@ class GHOSTTOWN_PT_main(bpy.types.Panel):
             box.label(text=settings.summary, icon="CHECKMARK")
             for line in settings.credits.splitlines():
                 box.label(text=line)
+        if settings.survey:
+            box = layout.box()
+            row = box.row()
+            row.label(text="Survey point (for Revit)", icon="EMPTY_AXIS")
+            row.operator("ghosttown.copy_survey", text="", icon="COPYDOWN")
+            col = box.column(align=True)
+            for line in settings.survey.splitlines():
+                col.label(text=line)

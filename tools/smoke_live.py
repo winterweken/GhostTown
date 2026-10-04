@@ -46,6 +46,7 @@ with open(result["context"], encoding="utf-8") as f:
     doc = json.load(f)
 print("REGION", doc["region"], "TERRAIN", doc["terrain"], "GROUND_ASL", doc["ground_at_centre_m"])
 print("COUNTS", doc["counts"])
+print("SURVEY", doc.get("survey"))
 print("NOTES", [n["text"] for n in doc["notes"]])
 root = scene_build.build(bpy.context.scene, doc)
 buildings = sum(1 for ob in root.all_objects if str(ob.get("ctx_kind", "")).startswith("building"))

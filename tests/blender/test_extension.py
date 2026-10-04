@@ -210,3 +210,24 @@ def test_the_panel_icon_loads_and_unloads_with_the_add_on():
     finally:
         ghosttown.unregister()
     assert not ui.icon_loaded() and ui.icon_id() == 0
+
+
+def test_import_shows_the_survey_point_and_copy_puts_it_on_the_clipboard():
+    ghosttown.register()
+    try:
+        bpy.ops.ghosttown.import_context(filepath=os.path.join(FIXTURES, "mini_context.json"))
+        survey = bpy.context.scene.ghosttown.survey
+        assert survey.splitlines()[:2] == ["WGS 84 / UTM zone 17N (EPSG:32617)", "Easting 630564.787 m"]
+        assert bpy.ops.ghosttown.copy_survey() == {"FINISHED"}
+        if not bpy.app.background:  # background mode has no clipboard: writes are dropped
+            assert bpy.context.window_manager.clipboard == survey
+    finally:
+        ghosttown.unregister()
+
+
+def test_copy_survey_waits_for_a_build_with_a_survey_point():
+    ghosttown.register()
+    try:
+        assert bpy.context.scene.ghosttown.survey == "" and not bpy.ops.ghosttown.copy_survey.poll()
+    finally:
+        ghosttown.unregister()

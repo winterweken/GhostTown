@@ -11,6 +11,7 @@ _CLASSES = (
     ops.GHOSTTOWN_OT_build,
     ops.GHOSTTOWN_OT_find,
     ops.GHOSTTOWN_OT_pick,
+    ops.GHOSTTOWN_OT_copy_survey,
     ops.GHOSTTOWN_OT_cancel,
     ui.GHOSTTOWN_PT_main,
 )

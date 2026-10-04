@@ -6,7 +6,7 @@ import time
 import bpy
 from bpy.props import IntProperty, StringProperty
 
-from . import prefs, runner, scene_build
+from . import georef, prefs, runner, scene_build
 from .ghosttown_fetch import context as ctx
 from .ghosttown_fetch import request as rq
 
@@ -98,6 +98,7 @@ def import_into_scene(context, path, report):
     settings = context.scene.ghosttown
     settings.summary = _summary(doc)
     settings.credits = "\n".join(dict.fromkeys(s["credit"] for s in doc["sources"]))
+    settings.survey = "\n".join(georef.survey_lines(doc.get("survey")))
     for note in doc["notes"]:
         if note["level"] == "warn":
             report({"WARNING"}, note["text"])
@@ -270,6 +271,21 @@ class GHOSTTOWN_OT_pick(bpy.types.Operator):
             return {"CANCELLED"}
         item = settings.results[self.index]
         use_result(settings, item.label, item.lat, item.lon)
+        return {"FINISHED"}
+
+
+class GHOSTTOWN_OT_copy_survey(bpy.types.Operator):
+    bl_idname = "ghosttown.copy_survey"
+    bl_label = "Copy Survey Point"
+    bl_description = "Copy where the context origin sits on the survey grid, for setting Revit's survey point"
+
+    @classmethod
+    def poll(cls, context):
+        return bool(context.scene.ghosttown.survey)
+
+    def execute(self, context):
+        context.window_manager.clipboard = context.scene.ghosttown.survey
+        self.report({"INFO"}, "Copied the survey point.")
         return {"FINISHED"}
 
 
