@@ -34,6 +34,7 @@ def _city(**overrides):
         "cot_geospatial3/FeatureServer/3/": page(polygon([(-200, -4), (200, -4), (200, 4), (-200, 4)], OBJECTID=2)),
         "cot_geospatial3/FeatureServer/10/": page(point(5, 30, OBJECTID=9, DERIVED_HEIGHT=10.0)),
         "cot_geospatial27/FeatureServer/36/": page(square(-20, -20, 40, OBJECTID=3, PARCELID=55)),
+        "package_show?id=3d-massing": DOWN,  # the massing model is unavailable: these tests cover the fallback
         "FeatureServer/": page(),
     }
     table.update(photo_samples.ANSWERS)
@@ -97,7 +98,7 @@ def test_one_city_layer_failing_is_a_warning_not_a_failure(tmp_path):
 
 
 def test_when_every_data_source_fails_nothing_is_fetched(tmp_path):
-    everything_down = router({"FeatureServer/40/": page(CITY), "FeatureServer/": DOWN})
+    everything_down = router({"FeatureServer/40/": page(CITY), "package_show?id=3d-massing": DOWN, "FeatureServer/": DOWN})
     with pytest.raises(NothingFetched, match="503"):
         assemble(_req(tmp_path), _net(toronto=everything_down))
 

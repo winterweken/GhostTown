@@ -47,9 +47,11 @@ class Net:
         self.transport = transport or urllib_transport
         self.sleep = sleep
 
-    def get(self, url, *, source, data=None, check=None, timeout=120):
+    def get(self, url, *, source, data=None, check=None, timeout=120, keep=True):
+        """The answer's bytes. keep=False is for one-off downloads, like the City's 81 MB massing model,
+        that skip the response cache because their caller keeps its own copy."""
         key = url if data is None else url + "\n" + data.decode("utf-8", "replace")
-        if not self.fresh:
+        if keep and not self.fresh:
             body = self.cache.read(source, key)
             if body is not None and _still_good(body, check):
                 return body
@@ -66,7 +68,8 @@ class Net:
             if status == 200:
                 if check is not None:
                     check(body)
-                self.cache.write(source, key, body)
+                if keep:
+                    self.cache.write(source, key, body)
                 return body
             problem = f"{name} answered HTTP {status}"
             if status != 429 and status < 500:

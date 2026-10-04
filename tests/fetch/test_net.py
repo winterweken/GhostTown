@@ -96,3 +96,11 @@ def test_a_damaged_cache_entry_is_fetched_again(tmp_path):
     entry.write_bytes(b"trunc")  # the stored answer is damaged on disk
     assert net.get(URL, source="osm", check=check) == b"good" and len(t.calls) == 2
     assert entry.read_bytes() == b"good"
+
+
+def test_a_one_off_download_skips_the_response_cache(tmp_path):
+    t = Transport((200, b"big"), (200, b"big"))
+    net = Net(str(tmp_path), transport=t)
+    assert net.get(URL, source="toronto", keep=False) == b"big"
+    assert not (tmp_path / "toronto").exists()
+    assert net.get(URL, source="toronto", keep=False) == b"big" and len(t.calls) == 2

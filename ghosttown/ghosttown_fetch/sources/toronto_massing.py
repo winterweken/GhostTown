@@ -1,0 +1,239 @@
+"""The City of Toronto's 3D Massing (the Context Massing Model), newest yearly edition.
+
+City Planning publishes it on the open data portal under the Open Government Licence – Toronto, as one
+city-wide shapefile per year (2025: 81 MB zipped, 428,184 parts), in Web Mercator despite its name.
+Ghost Town downloads an edition once, keeps the unpacked files and an index of every part's box in the
+cache folder, and reads only a site's parts from them. An older edition is deleted once a newer one has
+been read; a copy that can't be read is deleted so the next build downloads it again. When the newest
+edition can't be listed, downloaded or read, the newest saved copy is used. Heights come from
+AVG_HEIGHT, with HEIGHT_MSL − SURF_ELEV only as a fallback. Every part stands on the ground: MIN_HEIGHT
+is the lowest LiDAR return over a footprint, not a raised base, and is ignored.
+"""
+import io
+import json
+import math
+import mmap
+import os
+import re
+import shutil
+import tempfile
+import urllib.parse
+import zipfile
+from collections import namedtuple
+
+import numpy as np
+import shapely
+
+from .. import shapefile
+from ..frame import lonlat_to_merc, merc_to_lonlat
+from ..geom import polygons
+from ..net import SourceError
+
+PACKAGE = "https://ckan0.cf.opendata.inter.prod-toronto.ca/api/3/action/package_show?id=3d-massing"
+_EDITION = re.compile(r"3DMassingShapefile_(\d{4})_WGS84\.zip")
+HOST = "ckan0.cf.opendata.inter.prod-toronto.ca"
+MAX_UNPACKED_BYTES = 2 * 1024 ** 3
+FOLDER = "toronto_massing"
+STEM = "massing"
+MIN_HEIGHT_M = 0.5
+SOURCES = {"Lidar-Derived": "toronto_massing_lidar", "3D Model": "toronto_massing_3d_model",
+           "Site Plan": "toronto_massing_site_plan"}
+
+Edition = namedtuple("Edition", "year url size")
+Part = namedtuple("Part", "record polygons height base source")
+
+
+def _check_package(body):
+    try:
+        doc = json.loads(body)
+    except ValueError:
+        raise SourceError("The City's open data portal didn't answer in JSON.") from None
+    if not (isinstance(doc, dict) and doc.get("success") and isinstance((doc.get("result") or {}).get("resources"), list)):
+        raise SourceError("The City's open data portal had no 3D Massing listing.")
+
+
+def _size(value):
+    """The listed size in bytes, or 0 (unknown) when the portal gives something else."""
+    try:
+        return max(int(value), 0)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
+def _from_the_city(url):
+    """Only an https download from the City's open data portal or a toronto.ca site is followed."""
+    try:
+        parts = urllib.parse.urlsplit(url)
+        host = parts.hostname or ""
+    except ValueError:
+        return False
+    return parts.scheme == "https" and (host == HOST or host.endswith(".toronto.ca"))
+
+
+def newest_edition(net):
+    doc = json.loads(net.get(PACKAGE, source="toronto", check=_check_package))
+    found = []
+    for resource in doc["result"]["resources"]:
+        if not isinstance(resource, dict):
+            continue
+        m = _EDITION.fullmatch(str(resource.get("name", "")))
+        if m and isinstance(resource.get("url"), str) and _from_the_city(resource["url"]):
+            found.append(Edition(int(m.group(1)), resource["url"], _size(resource.get("size"))))
+    if not found:
+        raise SourceError("The City's open data portal lists no 3D Massing shapefile.")
+    return max(found)
+
+
+def _check_zip(body):
+    try:
+        members = zipfile.ZipFile(io.BytesIO(body)).infolist()
+    except zipfile.BadZipFile:
+        raise SourceError("The City's 3D Massing download isn't a whole zip file.") from None
+    names = [m.filename.lower() for m in members]
+    if not all(any(n.endswith(ext) for n in names) for ext in (".shp", ".shx", ".dbf")):
+        raise SourceError("The City's 3D Massing download is missing part of the shapefile.")
+    if sum(n.endswith(".shp") for n in names) > 1:
+        raise SourceError("The City's 3D Massing download holds more than one shapefile.")
+    if sum(m.file_size for m in members) > MAX_UNPACKED_BYTES:
+        raise SourceError("The City's 3D Massing download unpacks to more than 2 GB.")
+
+
+def _ready(folder):
+    return all(os.path.isfile(os.path.join(folder, STEM + ext)) for ext in (".shp", ".shx", ".dbf", ".npy"))
+
+
+def _index(folder):
+    """massing.npy: per record, its byte offset in the .shp and its box (NaN for null shapes)."""
+    with open(os.path.join(folder, STEM + ".shx"), "rb") as f:
+        offsets = shapefile.record_offsets(f.read())
+    with open(os.path.join(folder, STEM + ".shp"), "rb") as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as shp:
+        shapefile.check_header(shp)
+        boxes = shapefile.bounding_boxes(shp, offsets)
+    np.save(os.path.join(folder, STEM + ".npy"), np.column_stack([offsets.astype(float), boxes]))
+
+
+def _year_folders(root):
+    """{year: folder} for the 4-digit folders under root."""
+    if not os.path.isdir(root):
+        return {}
+    return {int(name): os.path.join(root, name) for name in os.listdir(root) if re.fullmatch("[0-9]{4}", name)}
+
+
+def _prune(root, year):
+    """Delete the copies of editions older than year."""
+    for old_year, old in _year_folders(root).items():
+        if old_year < year:
+            shutil.rmtree(old, ignore_errors=True)
+
+
+def local_copy(net, cache_dir, edition, progress=None, prune=True):
+    """The folder with the edition's massing.shp/.shx/.dbf and its index, downloaded the first time, and the
+    older editions deleted unless prune is False. Another build can finish the same edition meanwhile: a
+    ready folder is never replaced or deleted."""
+    root = os.path.join(cache_dir, FOLDER)
+    folder = os.path.join(root, str(edition.year))
+    if not _ready(folder):
+        if progress:
+            size = f"{edition.size / 1e6:.0f} MB" if edition.size else "it"
+            progress(f"City massing model (first time: downloading {size})", 30)
+        body = net.get(edition.url, source="toronto", check=_check_zip, keep=False, timeout=600)
+        os.makedirs(root, exist_ok=True)
+        staging = tempfile.mkdtemp(prefix=".staging-", dir=root)
+        try:
+            with zipfile.ZipFile(io.BytesIO(body)) as z:
+                for name in z.namelist():
+                    ext = os.path.splitext(name)[1].lower()
+                    if ext in (".shp", ".shx", ".dbf", ".prj"):
+                        with z.open(name) as src, open(os.path.join(staging, STEM + ext), "wb") as dst:
+                            shutil.copyfileobj(src, dst)
+            _index(staging)
+            if not _ready(folder):  # else another build got there first: keep its copy, drop ours
+                shutil.rmtree(folder, ignore_errors=True)  # a half-made leftover
+                try:
+                    os.replace(staging, folder)
+                except OSError:
+                    if not _ready(folder):
+                        raise
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)  # nothing left to remove after a successful swap
+    if prune:
+        _prune(root, edition.year)
+    return folder
+
+
+def _to_local(frame):
+    def convert(coords):
+        lon, lat = merc_to_lonlat(coords[:, 0], coords[:, 1])
+        return np.column_stack(frame.to_local(lon, lat))
+    return convert
+
+
+def _height(row):
+    """AVG_HEIGHT, the City's height for the part; HEIGHT_MSL - SURF_ELEV only when it is missing.
+    The elevations are blank on some site-plan and 3D-model parts and wrong on some LiDAR ones."""
+    avg = row.get("AVG_HEIGHT")
+    if avg is not None and avg > 0:
+        return float(avg)
+    return (row.get("HEIGHT_MSL") or 0.0) - (row.get("SURF_ELEV") or 0.0)
+
+
+def site_parts(folder, frame, radius_m):
+    """Every part over 0.5 m tall whose box meets the square around the circle of radius_m."""
+    table = np.load(os.path.join(folder, STEM + ".npy"))
+    x0, y0 = lonlat_to_merc(*frame.to_lonlat(-radius_m, -radius_m))
+    x1, y1 = lonlat_to_merc(*frame.to_lonlat(radius_m, radius_m))
+    boxes = table[:, 1:]
+    with np.errstate(invalid="ignore"):  # null shapes have NaN boxes, which compare False
+        rows = np.nonzero((boxes[:, 2] >= x0) & (boxes[:, 0] <= x1) & (boxes[:, 3] >= y0) & (boxes[:, 1] <= y1))[0]
+    to_local = _to_local(frame)
+    parts = []
+    with open(os.path.join(folder, STEM + ".shp"), "rb") as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as shp, \
+            open(os.path.join(folder, STEM + ".dbf"), "rb") as g, mmap.mmap(g.fileno(), 0, access=mmap.ACCESS_READ) as dbf:
+        attributes = shapefile.DBF(dbf)
+        for i in rows:
+            row = attributes.record(int(i))
+            height = _height(row)
+            if not (math.isfinite(height) and height > MIN_HEIGHT_M):  # inf and NaN are dropped too
+                continue
+            local = []
+            try:
+                for poly in shapefile.polygons_from_rings(shapefile.polygon_rings(shp, table[i, 0])):
+                    local += polygons(shapely.transform(poly, to_local))
+            except shapely.errors.GEOSException:
+                local = []  # one part the geometry library can't repair is left out
+            if local:
+                parts.append(Part(int(i), local, float(height), 0.0,  # MIN_HEIGHT is the lowest LiDAR return over the footprint, not a raised base
+                                  SOURCES.get(row.get("HEIGHT_SRC") or "", "toronto_massing")))
+        del attributes  # release the map before it closes
+    return parts
+
+
+def fetch(net, cache_dir, frame, radius_m, progress=None, note=None):
+    """(parts, edition year) for the square around a circle of radius_m. When the newest edition can't be
+    listed, downloaded or read, the newest ready copy in the cache is used instead, and note(text), if given,
+    says so. Every other failure is a SourceError; a local copy that can't be read is deleted so the next
+    build downloads it again."""
+    folder = None
+    try:
+        edition = newest_edition(net)
+        folder = local_copy(net, cache_dir, edition, progress, prune=False)
+        parts = site_parts(folder, frame, radius_m)
+        _prune(os.path.join(cache_dir, FOLDER), edition.year)  # the older edition stays until the newer one has been read
+        return parts, edition.year
+    except Exception as e:  # not BaseException: Ctrl-C still stops the build
+        reason = e if isinstance(e, SourceError) else SourceError(
+            f"The City's 3D Massing model couldn't be read ({type(e).__name__}: {e}).")
+        if folder:
+            shutil.rmtree(folder, ignore_errors=True)  # a copy that was ready but can't be read
+    saved = _year_folders(os.path.join(cache_dir, FOLDER))
+    for year in sorted(saved, reverse=True):
+        if _ready(saved[year]):
+            try:
+                parts = site_parts(saved[year], frame, radius_m)
+            except Exception:
+                shutil.rmtree(saved[year], ignore_errors=True)
+                continue
+            if note:
+                note(f"{reason} Ghost Town used its saved {year} 3D Massing model instead.")
+            return parts, year
+    raise reason
