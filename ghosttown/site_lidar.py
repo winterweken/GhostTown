@@ -1,7 +1,8 @@
-"""LiDAR roofs in Blender: a second mesh for each building, built from the fetcher's lidar_roofs.npz.
+"""LiDAR and fitted roofs in Blender: more meshes for each building, built from the fetcher's
+lidar_roofs.npz and fitted_roofs.npz.
 
-The building object keeps both meshes in ID properties (which also keeps them in the file when they
-aren't shown), and shows one; site_use switches between them."""
+The building object keeps its flat mesh and these in ID properties (which also keeps them in the file
+when they aren't shown), and shows one; site_use switches between them."""
 import zipfile
 import zlib
 
@@ -12,6 +13,7 @@ from . import materials, site_use
 from .ghosttown_fetch import BUILDING_KINDS
 
 SUFFIX = " · LiDAR"
+FITTED_SUFFIX = " · Fitted"
 
 
 def _mesh(name, verts, faces, face_kind, kinds):
@@ -83,10 +85,11 @@ def _read(path):
     return arrays
 
 
-def attach(root, path, block):
-    """Give every building in the site its LiDAR mesh and show it. Raises OSError or ValueError when the
-    file can't be read, leaving the site as it was."""
-    data = _read(path)
+def _attach(root, data, key, suffix, interior=None):
+    """Give each building listed in `data` a mesh kept under `key` (its flat mesh under FLAT_KEY, unless it
+    has one there already) and show it; with `interior`, the roof interior group too. Returns how many
+    buildings got one. When a mesh fails, removes every mesh it made, puts back what each building showed,
+    and raises."""
     kinds = [str(k) for k in data["kinds"]]
     buildings = {ob["ctx_id"]: ob for ob in site_use.made_objects(root, BUILDING_KINDS)}
     vs, fs = data["vert_start"], data["face_start"]
@@ -99,25 +102,49 @@ def attach(root, path, block):
             verts = data["verts"][vs[b]:vs[b + 1]]
             faces = data["faces"][fs[b]:fs[b + 1]]
             if len(faces) == 0 or faces.min() < 0 or faces.max() >= len(verts):
-                continue  # a damaged slice: this building keeps its flat roof only
-            me = _mesh(ob.name + SUFFIX, verts, faces, data["face_kind"][fs[b]:fs[b + 1]], kinds)
-            made.append((ob, ob.data, me))
-            ob[site_use.FLAT_KEY] = ob.data
-            ob[site_use.LIDAR_KEY] = me
+                continue  # a damaged slice: this building goes without this roof shape
+            me = _mesh(ob.name + suffix, verts, faces, data["face_kind"][fs[b]:fs[b + 1]], kinds)
+            made.append((ob, ob.data, me, site_use.FLAT_KEY in ob))
+            if site_use.FLAT_KEY not in ob:
+                ob[site_use.FLAT_KEY] = ob.data
+            ob[key] = me
             ob.data = me
-            group = ob.vertex_groups.new(name=site_use.ROOF_GROUP)
-            group.add(np.flatnonzero(data["interior"][vs[b]:vs[b + 1]]).tolist(), 1.0, "REPLACE")
+            if interior is not None:
+                group = ob.vertex_groups.new(name=site_use.ROOF_GROUP)
+                group.add(np.flatnonzero(interior[vs[b]:vs[b + 1]]).tolist(), 1.0, "REPLACE")
     except Exception:
-        for ob, flat, me in made:
-            ob.data = flat
-            for key in (site_use.FLAT_KEY, site_use.LIDAR_KEY):
-                del ob[key]
+        for ob, shown, me, had_flat in made:
+            ob.data = shown
+            del ob[key]
+            if not had_flat:
+                del ob[site_use.FLAT_KEY]
             bpy.data.meshes.remove(me)
         raise
-    if not made:
-        return False
+    return len(made)
+
+
+def _settle(root, block, use):
     root["lidar_cell_m"] = float(block["cell_m"])
     root["lidar_year"] = int(block.get("year") or 0)
-    root["use_roof_shapes"] = "lidar"
+    root["use_roof_shapes"] = use
     root["roof_detail"] = 1.0
+
+
+def attach(root, path, block):
+    """Give every building in the site its LiDAR mesh and show it. Raises OSError or ValueError when the
+    file can't be read, leaving the site as it was."""
+    data = _read(path)
+    if not _attach(root, data, site_use.LIDAR_KEY, SUFFIX, interior=data["interior"]):
+        return False
+    _settle(root, block, "lidar")
+    return True
+
+
+def attach_fitted(root, path, block):
+    """Give every building in the site its fitted mesh and show it: fitted roofs are what a build shows.
+    Raises OSError or ValueError when the file can't be read, leaving the site as it was."""
+    data = _read(path)
+    if not _attach(root, data, site_use.FITTED_KEY, FITTED_SUFFIX):
+        return False
+    _settle(root, block, "fitted")
     return True

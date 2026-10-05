@@ -9,7 +9,8 @@ from .ghosttown_fetch import BUILDING_KINDS, GROUND_KINDS
 
 ROOF_NORMAL_Z = 0.5             # faces pointing up at least this much count as roof (pitched ones too)
 INDEX_ATTR = "ctx_material_index"
-FLAT_KEY, LIDAR_KEY = "ctx_mesh_flat", "ctx_mesh_lidar"  # a building's two meshes, when it has LiDAR roofs
+FLAT_KEY, FITTED_KEY, LIDAR_KEY = "ctx_mesh_flat", "ctx_mesh_fitted", "ctx_mesh_lidar"  # a building's meshes
+SHAPE_KEYS = {"flat": FLAT_KEY, "fitted": FITTED_KEY, "lidar": LIDAR_KEY}  # roof shape -> the mesh's ID property
 ROOF_GROUP = "roof interior"    # LiDAR roof vertices off the outline: the only ones Roof detail may move
 DETAIL_MODIFIER = "Ghost Town roof detail"
 SITE_KINDS = BUILDING_KINDS + GROUND_KINDS + ("tree", "parcel", "parcel_on_site")
@@ -130,19 +131,30 @@ def apply_roofs(root, use, max_m=None):
 
 
 def meshes_of(ob):
-    """The meshes a building can show: the one in use, and the other roof shape when it has LiDAR roofs."""
+    """The meshes a building can show: the one in use, and its other roof shapes when it has them."""
     out = [ob.data]
-    for key in (FLAT_KEY, LIDAR_KEY):
+    for key in SHAPE_KEYS.values():
         me = ob.get(key)
         if me is not None and me not in out:
             out.append(me)
     return out
 
 
+def roof_choices(root):
+    """The roof shapes the site's buildings can show, in the panel's order: flat always, fitted and LiDAR
+    when any building has them."""
+    obs = made_objects(root, BUILDING_KINDS)
+    return [use for use in SHAPE_KEYS if use == "flat" or any(ob.get(SHAPE_KEYS[use]) is not None for ob in obs)]
+
+
 def has_lidar(root):
-    """True while the site's buildings have LiDAR roofs to switch to."""
-    return root.get("use_roof_shapes") in ("flat", "lidar") and any(
-        ob.get(LIDAR_KEY) is not None for ob in made_objects(root, BUILDING_KINDS))
+    """True while the site's buildings have roof shapes from the LiDAR (fitted or sampled) to switch to."""
+    return root.get("use_roof_shapes") in SHAPE_KEYS and len(roof_choices(root)) > 1
+
+
+def has_fitted(root):
+    """True while the site's buildings have fitted roofs."""
+    return root.get("use_roof_shapes") in SHAPE_KEYS and "fitted" in roof_choices(root)
 
 
 def _detail(ob, ratio):
@@ -163,7 +175,7 @@ def _detail(ob, ratio):
 
 
 def apply_roof_shapes(root, use):
-    """`use` is "lidar" or "flat": each building shows that mesh. The roof photo choice moves to the mesh
+    """`use` is "flat", "fitted" or "lidar": each building shows that mesh. The roof photo choice moves to the mesh
     now shown (the other is left plain), and Roof detail follows. Buildings in Edit Mode are skipped.
     Returns how many buildings were reset rather than restored exactly."""
     material = photo_material(root)
@@ -172,7 +184,7 @@ def apply_roof_shapes(root, use):
     ratio = float(root.get("roof_detail", 1.0))
     reset = 0
     for ob in made_objects(root, BUILDING_KINDS):
-        target = ob.get(LIDAR_KEY if use == "lidar" else FLAT_KEY)
+        target = ob.get(SHAPE_KEYS[use]) if use in SHAPE_KEYS else None
         if target is None or ob.data.is_editmode:
             continue
         if ob.data != target:

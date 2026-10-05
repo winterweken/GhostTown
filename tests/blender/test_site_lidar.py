@@ -210,3 +210,113 @@ def test_a_mesh_that_fails_half_way_is_removed_and_the_site_keeps_its_flat_roofs
         materials.get_material = real
     assert_flat_roofs(root, "the shed's mesh failed after it was made")
     assert all(me.users for me in bpy.data.meshes)
+
+
+def fitted_site(**kw):
+    from helpers import fitted_doc
+    folder = tempfile.mkdtemp()
+    return scene_build.build(bpy.context.scene, fitted_doc(folder, **kw), folder=folder), folder
+
+
+def test_a_build_shows_the_fitted_roofs_and_keeps_the_flat_and_lidar_ones():
+    root, _ = fitted_site()
+    tower, shed = buildings(root)
+    for ob in (tower, shed):
+        flat, fitted, lidar = ob[site_use.FLAT_KEY], ob[site_use.FITTED_KEY], ob[site_use.LIDAR_KEY]
+        assert ob.data == fitted and fitted.name == ob.name + " · Fitted" and len({flat, fitted, lidar}) == 3
+        assert not flat.name.endswith(site_lidar.SUFFIX) and closed_and_outward(*mesh_arrays(ob))
+        assert site_use.ROOF_GROUP not in ob.vertex_groups  # nothing on a fitted roof for Roof detail to move
+    assert max(v.co.z for v in tower.data.vertices) == 62.0
+    assert [m.name for m in shed.data.materials] == ["Context - Building (height guessed)"]
+    assert root["use_roof_shapes"] == "fitted" and site_use.has_fitted(root) and site_use.has_lidar(root)
+    assert site_use.roof_choices(root) == ["flat", "fitted", "lidar"]
+
+
+def test_all_three_meshes_survive_saving_and_reopening():
+    root, folder = fitted_site()
+    name = buildings(root)[0].name
+    path = os.path.join(folder, "site.blend")
+    bpy.ops.wm.save_as_mainfile(filepath=path)
+    bpy.ops.wm.open_mainfile(filepath=path)
+    tower = bpy.data.objects[name]
+    assert tower.data == tower[site_use.FITTED_KEY]
+    assert all(len(tower[key].polygons) > 0 for key in site_use.SHAPE_KEYS.values())
+
+
+def test_with_a_photo_all_three_meshes_get_the_photo_uv_map():
+    root, _ = fitted_site(photo=True)
+    for ob in buildings(root):
+        assert all("Site photo" in ob[key].uv_layers for key in site_use.SHAPE_KEYS.values())
+
+
+def test_a_rebuild_with_fitted_roofs_leaves_no_mesh_behind():
+    from helpers import fitted_doc
+    folder = tempfile.mkdtemp()
+    doc = fitted_doc(folder)
+    scene_build.build(bpy.context.scene, doc, folder=folder)
+    count = len(bpy.data.meshes)
+    scene_build.build(bpy.context.scene, doc, folder=folder)
+    assert len(bpy.data.meshes) == count and all(me.users for me in bpy.data.meshes)
+
+
+def test_removing_the_site_removes_the_fitted_meshes():
+    root, _ = fitted_site()
+    scene_build.remove(root, bpy.context.scene)
+    assert not [me for me in bpy.data.meshes if me.name.endswith((site_lidar.SUFFIX, site_lidar.FITTED_SUFFIX))]
+
+
+def test_a_kept_duplicate_keeps_its_fitted_mesh():
+    root, _ = fitted_site()
+    tower = buildings(root)[0]
+    copy = tower.copy()
+    bpy.context.scene.collection.objects.link(copy)
+    names = [tower[key].name for key in site_use.SHAPE_KEYS.values()]  # flat, fitted, LiDAR
+    scene_build.remove(root, bpy.context.scene)
+    assert copy.data.name == names[1] and all(name in bpy.data.meshes for name in names)
+
+
+def test_a_damaged_fitted_file_keeps_flat_and_lidar():
+    from helpers import fitted_doc
+    folder = tempfile.mkdtemp()
+    doc = fitted_doc(folder)
+    with open(os.path.join(folder, "fitted_roofs.npz"), "wb") as f:
+        f.write(b"not a zip")
+    root = scene_build.build(bpy.context.scene, doc, folder=folder)
+    assert root["use_roof_shapes"] == "lidar" and site_use.roof_choices(root) == ["flat", "lidar"]
+    assert not site_use.has_fitted(root) and all(site_use.FITTED_KEY not in ob for ob in buildings(root))
+    assert not [me for me in bpy.data.meshes if me.name.endswith(site_lidar.FITTED_SUFFIX)]
+
+
+def test_fitted_roofs_without_lidar_ones_keep_the_true_flat_mesh():
+    from helpers import fitted_doc
+    folder = tempfile.mkdtemp()
+    doc = fitted_doc(folder)
+    os.remove(os.path.join(folder, "lidar_roofs.npz"))
+    root = scene_build.build(bpy.context.scene, doc, folder=folder)
+    assert root["use_roof_shapes"] == "fitted" and site_use.roof_choices(root) == ["flat", "fitted"]
+    for ob in buildings(root):
+        assert ob[site_use.FLAT_KEY].name == ob.name and site_use.LIDAR_KEY not in ob
+
+
+def test_a_fitted_mesh_that_fails_half_way_puts_the_lidar_ones_back():
+    from helpers import fitted_doc
+    real = materials.get_material
+
+    def fails_for_the_sheds_fitted_mesh(kind):
+        # The tower's fitted mesh is made before the shed's.
+        if kind == "building_guessed" and any(me.name.endswith(site_lidar.FITTED_SUFFIX) for me in bpy.data.meshes):
+            raise ValueError("no material")
+        return real(kind)
+
+    folder = tempfile.mkdtemp()
+    doc = fitted_doc(folder)
+    materials.get_material = fails_for_the_sheds_fitted_mesh
+    try:
+        root = scene_build.build(bpy.context.scene, doc, folder=folder)
+    finally:
+        materials.get_material = real
+    assert root["use_roof_shapes"] == "lidar" and site_use.roof_choices(root) == ["flat", "lidar"]
+    for ob in buildings(root):
+        assert ob.data == ob[site_use.LIDAR_KEY] and site_use.FITTED_KEY not in ob
+        assert not ob[site_use.FLAT_KEY].name.endswith(site_lidar.SUFFIX)
+    assert not [me for me in bpy.data.meshes if me.name.endswith(site_lidar.FITTED_SUFFIX)]

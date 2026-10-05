@@ -66,6 +66,8 @@ def min_edge(verts, faces):
 LIDAR = {"file": "lidar_roofs.npz", "cell_m": 0.5, "year": None, "source": "ontario", "buildings": 2,
          "triangles": 28, "kinds": ["building", "building_on_site", "building_guessed"]}
 
+FITTED = {"file": "fitted_roofs.npz", "buildings": 2, "triangles": 28}
+
 
 def pyramid(x0, y0, x1, y1, z0, z1, apex):
     """A closed box with a pyramid roof: the apex is the one roof point off the outline."""
@@ -108,8 +110,8 @@ def grid_box(x0, y0, size, n, z0, z1):
     return verts, faces, interior
 
 
-def write_lidar(folder, buildings):
-    """lidar_roofs.npz in `folder`, laid out as the fetcher writes it: buildings is
+def write_lidar(folder, buildings, name="lidar_roofs.npz"):
+    """lidar_roofs.npz (or `name`) in `folder`, laid out as the fetcher writes it: buildings is
     [(element id, verts, faces, interior, kind index)], faces indexing each building's own vertices."""
     import numpy as np
 
@@ -122,7 +124,7 @@ def write_lidar(folder, buildings):
         ids.append(element_id)
         vs.append(vs[-1] + len(v))
         fs.append(fs[-1] + len(f))
-    np.savez_compressed(os.path.join(folder, "lidar_roofs.npz"), verts=np.array(verts, dtype=np.float32),
+    np.savez_compressed(os.path.join(folder, name), verts=np.array(verts, dtype=np.float32),
                         faces=np.array(faces, dtype=np.int32), face_kind=np.array(kinds, dtype=np.uint8),
                         interior=np.array(interior, dtype=np.uint8), building_ids=np.array(ids, dtype=str),
                         vert_start=np.array(vs, dtype=np.int64), face_start=np.array(fs, dtype=np.int64),
@@ -138,4 +140,16 @@ def lidar_doc(folder, address=None, photo=False, dense=False):
     shed = grid_box(30, 10, 20, 20, -0.3, 9.0) if dense else pyramid(30, 10, 50, 30, -0.3, 9.0, 11.0)
     write_lidar(folder, [("osm:way:1", *pyramid(0, 10, 20, 30, -0.3, 60.0, 64.0), 0), ("osm:way:2", *shed, 2)])
     doc["lidar"] = dict(LIDAR)
+    return doc
+
+
+def fitted_doc(folder, address=None, photo=False, dense=False):
+    """lidar_doc with fitted roofs too: on each building a lower pyramid than its LiDAR one, the apex
+    still the one point off the outline (fitted roofs flag none)."""
+    doc = lidar_doc(folder, address=address, photo=photo, dense=dense)
+    tower = pyramid(0, 10, 20, 30, -0.3, 60.0, 62.0)
+    shed = pyramid(30, 10, 50, 30, -0.3, 9.0, 10.0)
+    write_lidar(folder, [("osm:way:1", *tower[:2], [0] * 9, 0), ("osm:way:2", *shed[:2], [0] * 9, 2)],
+                name="fitted_roofs.npz")
+    doc["lidar"]["fitted"] = dict(FITTED)
     return doc
