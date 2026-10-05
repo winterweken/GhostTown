@@ -7,7 +7,7 @@ from shapely.affinity import rotate
 from shapely.geometry import box
 
 from ghosttown_fetch import fitted_roofs as fit
-from test_lidar_roofs import FLAT20, Field
+from test_lidar_roofs import FLAT20, Field, closed_outward, square
 
 CELL = 0.5
 
@@ -101,3 +101,40 @@ def test_city_outline_samples_drop_cranes_and_gaps():
     field = Field(lambda x, y: np.where(x < -4, 40.0, np.where(x < 0, 1.0, 12.0)))
     _, _, z = fit.house_samples(poly, 12.0, field, CELL, city=True)
     assert len(z) and np.allclose(z, 12.0)
+
+
+MODELS = [
+    {"kind": "flat", "h": 6.0},
+    {"kind": "shed", "c": [0.2, 0.1, 5.0]},
+    {"kind": "gable", "th": math.radians(30), "u0": 0.7, "H": 9.0, "s": 0.5},
+    {"kind": "hip", "th": 0.0, "u0": 0.0, "v0": 0.0, "a": 2.0, "H": 9.0, "s": 0.5},
+    {"kind": "hip", "th": 0.0, "u0": 0.0, "v0": 0.0, "a": 0.0, "H": 9.0, "s": 0.5},  # a pyramid
+]
+
+OUTLINES = [
+    square(-7, -5, 12),
+    np.asarray(rect(0, 0, 14, 10, 30).exterior.coords)[:-1].tolist(),
+    [[-7, -5], [7, -5], [7, 0], [0, 0], [0, 6], [-7, 6]],                         # an L
+    [[-7.13, -5.02], [6.91, -4.97], [7.04, 5.11], [-6.88, 4.93]],                  # off the grid
+]
+
+@pytest.mark.parametrize("m", MODELS)
+@pytest.mark.parametrize("ring", OUTLINES)
+def test_house_solids_close_and_their_planes_reach_the_walls(m, ring):
+    verts, faces = fit.house_solid([ring], -0.3, 0.0, m)
+    assert closed_outward(verts, faces)
+    roof = verts[verts[:, 2] > 0]
+    want = np.maximum(fit.roof_z(m, roof[:, 0], roof[:, 1]), fit.LOWEST_ROOF_M)
+    assert np.allclose(roof[:, 2], want, atol=1e-6)
+    corners = np.asarray(ring, dtype=float)
+    assert np.allclose(fit.roof_z(m, corners[:, 0], corners[:, 1]).clip(fit.LOWEST_ROOF_M),
+                       [roof[np.argmin(np.hypot(*(roof[:, :2] - c).T))][2] for c in corners], atol=1e-6)
+
+def test_a_house_with_a_courtyard_keeps_it_open():
+    verts, faces = fit.house_solid([square(0, 0, 20), square(5, 5, 10)[::-1]], -0.3, 0.0, MODELS[2])
+    assert closed_outward(verts, faces)
+
+def test_a_roof_never_dips_under_2_m_or_its_base():
+    steep = {"kind": "gable", "th": 0.0, "u0": 0.0, "H": 6.0, "s": 2.0}  # eaves would be at -4 m
+    verts, faces = fit.house_solid([square(-5, -5, 10)], -0.3, 0.0, steep)
+    assert closed_outward(verts, faces) and verts[verts[:, 2] > 0][:, 2].min() == pytest.approx(2.0)

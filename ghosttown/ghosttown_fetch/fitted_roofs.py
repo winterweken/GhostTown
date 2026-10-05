@@ -19,8 +19,10 @@ import math
 
 import numpy as np
 import shapely
+from shapely.geometry import Polygon
 
-from .lidar_roofs import CITY_ABOVE_M, CITY_GROUND_M, OTHER_RANGE_M, RIDGE_M
+from .lidar_roofs import (CITY_ABOVE_M, CITY_GROUND_M, EXACT_M, MIN_WALL_M, OTHER_RANGE_M, RIDGE_M, _area, _loops,
+                          _triangle_coords, _wind, closed)
 
 MODELS = ("flat", "shed", "gable", "hip")  # simplest first
 SHAPES = {"flat": "flat", "skillion": "shed", "gabled": "gable", "hipped": "hip", "half-hipped": "hip"}
@@ -36,6 +38,7 @@ NUDGE_DEG = 3.0        # ...and along and across the outline's main axes, nudged
 AXIS_EDGE_M = 3.0      # outline edges this long or longer set main axes
 OFFSETS = 15           # ridge positions tried across the house
 HIP_ENDS = (0.5, 0.75, 1.0)
+LOWEST_ROOF_M = OTHER_RANGE_M[0]  # no roof point below this height above the ground
 
 
 def _grid(poly, cell):
@@ -266,3 +269,80 @@ def roof_z(m, x, y):
     if m["kind"] == "hip":
         d = np.maximum(d, np.abs(v - m["v0"]) - m["a"])
     return m["H"] - m["s"] * d
+
+
+def _faces(poly, m):
+    """The footprint cut where the roof bends: along the ridge (gable), plus the hip lines, 45 degrees in
+    plan (hip). Each piece is one plane of the roof."""
+    if m["kind"] in ("flat", "shed"):
+        return [poly]
+    c, s = math.cos(m["th"]), math.sin(m["th"])
+    minx, miny, maxx, maxy = poly.bounds
+    e = 10.0 * (max(abs(minx), abs(miny), abs(maxx), abs(maxy)) + abs(m["u0"]) + abs(m.get("v0", 0.0)) + 100.0)
+
+    def xy(v, u):
+        return (v * c - u * s, v * s + u * c)
+
+    u0 = m["u0"]
+    if m["kind"] == "gable":
+        cuts = [Polygon([xy(-e, u0), xy(e, u0), xy(e, u0 + e), xy(-e, u0 + e)]),
+                Polygon([xy(-e, u0), xy(-e, u0 - e), xy(e, u0 - e), xy(e, u0)])]
+    else:
+        p, q = (m["v0"] - m["a"], u0), (m["v0"] + m["a"], u0)
+        cuts = [Polygon([xy(*p), xy(*q), xy(q[0] + e, u0 + e), xy(p[0] - e, u0 + e)]),
+                Polygon([xy(*p), xy(p[0] - e, u0 - e), xy(q[0] + e, u0 - e), xy(*q)]),
+                Polygon([xy(*q), xy(q[0] + e, u0 - e), xy(q[0] + e, u0 + e)]),
+                Polygon([xy(*p), xy(p[0] - e, u0 + e), xy(p[0] - e, u0 - e)])]
+    out = []
+    for cut in cuts:
+        out += [g for g in shapely.get_parts(shapely.intersection(poly, cut)) if g.geom_type == "Polygon" and g.area > 1e-4]
+    return out
+
+
+def house_solid(rings, z0, ground, m):
+    """(verts, faces) of a closed solid whose roof is the model `m` (heights above `ground`), its planes
+    running out to the walls; or None. Built like a LiDAR roof: walls and base follow the roof's own edge."""
+    poly = Polygon(rings[0], rings[1:])
+    if not poly.is_valid or poly.area <= 0:
+        return None
+    parts = _faces(poly, m)
+    if not parts:
+        return None
+    corners = _triangle_coords(np.array(parts, dtype=object)).reshape(-1, 2)
+    _, first, inverse = np.unique(np.round(corners * 1000.0).astype(np.int64), axis=0,
+                                  return_index=True, return_inverse=True)
+    xy = corners[first]
+    top = inverse.reshape(-1, 3)
+    top = top[(top[:, 0] != top[:, 1]) & (top[:, 1] != top[:, 2]) & (top[:, 0] != top[:, 2])]
+    n = len(xy)
+    top = _wind(top, xy)
+    loops = _loops(top, n)
+    if not loops:
+        return None
+    edge = np.concatenate([np.asarray(loop) for loop in loops])
+    outer = [loop for loop in loops if _area(xy[loop]) > 0]
+    holes = [loop for loop in loops if _area(xy[loop]) < 0]
+    if len(outer) != 1:
+        return None
+    base = Polygon(xy[outer[0]], [xy[h] for h in holes])
+    if not base.is_valid:
+        return None
+    z = np.maximum(ground + roof_z(m, xy[:, 0], xy[:, 1]), max(ground + LOWEST_ROOF_M, z0 + MIN_WALL_M))
+    bottom_of = np.full(n, -1, dtype=np.int64)
+    bottom_of[edge] = n + np.arange(len(edge))
+    verts = np.concatenate([np.column_stack([xy, z]), np.column_stack([xy[edge], np.full(len(edge), float(z0))])])
+    faces = [top]
+    for loop in loops:
+        a = np.asarray(loop)
+        b = np.roll(a, -1)
+        faces += [np.stack([bottom_of[a], bottom_of[b], b], axis=1), np.stack([bottom_of[a], b, a], axis=1)]
+    corners = _triangle_coords(base).reshape(-1, 2)
+    tree = shapely.STRtree(shapely.points(xy[edge]))
+    found, hit = tree.query_nearest(shapely.points(corners), max_distance=EXACT_M, all_matches=False)
+    if len(found) != len(corners):
+        return None
+    ids = np.empty(len(corners), dtype=np.int64)
+    ids[found] = n + hit
+    faces.append(_wind(ids.reshape(-1, 3), verts[:, :2], up=False))
+    faces = np.concatenate(faces)
+    return (verts, faces) if closed(faces) else None
