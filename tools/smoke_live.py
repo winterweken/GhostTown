@@ -61,7 +61,10 @@ assert "ground" in doc["counts"], doc["counts"]
 if doc["region"] == "toronto":
     assert {"road", "tree", "parcel"} <= set(doc["counts"]), doc["counts"]
     assert root.get("ctx_photo_image") and bpy.data.images[root["ctx_photo_image"]].packed_file, doc.get("photo")
-    assert doc["terrain"]["source"] == "nrcan-dtm", doc["terrain"]
+    if doc["terrain"]["source"] != "nrcan-dtm":  # NRCan down or unreadable: flat ground, and the build says why
+        why = [n["text"] for n in doc["notes"] if n["code"] == "terrain"]
+        assert why, doc["terrain"]
+        print("TERRAIN FALLBACK", why)
 if with_lidar:
     site_use = importlib.import_module(pkg + ".site_use")
     city_model = any(n["code"] == "lidar" and "3D Massing" in n["text"] for n in doc["notes"])
