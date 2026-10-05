@@ -41,8 +41,8 @@ def test_a_gable_comes_back_with_its_ridge():
     m = fitted(poly, gable(5, 3, 30, 1.0))
     assert m["kind"] == "gable" and ridge_angle_error(m, 30) <= 3
     _, u = fit._frame(np.array([5.0]), np.array([3.0]), m["th"])
-    across = abs(abs(m["u0"] - u[0]) - 1.0)  # the ridge sits 1 m off the middle
-    assert across <= 0.25 and m["H"] == pytest.approx(9.0, abs=0.1) and m["error"] < 0.1
+    assert m["u0"] - u[0] == pytest.approx(1.0, abs=0.25)  # the ridge sits 1 m off the middle, on its own side
+    assert m["H"] == pytest.approx(9.0, abs=0.1) and m["error"] < 0.1
 
 @pytest.mark.parametrize("field, kind", [
     (hip(0, 0, 14, 10), "hip"),
@@ -52,9 +52,14 @@ def test_a_gable_comes_back_with_its_ridge():
 def test_each_roof_comes_back_as_itself(field, kind):
     assert fitted(rect(0, 0, 14, 10), field)["kind"] == kind
 
+def test_a_hip_comes_back_with_level_ends():
+    m = fitted(rect(0, 0, 14, 10), hip(0, 0, 14, 10))
+    assert m["kind"] == "hip" and m["a"] == pytest.approx(2.0, abs=0.01)
+    assert m["H"] == pytest.approx(9.0, abs=0.01) and m["s"] == pytest.approx(0.5, abs=0.01) and m["error"] < 0.01
+
 def test_a_tree_crown_over_part_of_a_gable_changes_nothing():
     plain = gable(0, 0, 0, 0.0)
-    crowned = Field(lambda x, y: plain.sample(x, y) + np.where((x > 4) & (y > 2), 6.0, 0.0))  # about 10 %
+    crowned = Field(lambda x, y: plain.sample(x, y) + np.where((x > 1.5) & (y > 2), 6.0, 0.0))  # about 10 %
     m = fitted(rect(0, 0, 16, 10), crowned)
     assert m["kind"] == "gable" and abs(m["H"] - 9.0) < 0.3 and ridge_angle_error(m, 0) <= 3
 

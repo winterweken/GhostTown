@@ -193,7 +193,7 @@ def _best_pitched(x, y, z, outline, dirs, hip, top=None, drop=None):
         params = [(float(a), None) for a in u0]
         if hip:
             v0 = (v.min() + v.max()) / 2
-            ends = np.maximum((v.max() - v.min()) / 2 - np.array(HIP_ENDS) * (hi - lo) / 2, 0.0)
+            ends = np.maximum((v.max() - v.min()) / 2 - np.array(HIP_ENDS) * (u.max() - u.min()) / 2, 0.0)
             D = np.maximum(D[:, None, :], np.abs(v - v0)[None, None, :] - ends[None, :, None]).reshape(-1, len(z))
             OD = np.maximum(OD[:, None, :], np.abs(ov - v0)[None, None, :] - ends[None, :, None]).reshape(-1, len(ov))
             params = [(float(a), float(e)) for a in u0 for e in ends]
