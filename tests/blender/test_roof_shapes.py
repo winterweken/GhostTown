@@ -214,3 +214,46 @@ def test_a_missing_fitted_file_leaves_the_lidar_roofs():
         assert settings.summary.endswith(", LiDAR roofs") and settings.site["use_roof_shapes"] == "lidar"
     finally:
         ghosttown.unregister()
+
+
+def test_the_operator_refuses_lidar_on_a_site_with_only_fitted_roofs():
+    from helpers import fitted_doc
+    ghosttown.register()
+    try:
+        folder = tempfile.mkdtemp()
+        doc = fitted_doc(folder)
+        os.remove(os.path.join(folder, "lidar_roofs.npz"))
+        root = scene_build.build(bpy.context.scene, doc, folder=folder)
+        bpy.context.scene.ghosttown.site = root
+        assert bpy.ops.ghosttown.use_roof_shapes(use="lidar") == {"CANCELLED"} and root["use_roof_shapes"] == "fitted"
+        assert bpy.ops.ghosttown.use_roof_shapes(use="flat") == {"FINISHED"}
+        assert bpy.ops.ghosttown.use_roof_shapes(use="fitted") == {"FINISHED"} and root["use_roof_shapes"] == "fitted"
+    finally:
+        ghosttown.unregister()
+
+
+def test_importing_says_which_roofs_files_are_missing():
+    from ghosttown import ops
+    from helpers import fitted_doc
+    ghosttown.register()
+    try:
+        for missing, ending, warned in (
+                ((), ", fitted and LiDAR roofs", []),
+                (("fitted_roofs.npz",), ", LiDAR roofs", ["no fitted roofs."]),
+                (("lidar_roofs.npz",), ", fitted roofs", ["no LiDAR roofs."]),
+                (("lidar_roofs.npz", "fitted_roofs.npz"), None, ["flat roofs.", "no fitted roofs."])):
+            folder = tempfile.mkdtemp()
+            doc = fitted_doc(folder)
+            for name in missing:
+                os.remove(os.path.join(folder, name))
+            path = os.path.join(folder, "context.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(doc, f)
+            reports = []
+            ops.import_into_scene(bpy.context, path, lambda level, text: reports.append(text))
+            summary = bpy.context.scene.ghosttown.summary
+            assert summary.endswith(ending) if ending else "roofs" not in summary, (missing, summary)
+            said = [t.split("so the buildings have ")[1] for t in reports if "file is missing or unreadable" in t]
+            assert said == warned, (missing, reports)
+    finally:
+        ghosttown.unregister()

@@ -390,7 +390,8 @@ class GHOSTTOWN_OT_use_roof_shapes(bpy.types.Operator):
     def execute(self, context):
         root = site_use.picked(context)
         if self.use not in site_use.roof_choices(root):
-            self.report({"WARNING"}, "This site has no fitted roofs. Build it again to get them.")
+            missing = "fitted" if self.use == "fitted" else "LiDAR"
+            self.report({"WARNING"}, f"This site has no {missing} roofs. Build it again to get them.")
             return {"CANCELLED"}
         reset = site_use.apply_roof_shapes(root, self.use)
         if reset:
