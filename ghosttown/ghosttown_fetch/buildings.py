@@ -49,6 +49,18 @@ def osm_height(tags):
     return GUESS_M, "guessed"
 
 
+def roof_tags(tags):
+    """OpenStreetMap's roof:shape and roof:height as a solid's `roof` object, or None without either."""
+    roof = {}
+    shape = str(tags.get("roof:shape") or "").strip().lower()
+    if shape:
+        roof["shape"] = shape
+    height = parse_length(tags.get("roof:height"))
+    if height:
+        roof["height"] = round(height, 3)
+    return roof or None
+
+
 def _min_height(tags):
     height = parse_length(tags.get("min_height"))
     if height is not None:
@@ -123,7 +135,7 @@ def _element(feature, pieces, terrain):
             z0 = ground + base if base > 0 else ground - SINK_M
             z1 = ground + height
             if z1 - z0 >= MIN_SOLID_M:
-                solids.append(ctx.solid(kind, r, z0, z1, source, ground=ground))
+                solids.append(ctx.solid(kind, r, z0, z1, source, ground=ground, roof=roof_tags(f.tags)))
     if not solids:
         return None
     kind = "building_guessed" if all(s["kind"] == "building_guessed" for s in solids) else "building"

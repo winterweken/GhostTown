@@ -132,3 +132,16 @@ def test_lidar_roofs_are_optional_but_must_be_well_formed(change):
     assert ctx.validate(doc) == []
     doc["lidar"].update(change)
     assert any("LiDAR roofs need" in p for p in ctx.validate(doc))
+
+
+@pytest.mark.parametrize("roof, ok", [
+    ({"shape": "gabled", "height": 2.5}, True), ({"shape": "flat"}, True), ({"height": 3}, True),
+    ({"shape": ""}, False), ({"height": 0}, False), ({"height": "2"}, False), ({"pitch": 30}, False), ("gabled", False),
+])
+def test_a_solids_roof_tags_are_optional_but_must_be_well_formed(roof, ok):
+    doc = _doc()
+    s = ctx.solid("building", [SQUARE], -0.3, 10, "osm_height")
+    s["roof"] = roof
+    doc["elements"] = [ctx.element("osm:way:1", "building", solids=[s])]
+    problems = ctx.validate(doc)
+    assert problems == ([] if ok else ["osm:way:1: a solid's roof tags need a shape name and a positive height, each optional."])
