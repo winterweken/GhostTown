@@ -5,7 +5,7 @@ This file, request.py and context.py use the standard library only, so the
 Blender add-on can import them without shapely or numpy.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 SCHEMA = 1
 TOOL = "ghosttown " + __version__
 HOMEPAGE = "https://github.com/winterweken/GhostTown"
