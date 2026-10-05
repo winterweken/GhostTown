@@ -164,13 +164,13 @@ def test_a_tower_on_a_podium_is_two_tiers_that_fill_the_footprint():
     tower, = [p for p, level in parts if level > 20]
     assert tower.area == pytest.approx(225.0, rel=0.1)
 
-@pytest.mark.parametrize("extra, count", [
-    ((10, 10, 16, 15, 16.0), 2),    # a 30 m2 penthouse 4 m up is a tier
-    ((10, 10, 12.5, 14, 16.0), 1),  # a 10 m2 lift overrun is not
+@pytest.mark.parametrize("extra, levels", [
+    ((10, 10, 16, 15, 16.0), [12.0, 16.0]),  # a 30 m2 penthouse 4 m up is a tier
+    ((10, 10, 12.5, 14, 16.0), [12.0]),      # a 10 m2 lift overrun is not
 ])
-def test_a_penthouse_is_a_tier_and_a_lift_overrun_is_not(extra, count):
+def test_a_penthouse_is_a_tier_and_a_lift_overrun_is_not(extra, levels):
     parts = fit.tiers(box(0, 0, 30, 30), 12.0, heights_at((0, 0, 30, 30, 12.0), extra), CELL, city=False)
-    assert len(parts) == count and tier_levels(parts)[0] == 12.0
+    assert tier_levels(parts) == levels
 
 def test_a_parapet_is_not_a_tier():
     roof = heights_at((0, 0, 30, 30, 13.0), (0.5, 0.5, 29.5, 29.5, 12.0))  # 1 m higher round the edge
@@ -182,6 +182,18 @@ def test_a_tree_crown_on_a_low_roof_is_not_a_tier():
     crown = Field(lambda x, y: np.where((x > 20) & (x < 28) & (y > 20) & (y < 27.5),
                                         rng.uniform(6.0, 14.0, size=np.shape(x)), flat.sample(x, y)))
     assert tier_levels(fit.tiers(box(0, 0, 30, 30), 6.0, crown, CELL, city=False)) == [6.0]
+
+
+def test_a_smooth_spot_in_a_rough_crown_is_not_a_tier():
+    rng = np.random.default_rng(3)
+    roof = heights_at((0, 0, 40, 40, 6.0))
+
+    def crowned(x, y):
+        crown = (x > 20) & (x < 32) & (y > 20) & (y < 32)
+        z = np.where(crown, rng.uniform(6.0, 14.0, size=np.shape(x)), roof.sample(x, y))
+        return np.where((np.abs(x - 26) < 1) & (np.abs(y - 26) < 1), 11.0, z)  # a smooth 2 x 2 m top at 11 m
+    assert tier_levels(fit.tiers(box(0, 0, 40, 40), 6.0, Field(crowned), CELL, city=False)) == [6.0]
+
 
 def test_a_taller_solid_over_the_outline_adds_no_tier():
     lidar = heights_at((0, 0, 40, 40, 10.0), (12.5, 12.5, 27.5, 27.5, 40.0))
@@ -196,3 +208,4 @@ def test_an_l_shaped_building_keeps_its_shape_in_tiers():
     parts = fit.tiers(ell, 8.0, heights_at((0, 0, 40, 40, 8.0), (0, 20, 15, 40, 20.0)), CELL, city=False)
     assert tier_levels(parts) == [8.0, 20.0]
     assert shapely.union_all([p for p, _ in parts]).symmetric_difference(ell).area < 1e-6
+    assert sum(p.area for p, _ in parts) == pytest.approx(ell.area, abs=1e-6)  # and they don't overlap

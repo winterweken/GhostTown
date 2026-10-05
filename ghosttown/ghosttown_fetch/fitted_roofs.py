@@ -41,6 +41,7 @@ HIP_ENDS = (0.5, 0.75, 1.0)
 LOWEST_ROOF_M = OTHER_RANGE_M[0]  # no roof point below this height above the ground
 TIER_STEP_M = 3.0      # a storey: tiers stand at least this far apart...
 MIN_TIER_M2 = 25.0     # ...and cover at least this much
+MIN_SEED_M2 = 8.0      # a tier rests on at least this much smooth roof of its own, so a smooth spot in a crown isn't one
 ROUGH_M = 0.5          # a cell whose 3 x 3 neighbourhood strays this far from a plane is a tree, wall or clutter
 LEVEL_BIN_M = 0.5
 LEVEL_SIGMA_M = 1.0
@@ -411,36 +412,71 @@ def _borders(full):
     keys, counts = np.unique(pairs, axis=0, return_counts=True)
     return {(int(a), int(b)): int(n) for (a, b), n in zip(keys, counts)}
 
-def _merge(full, inside, smooth, h, min_cells):
-    """Tiers under MIN_TIER_M2 (inside the outline) join the neighbour they share the longest border
-    with, smallest first; then neighbours whose medians are under TIER_STEP_M apart merge, closest
-    first."""
-    while True:
-        keys = [int(k) for k in np.unique(full)]
-        if len(keys) == 1:
-            return full
-        borders = _borders(full)
-        size = {k: int(np.count_nonzero(inside & (full == k))) for k in keys}
-        small = [k for k in keys if size[k] < min_cells]
-        if small:
-            k = min(small, key=lambda k: (size[k], k))
-            near = {(b if a == k else a): n for (a, b), n in borders.items() if k in (a, b)}
-            full[full == k] = max(near, key=lambda j: (near[j], -j))
-            continue
-        level = {k: float(np.median(h[smooth & (full == k)])) for k in keys}
-        close = sorted((abs(level[a] - level[b]), a, b) for a, b in borders if abs(level[a] - level[b]) < TIER_STEP_M)
+def _by_label(values, labels, count):
+    """`values` split into one array per label 0..count-1."""
+    order = np.argsort(labels, kind="stable")
+    bounds = np.searchsorted(labels[order], np.arange(count + 1))
+    values = values[order]
+    return [values[bounds[k]:bounds[k + 1]] for k in range(count)]
+
+
+def _merge(full, inside, smooth, h, min_cells, min_seed_cells):
+    """(labels, {label: height}): tiers covering under MIN_TIER_M2 inside the outline, or resting on
+    under MIN_SEED_M2 of smooth roof, join the neighbour they share the longest border with, smallest
+    first; then neighbours whose medians are under TIER_STEP_M apart merge, closest first. Each merge
+    updates sizes, borders and heights in place, so a cluttered roof costs one pass per merge over its
+    labels, not over its cells. A tier's height is the median of its smooth cells."""
+    keys, flat = np.unique(full, return_inverse=True)
+    full = flat.reshape(full.shape)
+    count = len(keys)
+    size = np.bincount(full[inside], minlength=count)
+    heights = _by_label(h[smooth], full[smooth], count)
+    near = [{} for _ in range(count)]
+    for (a, b), n in _borders(full).items():
+        near[a][b] = near[b][a] = n
+    into = np.arange(count)
+    alive = set(range(count))
+
+    def join(k, j):
+        """Tier k becomes part of tier j."""
+        into[into == k] = j
+        size[j] += size[k]
+        heights[j] = np.concatenate([heights[j], heights[k]])
+        for other, n in near[k].items():
+            if other != j:
+                near[j][other] = near[other][j] = near[j].get(other, 0) + n
+            del near[other][k]
+        near[k] = {}
+        alive.discard(k)
+
+    while len(alive) > 1:
+        small = [k for k in alive if size[k] < min_cells or len(heights[k]) < min_seed_cells]
+        if not small:
+            break
+        k = min(small, key=lambda k: (size[k], k))
+        join(k, max(near[k], key=lambda j: (near[k][j], -j)))
+    level = {k: float(np.median(heights[k])) for k in alive}
+    while len(alive) > 1:
+        close = [(abs(level[a] - level[b]), a, b) for a in alive for b in near[a]
+                 if a < b and abs(level[a] - level[b]) < TIER_STEP_M]
         if not close:
-            return full
-        _, a, b = close[0]
-        full[full == b] = a
+            break
+        _, a, b = min(close)
+        join(b, a)
+        level[a] = float(np.median(heights[a]))
+        del level[b]
+    return into[full], level
 
 def _smooth(full):
     """SMOOTH_PASSES passes in which each cell takes the label held by SMOOTH_VOTES of its 3 x 3 cells."""
     for _ in range(SMOOTH_PASSES):
         win = _windows(full)
-        keys = np.unique(full)
-        votes = np.stack([(win == k).sum(axis=0) for k in keys])
-        full = np.where(votes.max(axis=0) >= SMOOTH_VOTES, keys[votes.argmax(axis=0)], full)
+        most, pick = np.zeros(full.shape, dtype=np.int64), full.copy()
+        for k in np.unique(full):  # one label at a time, keeping the best so far: memory stays one grid's worth
+            votes = (win == k).sum(axis=0)
+            better = votes > most
+            most, pick = np.where(better, votes, most), np.where(better, k, pick)
+        full = np.where(most >= SMOOTH_VOTES, pick, full)
     return full
 
 def _absorb(parts):
@@ -504,11 +540,14 @@ def tiers(poly, own, heights, cell, city, taller=None):
     if np.count_nonzero(smooth) < min_cells:
         return None
     levels = _levels(h[smooth], h[valid], cell)
-    nearest = np.abs(np.where(np.isfinite(h), h, 0.0)[..., None] - levels).argmin(axis=-1)
+    known = np.where(np.isfinite(h), h, 0.0)
+    nearest = np.abs(known[..., None] - levels).argmin(axis=-1)
+    seed = smooth & (np.abs(known - levels[nearest]) < TIER_STEP_M / 2)  # smooth cells off every level seed nothing
+    if not seed.any():
+        return None
     lab = np.full(h.shape, -1)
     for q in range(len(levels)):
-        pieces = _label(smooth & (nearest == q))
+        pieces = _label(seed & (nearest == q))
         lab = np.where(pieces >= 0, pieces, lab)
-    full = _merge(_fill(lab), inside, smooth, h, min_cells)
-    level = {int(k): float(np.median(h[smooth & (full == k)])) for k in np.unique(full)}
+    full, level = _merge(_fill(lab), inside, smooth, h, min_cells, MIN_SEED_M2 / (cell * cell))
     return _outlines(_smooth(full), i0, j0, cell, poly, level)
