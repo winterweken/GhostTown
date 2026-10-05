@@ -232,20 +232,31 @@ def test_build_fits_houses_tiers_larger_buildings_and_counts_them():
         v, f = arrays["verts"][vs[b]:vs[b + 1]].astype(float), arrays["faces"][fs[b]:fs[b + 1]]
         assert f.min() == 0 and f.max() == len(v) - 1 and lidar_roofs.closed(f) and volume(v, f) > 0
     assert not arrays["interior"].any() and len(arrays["interior"]) == len(arrays["verts"])
-    assert arrays["verts"].dtype == np.float32 and arrays["faces"].dtype == np.int32
+    plain, _ = lidar_roofs.build(els, field, CELL)
+    assert list(arrays) == list(plain) and all(arrays[k].dtype == plain[k].dtype for k in arrays)
     assert set(data_kinds(arrays, 0)) == {2} and set(data_kinds(arrays, 1)) == {0}
 
 def data_kinds(arrays, b):
     fs = arrays["face_start"]
     return arrays["face_kind"][fs[b]:fs[b + 1]].tolist()
 
+def test_build_hands_the_height_tag_and_roof_tags_to_the_fitter():
+    ring = square(-8, -5, 16)[:2] + [[8, 5], [-8, 5]]
+    tops, roofs = [], []
+    for s in (house(ring, 10.0, "osm_height", "building"), house(ring, 10.0, "osm_levels", "building"),
+              house(ring, 10.0, "osm_levels", "building", roof={"shape": "flat"})):
+        arrays, counts = fit.build([ctx.element("a", "building", solids=[s])], gable(0, 0, 0, 0.0), CELL)
+        tops.append(round(float(arrays["verts"][:, 2].max()), 2))
+        roofs.append(next(k for k in ("flat", "shed", "gable", "hip") if counts[k]))
+    assert tops[:2] == [10.0, 9.0] and roofs[1:] == ["gable", "flat"]  # the height tag sets the top, the shape tag the roof
+
 def test_a_house_that_cant_be_fitted_keeps_a_flat_top_at_its_measured_height():
     rng = np.random.default_rng(1)
     noise = Field(lambda x, y: rng.uniform(5.0, 13.0, size=np.shape(x)))
-    arrays, counts = fit.build([ctx.element("a", "building", solids=[house(square(0, 0, 10))])], noise, CELL)
+    arrays, counts = fit.build([ctx.element("a", "building", solids=[house(square(0, 0, 10), 15.0)])], noise, CELL)
     assert counts["unfitted"] == 1 and counts["triangles"] == 12
     top = arrays["verts"][:, 2].max()
-    assert 8.0 < top < 10.0  # the median of 5-13 m, not the guessed 9 m by chance alone
+    assert 8.0 < top < 10.0  # the median of 5-13 m, not the solid's own 15 m
     assert sorted(set(np.round(arrays["verts"][:, 2], 3).tolist()))[0] == pytest.approx(-0.3)
 
 def test_no_lidar_at_all_keeps_the_solids_own_height():

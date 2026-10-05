@@ -21,10 +21,9 @@ import numpy as np
 import shapely
 from shapely.geometry import Polygon
 
-from . import BUILDING_KINDS
 from .buildings import SINK_M
 from .lidar_roofs import (CITY_ABOVE_M, CITY_GROUND_M, HOUSE_MAX_HEIGHT_M, HOUSE_MAX_M2, MIN_WALL_M, OTHER_RANGE_M,
-                          RIDGE_M, _close, _outline, _triangle_coords, predates, prism, wanted)
+                          RIDGE_M, _close, _outline, _triangle_coords, pack, packed_counts, predates, prism, wanted)
 
 MODELS = ("flat", "shed", "gable", "hip")  # simplest first
 SHAPES = {"flat": "flat", "skillion": "shed", "gabled": "gable", "hipped": "hip", "half-hipped": "hip"}
@@ -610,7 +609,7 @@ def _fit_solid(s, heights, cell, over):
 
 def build(elements, heights, cell):
     """(arrays, counts) for every building that gets LiDAR roofs, or (None, counts) when there is none.
-    Arrays follow lidar_roofs.npz's layout, with `interior` all zero. counts: buildings, triangles, the
+    Arrays follow lidar_roofs.pack's layout, with `interior` all zero. counts: buildings, triangles, the
     houses by roof (flat, shed, gable, hip), larger (solids in tiers) and tiers, unfitted (flat at their
     measured height) and newer (flat at their own height: the survey predates them)."""
     solids = [(e, k, Polygon(s["rings"][0], s["rings"][1:]), s["z1"])
@@ -628,12 +627,11 @@ def build(elements, heights, cell):
         return over
 
     counts = dict.fromkeys(("buildings", "triangles", *MODELS, "larger", "tiers", "unfitted", "newer"), 0)
-    verts, faces, face_kind, ids = [], [], [], []
-    vert_start, face_start = [0], [0]
+    buildings = []
     for e, el in enumerate(elements):
         if not wanted(el):
             continue
-        nv = nf = 0
+        fitted = []
         for k, s in enumerate(el["solids"]):
             made, outcome = _fit_solid(s, heights, cell, taller_than(e, k, s["z1"]))
             if isinstance(outcome, tuple):
@@ -641,26 +639,10 @@ def build(elements, heights, cell):
                 counts["tiers"] += outcome[1]
             else:
                 counts[outcome] += 1
-            for v, f in made:
-                verts.append(v.astype(np.float32))
-                faces.append((f + nv).astype(np.int32))
-                face_kind.append(np.full(len(f), BUILDING_KINDS.index(s["kind"]), dtype=np.uint8))
-                nv += len(v)
-                nf += len(f)
-        if nf:
-            ids.append(el["id"])
-            vert_start.append(vert_start[-1] + nv)
-            face_start.append(face_start[-1] + nf)
-    counts["buildings"], counts["triangles"] = len(ids), face_start[-1]
-    if not ids:
-        return None, counts
-    all_verts = np.concatenate(verts)
-    arrays = {
-        "verts": all_verts, "faces": np.concatenate(faces), "face_kind": np.concatenate(face_kind),
-        "interior": np.zeros(len(all_verts), dtype=np.uint8), "building_ids": np.array(ids, dtype=str),
-        "vert_start": np.array(vert_start, dtype=np.int64), "face_start": np.array(face_start, dtype=np.int64),
-        "kinds": np.array(BUILDING_KINDS, dtype=str),
-    }
+            fitted += [(v, f, np.zeros(len(v), dtype=bool), s["kind"]) for v, f in made]
+        buildings.append((el["id"], fitted))
+    arrays = pack(buildings)
+    counts["buildings"], counts["triangles"] = packed_counts(arrays)
     return arrays, counts
 
 def _plural(n, word):

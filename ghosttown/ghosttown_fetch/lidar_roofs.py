@@ -377,20 +377,54 @@ def predates(rings, heights, cell):
     return float(np.mean(~(above >= CITY_GROUND_M))) > PREDATES_SHARE
 
 
-def build(elements, heights, cell):
-    """(arrays, counts) for every wanted building, or (None, counts) when there is none. Arrays follow
-    the npz layout: verts, faces (indices within each building), face_kind (index into kinds), interior,
-    building_ids, vert_start and face_start (each building's slice), kinds. counts: buildings, triangles,
-    flat (solids whose roof couldn't be built, which kept their flat top) and newer (solids of known
-    height that the survey predates, which kept their flat top too: the LiDAR under most of them is the
-    ground or missing). A solid with a guessed height follows the LiDAR wherever it is."""
+def pack(buildings):
+    """The npz arrays for [(building id, [(verts, faces, interior, kind), ...]), ...], or None when no
+    building has a face. Faces index each solid's own vertices, interior flags roof points off the
+    outline, and kind is a building kind's name. The layout: verts, faces (indices within each building),
+    face_kind (index into kinds), interior, building_ids, vert_start and face_start (each building's
+    slice), kinds."""
     verts, faces, face_kind, interior, ids = [], [], [], [], []
     vert_start, face_start = [0], [0]
+    for building_id, solids in buildings:
+        nv = nf = 0
+        for v, f, inner, kind in solids:
+            verts.append(v.astype(np.float32))
+            faces.append((f + nv).astype(np.int32))
+            face_kind.append(np.full(len(f), BUILDING_KINDS.index(kind), dtype=np.uint8))
+            interior.append(inner.astype(np.uint8))
+            nv += len(v)
+            nf += len(f)
+        if nf:
+            ids.append(building_id)
+            vert_start.append(vert_start[-1] + nv)
+            face_start.append(face_start[-1] + nf)
+    if not ids:
+        return None
+    return {
+        "verts": np.concatenate(verts), "faces": np.concatenate(faces), "face_kind": np.concatenate(face_kind),
+        "interior": np.concatenate(interior), "building_ids": np.array(ids, dtype=str),
+        "vert_start": np.array(vert_start, dtype=np.int64), "face_start": np.array(face_start, dtype=np.int64),
+        "kinds": np.array(BUILDING_KINDS, dtype=str),
+    }
+
+
+def packed_counts(arrays):
+    """(buildings, triangles) in arrays from pack, or (0, 0) for None."""
+    return (0, 0) if arrays is None else (len(arrays["building_ids"]), int(arrays["face_start"][-1]))
+
+
+def build(elements, heights, cell):
+    """(arrays, counts) for every wanted building, or (None, counts) when there is none. Arrays follow
+    pack's layout. counts: buildings, triangles, flat (solids whose roof couldn't be built, which kept
+    their flat top) and newer (solids of known height that the survey predates, which kept their flat top
+    too: the LiDAR under most of them is the ground or missing). A solid with a guessed height follows
+    the LiDAR wherever it is."""
+    buildings = []
     flat = newer = 0
     for el in elements:
         if not wanted(el):
             continue
-        nv = nf = 0
+        solids = []
         for s in el["solids"]:
             ground = s.get("ground", s["z0"] + SINK_M)
             city = s["height_source"].startswith("toronto")
@@ -408,27 +442,11 @@ def build(elements, heights, cell):
                 made = prism(s["rings"], s["z0"], s["z1"])
                 if made is None:
                     continue
-            v, f, inner = made
-            verts.append(v.astype(np.float32))
-            faces.append((f + nv).astype(np.int32))
-            face_kind.append(np.full(len(f), BUILDING_KINDS.index(s["kind"]), dtype=np.uint8))
-            interior.append(inner.astype(np.uint8))
-            nv += len(v)
-            nf += len(f)
-        if nf:
-            ids.append(el["id"])
-            vert_start.append(vert_start[-1] + nv)
-            face_start.append(face_start[-1] + nf)
-    counts = {"buildings": len(ids), "triangles": face_start[-1], "flat": flat, "newer": newer}
-    if not ids:
-        return None, counts
-    arrays = {
-        "verts": np.concatenate(verts), "faces": np.concatenate(faces), "face_kind": np.concatenate(face_kind),
-        "interior": np.concatenate(interior), "building_ids": np.array(ids, dtype=str),
-        "vert_start": np.array(vert_start, dtype=np.int64), "face_start": np.array(face_start, dtype=np.int64),
-        "kinds": np.array(BUILDING_KINDS, dtype=str),
-    }
-    return arrays, counts
+            solids.append((*made, s["kind"]))
+        buildings.append((el["id"], solids))
+    arrays = pack(buildings)
+    count, triangles = packed_counts(arrays)
+    return arrays, {"buildings": count, "triangles": triangles, "flat": flat, "newer": newer}
 
 
 def write(path, arrays):
