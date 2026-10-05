@@ -65,3 +65,15 @@ def _replace(tag, typ, vals):
 def test_damaged_tags_are_refused_in_a_sentence(edit):
     with pytest.raises(tiff.TiffError):
         tiff.read(write_tiff(GRID, 0.0, 0.0, 1.0, 1.0, tile=16, edit=edit))
+
+
+def test_tiles_left_out_of_a_sparse_file_have_no_data():
+    grid = np.arange(36, dtype=float).reshape(6, 6)
+    got, *_ = tiff.read(write_tiff(grid, 0.0, 0.0, 1.0, 1.0, tile=4, nodata=None, sparse=(1, 2)))
+    assert np.isnan(got[:4, 4:]).all() and np.isnan(got[4:, :4]).all()
+    assert np.array_equal(got[:4, :4], grid[:4, :4]) and np.array_equal(got[4:, 4:], grid[4:, 4:])
+
+
+def test_a_file_with_every_tile_left_out_is_all_nodata():
+    got, *_ = tiff.read(write_tiff(np.ones((6, 6)), 0.0, 0.0, 1.0, 1.0, tile=4, nodata=None, sparse=(0, 1, 2, 3)))
+    assert got.shape == (6, 6) and np.isnan(got).all()

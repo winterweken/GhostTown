@@ -5,11 +5,13 @@ The root collection remembers which collections and objects this build made (by 
 name), so a re-run removes exactly those and keeps everything the user added, duplicated or
 linked elsewhere.
 """
+import collections
 import json
+import os
 
 import bpy
 
-from . import geometry, georef, materials
+from . import geometry, georef, materials, site_lidar, site_photo, site_use
 from .ghosttown_fetch import BUILDING_KINDS
 from .ghosttown_fetch import context as ctx
 
@@ -43,7 +45,7 @@ def find_root(scene, label):
     return None
 
 
-def build(scene, doc):
+def build(scene, doc, folder=None):
     label = site_label(doc)
     old = find_root(scene, label)
     if old is not None:
@@ -100,24 +102,54 @@ def build(scene, doc):
     root.objects.link(origin)
     made.append(origin.name)
     root["ctx_objects"] = json.dumps(made)
+    lidar = doc.get("lidar")
+    if lidar and folder:
+        path = os.path.join(folder, lidar["file"])
+        if os.path.isfile(path):
+            try:
+                site_lidar.attach(root, path, lidar)
+            except (OSError, ValueError, KeyError):
+                pass  # a roofs file numpy can't read: the site builds without LiDAR roofs
+        fitted = lidar.get("fitted")
+        path = os.path.join(folder, fitted["file"]) if fitted else None
+        if path and os.path.isfile(path):
+            try:
+                site_lidar.attach_fitted(root, path, lidar)
+            except (OSError, ValueError, KeyError):
+                pass  # the same for fitted roofs
+    photo = doc.get("photo")
+    if photo and folder:
+        path = os.path.join(folder, photo["file"])
+        if os.path.isfile(path):
+            try:
+                site_photo.attach(root, origin, label, path, photo)
+            except (RuntimeError, ValueError):
+                pass  # a photo file Blender can't read: the site builds without a photo
     return root
 
 
 def remove(root, scene):
     """Delete a context collection and what Ghost Town made in it. The user's objects, duplicates and
     sub-collections are kept; anything that would be left with no parent moves to the scene collection."""
+    if site_use.has_photo(root):
+        # A linked duplicate the user kept shares a building's mesh: take the photo off it first, so it
+        # keeps no photo slot or saved indices and the old photo has no users left.
+        site_use.apply_roofs(root, "plain")
+        site_use.apply_ground(root, "colours")
+    photo_assets = (root.get("ctx_photo_material"), root.get("ctx_photo_image"))
     made = set(json.loads(root.get("ctx_objects", "[]")))
     ours = [root] + [c for c in root.children_recursive if c.get("ctx_group")]
     ours_names = {c.name for c in ours}
 
-    doomed, meshes, kept_objects, kept_collections = [], [], [], []
-    for coll in ours:
+    doomed, kept_objects, kept_collections = [], [], []
+    refs = collections.Counter()  # each mesh's users among the doomed objects: the one shown, and the
+    for coll in ours:             # flat, fitted and LiDAR meshes a building keeps in its ID properties
         for ob in coll.objects:
             if ob.name in made and "ctx_id" in ob:
                 if ob not in doomed:
                     doomed.append(ob)
-                    if ob.data is not None and ob.data.users == 1:
-                        meshes.append(ob.data)
+                    refs.update(me for me in (ob.data, *(ob.get(key) for key in site_use.SHAPE_KEYS.values()))
+                                if me is not None)
             elif ob not in kept_objects:
                 kept_objects.append(ob)
         for child in coll.children:
@@ -133,7 +165,9 @@ def remove(root, scene):
         if not parents and not in_a_scene:
             scene.collection.children.link(child)
 
+    meshes = [me for me, n in refs.items() if me.users == n]  # a mesh a kept duplicate shares stays
     bpy.data.batch_remove(doomed + meshes + ours)
+    site_photo.forget(*photo_assets)
 
 
 def _append(acc, verts, faces):
@@ -180,6 +214,7 @@ def _building_object(el):
     ob["ctx_kind"] = el["kind"]
     ob["ctx_source"] = el["id"].split(":", 1)[0]
     ob["ctx_height_source"] = ", ".join(sorted({s["height_source"] for s in el["solids"]}))
+    ob["ctx_height_m"] = round(max(s["z1"] - s["z0"] for s in el["solids"]), 3)
     if repaired:
         ob["ctx_repaired"] = True  # a courtyard or a broken solid was left out to keep the mesh closed
     return ob

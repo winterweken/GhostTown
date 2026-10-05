@@ -9,9 +9,13 @@ class FakeNet:
     def __init__(self, answers):
         self.answers = answers
         self.calls = []
+        self.keeps = []
+        self.timeouts = []
 
-    def get(self, url, *, source, data=None, check=None, timeout=120):
+    def get(self, url, *, source, data=None, check=None, timeout=120, keep=True):
         self.calls.append((url, source, data))
+        self.keeps.append(keep)
+        self.timeouts.append(timeout)
         answer = self.answers[source]
         if callable(answer):
             answer = answer(url, data)
@@ -19,6 +23,21 @@ class FakeNet:
             raise answer
         if check is not None:
             check(answer)
+        return answer
+
+
+class Transport:
+    """Stands in for net.urllib_transport: hands out (status, body) answers in turn, or raises one."""
+
+    def __init__(self, *answers):
+        self.answers = list(answers)
+        self.calls = []
+
+    def __call__(self, url, data, headers, timeout):
+        self.calls.append((url, data, headers))
+        answer = self.answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
         return answer
 
 

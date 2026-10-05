@@ -18,3 +18,6 @@ docs/
 .idea/
 .vscode/
 *.log
+
+# Git worktrees for parallel work
+.worktrees/

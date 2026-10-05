@@ -1,11 +1,12 @@
 """Minimal GeoTIFF writer for tests: single-band float32, striped or tiled, either byte order."""
 import struct
+import urllib.parse
 
 import numpy as np
 
 
 def write_tiff(grid, x, y, dx, dy, *, big_endian=False, tile=None, rows_per_strip=2, nodata="-32767",
-               compression=1, tie_pixel=(0, 0), edit=None):
+               compression=1, tie_pixel=(0, 0), edit=None, sparse=()):
     bo = ">" if big_endian else "<"
     arr = np.asarray(grid, dtype=bo + "f4")
     h, w = arr.shape
@@ -26,6 +27,8 @@ def write_tiff(grid, x, y, dx, dy, *, big_endian=False, tile=None, rows_per_stri
         offsets.append(len(data))
         data += block
     counts = [len(b) for b in blocks]
+    for k in sparse:  # a sparse file leaves these tiles out
+        offsets[k] = counts[k] = 0
     i, j = tie_pixel
     entries = [(256, 4, [w]), (257, 4, [h]), (258, 3, [32]), (259, 3, [compression]), (277, 3, [1]),
                (339, 3, [3]), (33550, 12, [dx, dy, 0.0]), (33922, 12, [float(i), float(j), 0.0, x, y, 0.0])]
@@ -71,3 +74,23 @@ def east_slope_tiff(frame, half=300.0, step=2.0, rise_per_col=0.05, base=80.0, g
     if gaps is not None:
         grid[gaps(rows, cols)] = -32767.0
     return write_tiff(grid, float(xs[0]), float(ys[1]), step, step)
+
+
+def nrcan_server(height, tile=256):
+    """A FakeNet answer that acts like NRCan's WCS as seen live on 2026-10-04. The coverage reaches half a
+    pixel past the box on every side and holds int(width / offset) + 1 pixels each way, stretched to fit, so
+    a box a whole number of pixels wide can lose a pixel to rounding. Each height is `height(mx, my)` at its
+    pixel's centre, and a coverage bigger than one GeoTIFF tile comes back as `null`."""
+    def answer(url, data):
+        q = dict(urllib.parse.parse_qsl(url.split("?", 1)[1]))
+        x0, y0, x1, y1 = (float(v) for v in q["BOUNDINGBOX"].split(",")[:4])
+        step = float(q["GRIDOFFSETS"].split(",")[0])
+        cols, rows = int((x1 - x0) / step) + 1, int((y1 - y0) / step) + 1
+        if max(cols, rows) > tile:
+            return b"null"
+        dx, dy = (x1 - x0 + step) / cols, (y1 - y0 + step) / rows
+        left, top = x0 - step / 2, y1 + step / 2
+        mx, my = left + dx * (np.arange(cols) + 0.5), top - dy * (np.arange(rows) + 0.5)
+        grid = np.broadcast_to(height(mx[None, :], my[:, None]), (rows, cols))
+        return write_tiff(grid, left, top, dx, dy, tile=tile)
+    return answer

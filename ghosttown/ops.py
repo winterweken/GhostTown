@@ -4,11 +4,12 @@ import re
 import time
 
 import bpy
-from bpy.props import IntProperty, StringProperty
+from bpy.props import EnumProperty, IntProperty, StringProperty
 
-from . import prefs, runner, scene_build
+from . import georef, prefs, runner, scene_build, site_photo, site_use
 from .ghosttown_fetch import context as ctx
 from .ghosttown_fetch import request as rq
+from .ghosttown_fetch import LAYERS
 
 OFFLINE = "Online access is off. Turn on Preferences › System › Network › Allow Online Access."
 MISSING_SHAPELY = ("Ghost Town's shapely library isn't installed. Disable and re-enable Ghost Town in "
@@ -50,10 +51,16 @@ def _stamp(now=None):
     return time.strftime("%Y%m%d-%H%M%S", time.localtime(now))
 
 
+def request_layers(settings):
+    """Every layer, less the photo when the user turned it off; LiDAR roofs only when ticked."""
+    wanted = {"photo": getattr(settings, "fetch_photo", True), "lidar": getattr(settings, "fetch_lidar", False)}
+    return [layer for layer in LAYERS if wanted.get(layer, True)]
+
+
 def make_request(settings, cache_dir, overpass_url="", now=None):
     lat, lon = parse_location(settings.location)
     return rq.build(centre={"lat": lat, "lon": lon}, address=settings.site_name.strip(),
-                    radius_m=float(settings.radius), cache_dir=cache_dir,
+                    radius_m=float(settings.radius), cache_dir=cache_dir, layers=request_layers(settings),
                     out_dir=os.path.join(cache_dir, "runs", _stamp(now)), overpass_url=overpass_url)
 
 
@@ -94,9 +101,30 @@ def import_into_scene(context, path, report):
     if problems:
         report({"ERROR"}, problems[0])
         return None
-    root = scene_build.build(context.scene, doc)
+    root = scene_build.build(context.scene, doc, folder=os.path.dirname(os.path.abspath(path)))
     settings = context.scene.ghosttown
+    settings.site = root
     settings.summary = _summary(doc)
+    photo = doc.get("photo")
+    if photo and root.get("ctx_photo_image"):
+        year = photo.get("year")
+        settings.summary += f", aerial photo {year}" if year else ", aerial photo"
+    elif photo:
+        report({"WARNING"}, "The aerial photo file is missing or unreadable beside the context file, "
+                            "so the site has no photo.")
+    lidar = doc.get("lidar")
+    if lidar:
+        choices = site_use.roof_choices(root) if site_use.has_lidar(root) else ["flat"]
+        shown = [name for use, name in (("fitted", "fitted"), ("lidar", "LiDAR")) if use in choices]
+        if shown:
+            settings.summary += ", " + " and ".join(shown) + " roofs"
+        if "lidar" not in choices:
+            report({"WARNING"}, "The LiDAR roofs file is missing or unreadable beside the context file, so the "
+                                + ("buildings have no LiDAR roofs." if shown else "buildings have flat roofs."))
+        if lidar.get("fitted") and "fitted" not in choices:
+            report({"WARNING"}, "The fitted roofs file is missing or unreadable beside the context file, "
+                                "so the buildings have no fitted roofs.")
+    site_use.count_triangles(root, context.evaluated_depsgraph_get())
     settings.credits = "\n".join(dict.fromkeys(s["credit"] for s in doc["sources"]))
     for note in doc["notes"]:
         if note["level"] == "warn":
@@ -270,6 +298,132 @@ class GHOSTTOWN_OT_pick(bpy.types.Operator):
             return {"CANCELLED"}
         item = settings.results[self.index]
         use_result(settings, item.label, item.lat, item.lon)
+        return {"FINISHED"}
+
+
+class GHOSTTOWN_OT_copy_survey(bpy.types.Operator):
+    bl_idname = "ghosttown.copy_survey"
+    bl_label = "Copy Survey Point"
+    bl_description = "Copy where the context origin sits on the survey grid, for setting Revit's survey point"
+
+    @classmethod
+    def poll(cls, context):
+        root = site_use.picked(context)
+        return root is not None and georef.survey_from(root) is not None
+
+    def execute(self, context):
+        point = georef.survey_from(site_use.picked(context))
+        context.window_manager.clipboard = "\n".join(georef.survey_lines(point))
+        self.report({"INFO"}, "Copied the survey point.")
+        return {"FINISHED"}
+
+
+def roofs_reset_warning(count):
+    if count == 1:
+        return "1 edited building couldn't get its exact roof materials back; its roofs now use its first material."
+    return (f"{count} edited buildings couldn't get their exact roof materials back; "
+            "their roofs now use their first material.")
+
+
+def _has_photo(context):
+    root = site_use.picked(context)
+    return context.mode == "OBJECT" and root is not None and site_use.has_photo(root)
+
+
+class GHOSTTOWN_OT_use_ground(bpy.types.Operator):
+    bl_idname = "ghosttown.use_ground"
+    bl_label = "Ground"
+    bl_description = "Show the aerial photo, or the colours by kind, on the picked site's ground"
+    bl_options = {"REGISTER", "UNDO"}
+
+    use: EnumProperty(items=(("colours", "Colours", "Colours by kind, as exported"),
+                             ("photo", "Photo", "The aerial photo")))
+
+    @classmethod
+    def poll(cls, context):
+        return _has_photo(context)
+
+    def execute(self, context):
+        site_use.apply_ground(site_use.picked(context), self.use)
+        return {"FINISHED"}
+
+
+class GHOSTTOWN_OT_use_roofs(bpy.types.Operator):
+    bl_idname = "ghosttown.use_roofs"
+    bl_label = "Roofs"
+    bl_description = "Put the aerial photo on the roofs of the picked site's lower buildings, or keep them plain"
+    bl_options = {"REGISTER", "UNDO"}
+
+    use: EnumProperty(items=(("plain", "Plain", "Roofs keep their building colours"),
+                             ("photo", "Photo", "The aerial photo on roofs, up to the height limit")))
+
+    @classmethod
+    def poll(cls, context):
+        return _has_photo(context)
+
+    def execute(self, context):
+        reset = site_use.apply_roofs(site_use.picked(context), self.use, context.scene.ghosttown.roof_photo_max_m)
+        if reset:
+            self.report({"WARNING"}, roofs_reset_warning(reset))
+        return {"FINISHED"}
+
+
+def _has_lidar(context):
+    root = site_use.picked(context)
+    return context.mode == "OBJECT" and root is not None and site_use.has_lidar(root)
+
+
+class GHOSTTOWN_OT_use_roof_shapes(bpy.types.Operator):
+    bl_idname = "ghosttown.use_roof_shapes"
+    bl_label = "Roof shapes"
+    bl_description = "Show the picked site's buildings with flat roofs, roofs fitted to the LiDAR, or roofs sampled from it"
+    bl_options = {"REGISTER", "UNDO"}
+
+    use: EnumProperty(items=(("flat", "Flat", "Flat-topped prisms, the shapes the City or OpenStreetMap give"),
+                             ("fitted", "Fitted", "Solids with roofs fitted to Ontario's LiDAR: the light choice for Revit"),
+                             ("lidar", "LiDAR", "Roofs sampled from Ontario's LiDAR")))
+
+    @classmethod
+    def poll(cls, context):
+        return _has_lidar(context)
+
+    def execute(self, context):
+        root = site_use.picked(context)
+        if self.use not in site_use.roof_choices(root):
+            missing = "fitted" if self.use == "fitted" else "LiDAR"
+            self.report({"WARNING"}, f"This site has no {missing} roofs. Build it again to get them.")
+            return {"CANCELLED"}
+        reset = site_use.apply_roof_shapes(root, self.use)
+        if reset:
+            self.report({"WARNING"}, roofs_reset_warning(reset))
+        site_use.count_triangles(root, context.evaluated_depsgraph_get())
+        return {"FINISHED"}
+
+
+class GHOSTTOWN_OT_save_photo(bpy.types.Operator):
+    bl_idname = "ghosttown.save_photo"
+    bl_label = "Save Site Photo…"
+    bl_description = "Save the picked site's aerial photo and a world file, to place under the model in Revit or CAD"
+
+    directory: StringProperty(subtype="DIR_PATH")
+
+    @classmethod
+    def poll(cls, context):
+        root = site_use.picked(context)
+        return root is not None and site_use.photo_image(root) is not None
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {"RUNNING_MODAL"}
+
+    def execute(self, context):
+        try:
+            jpg, _jgw, width = site_photo.save(site_use.picked(context), bpy.path.abspath(self.directory))
+        except (OSError, ValueError) as e:
+            self.report({"ERROR"}, f"Couldn't save the photo ({e}).")
+            return {"CANCELLED"}
+        self.report({"INFO"}, f"Saved {os.path.basename(jpg)}. In Revit, set the image width to {width:g} m "
+                              "and centre it on the origin.")
         return {"FINISHED"}
 
 

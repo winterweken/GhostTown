@@ -16,6 +16,30 @@ MAX_NODATA = 0.95  # islands and piers are mostly lake; keep whatever land there
 GAP_PERCENTILE = 5
 
 
+def bilinear(grid, x0, y0, dx, dy, mx, my, *, edge="nan"):
+    """Bilinear values of `grid` at Web Mercator points. The grid's top-left corner is (x0, y0) and a pixel
+    is dx wide and dy tall; a pixel's value belongs to its centre, half a pixel in. Points off the grid
+    get NaN (`edge="nan"`) or the nearest edge's value (`edge="clamp"`). A NaN cell among the four around
+    a point makes its value NaN either way."""
+    if edge not in ("nan", "clamp"):
+        raise ValueError(f"edge is 'nan' or 'clamp', not {edge!r}")
+    rows, cols = grid.shape
+    col = (np.asarray(mx, dtype=float) - x0) / dx - 0.5
+    row = (y0 - np.asarray(my, dtype=float)) / dy - 0.5
+    if edge == "clamp":
+        col, row = np.clip(col, 0, cols - 1), np.clip(row, 0, rows - 1)
+    else:
+        inside = (col >= 0) & (col <= cols - 1) & (row >= 0) & (row <= rows - 1)
+        col, row = np.where(inside, col, 0.0), np.where(inside, row, 0.0)  # off-grid points are NaN below
+    c0, r0 = np.floor(col).astype(int), np.floor(row).astype(int)
+    c1, r1 = np.minimum(c0 + 1, cols - 1), np.minimum(r0 + 1, rows - 1)
+    fc, fr = col - c0, row - r0
+    top = grid[r0, c0] * (1 - fc) + grid[r0, c1] * fc
+    bottom = grid[r1, c0] * (1 - fc) + grid[r1, c1] * fc
+    value = top * (1 - fr) + bottom * fr
+    return value if edge == "clamp" else np.where(inside, value, np.nan)
+
+
 class FlatTerrain:
     source = "flat"
     ground_at_centre_m = None
@@ -42,16 +66,7 @@ class GridTerrain:
     def _raw(self, xs, ys):
         lon, lat = self.frame.to_lonlat(np.asarray(xs, dtype=float), np.asarray(ys, dtype=float))
         mx, my = lonlat_to_merc(lon, lat)
-        rows, cols = self.grid.shape
-        col = np.clip((mx - self.x0) / self.dx - 0.5, 0, cols - 1)
-        row = np.clip((self.y0 - my) / self.dy - 0.5, 0, rows - 1)
-        c0, r0 = np.floor(col).astype(int), np.floor(row).astype(int)
-        c1, r1 = np.minimum(c0 + 1, cols - 1), np.minimum(r0 + 1, rows - 1)
-        fc, fr = col - c0, row - r0
-        g = self.grid
-        top = g[r0, c0] * (1 - fc) + g[r0, c1] * fc
-        bottom = g[r1, c0] * (1 - fc) + g[r1, c1] * fc
-        return top * (1 - fr) + bottom * fr
+        return bilinear(self.grid, self.x0, self.y0, self.dx, self.dy, mx, my, edge="clamp")
 
     def z(self, xs, ys):
         return self._raw(xs, ys) - self._centre

@@ -41,6 +41,12 @@ def test_solid_rounds_heights_to_millimetres():
     assert (s["z0"], s["z1"]) == (-0.3, 12.346)
 
 
+def test_a_solid_records_the_ground_its_top_stands_on():
+    s = ctx.solid("building", [SQUARE], -1.3, 12.0, "osm_height", ground=-1.00004)
+    assert s["ground"] == -1.0
+    assert "ground" not in ctx.solid("building", [SQUARE], 0, 1, "s")
+
+
 def test_add_source_once_with_its_credit():
     doc = _doc()
     ctx.add_source(doc, "osm")
@@ -55,6 +61,8 @@ def test_add_source_once_with_its_credit():
     (ctx.element("x", "road", meshes=[{"kind": "road", "verts": [[0, 0, 0]], "faces": [[0, 1, 2]]}]), "missing vertex"),
     (ctx.element("x", "parcel", lines=[{"kind": "parcel", "pts": [[0, 0, 0]]}]), "2 points"),
     (ctx.element("x", "building"), "no geometry"),
+    (ctx.element("x", "building", solids=[dict(ctx.solid("building", [SQUARE], 0, 1, "s"), ground="low")]),
+     "ground must be a number"),
 ])
 def test_validate_catches_bad_elements(bad, words):
     doc = _doc()
@@ -80,3 +88,85 @@ def test_schema_modules_are_stdlib_only():
     env = {**os.environ, "PYTHONPATH": GHOSTTOWN_DIR}
     out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=60)
     assert out.stdout.strip() == "ok", out.stderr
+
+
+def test_survey_is_optional_but_must_hold_numbers_when_present():
+    doc = ctx.new(rq.build(centre={"lat": 43.65, "lon": -79.38}, radius_m=150, cache_dir="/c", out_dir="/o"),
+                  region="toronto", terrain_source="flat")
+    assert "survey" not in doc and ctx.validate(doc) == []
+    doc["survey"] = {"epsg": "EPSG:2952", "name": "NAD83(CSRS) / MTM zone 10", "easting_m": 314400.285,
+                     "northing_m": 4834420.675, "elevation_m": None, "grid_angle_deg": 0.082146}
+    assert ctx.validate(doc) == []
+    doc["survey"]["northing_m"] = "4834419"
+    assert ctx.validate(doc) == ["The survey point needs a numeric easting, northing and grid angle."]
+
+
+def test_survey_must_name_its_grid():
+    doc = ctx.new(rq.build(centre={"lat": 43.65, "lon": -79.38}, radius_m=150, cache_dir="/c", out_dir="/o"),
+                  region="toronto", terrain_source="flat")
+    good = {"epsg": "EPSG:2952", "name": "NAD83(CSRS) / MTM zone 10", "easting_m": 314400.285,
+            "northing_m": 4834420.675, "elevation_m": None, "grid_angle_deg": 0.082146}
+    for key, bad in (("epsg", None), ("name", None), ("epsg", ""), ("name", "  "), ("epsg", 2952)):
+        doc["survey"] = dict(good)
+        if bad is None:
+            del doc["survey"][key]
+        else:
+            doc["survey"][key] = bad
+        assert ctx.validate(doc) == ["The survey point needs its grid's name and EPSG code."], (key, bad)
+
+
+def test_photo_is_optional_but_must_be_well_formed():
+    doc = ctx.new(rq.build(centre={"lat": 43.65, "lon": -79.38}, radius_m=150, cache_dir="/c", out_dir="/o"),
+                  region="toronto", terrain_source="flat")
+    good = {"file": "photo.jpg", "year": 2025, "width_px": 3750, "height_px": 3750,
+            "bounds_m": [-150.0, -150.0, 150.0, 150.0], "source": "toronto"}
+    for fine in (good, dict(good, year=None)):
+        doc["photo"] = fine
+        assert ctx.validate(doc) == []
+    for bad in (dict(good, file="../photo.jpg"), dict(good, file="C:photo.jpg"), dict(good, file=""),
+                dict(good, bounds_m=[1, 0, 0, 1]),
+                dict(good, bounds_m=[0, 0, 1]), dict(good, width_px=0), dict(good, year="2025")):
+        doc["photo"] = bad
+        assert ctx.validate(doc) == [
+            "The photo needs a file name beside context.json, a pixel size and bounds_m [xmin, ymin, xmax, ymax]."]
+
+
+LIDAR = {"file": "lidar_roofs.npz", "cell_m": 0.5, "year": None, "source": "ontario", "buildings": 3,
+         "triangles": 1200, "kinds": ["building", "building_on_site", "building_guessed"]}
+
+
+@pytest.mark.parametrize("change", [
+    {"file": "../lidar_roofs.npz"}, {"file": "C:lidar.npz"}, {"file": ""}, {"cell_m": 0}, {"buildings": -1},
+    {"triangles": 1.5}, {"kinds": ["road"]}, {"kinds": []}, {"year": "2023"},
+])
+def test_lidar_roofs_are_optional_but_must_be_well_formed(change):
+    doc = _doc()
+    assert ctx.validate(doc) == []
+    doc["lidar"] = dict(LIDAR)
+    assert ctx.validate(doc) == []
+    doc["lidar"].update(change)
+    assert any("LiDAR roofs need" in p for p in ctx.validate(doc))
+
+
+@pytest.mark.parametrize("roof, ok", [
+    ({"shape": "gabled", "height": 2.5}, True), ({"shape": "flat"}, True), ({"height": 3}, True),
+    ({"shape": ""}, False), ({"height": 0}, False), ({"height": "2"}, False), ({"pitch": 30}, False), ("gabled", False),
+])
+def test_a_solids_roof_tags_are_optional_but_must_be_well_formed(roof, ok):
+    doc = _doc()
+    s = ctx.solid("building", [SQUARE], -0.3, 10, "osm_height")
+    s["roof"] = roof
+    doc["elements"] = [ctx.element("osm:way:1", "building", solids=[s])]
+    problems = ctx.validate(doc)
+    assert problems == ([] if ok else ["osm:way:1: a solid's roof tags need a shape name and a positive height, each optional."])
+
+
+@pytest.mark.parametrize("change", [
+    {"file": "../fitted_roofs.npz"}, {"file": ""}, {"buildings": -1}, {"triangles": 1.5}, {"triangles": None},
+])
+def test_fitted_roofs_are_optional_but_must_be_well_formed(change):
+    doc = _doc()
+    doc["lidar"] = dict(LIDAR, fitted={"file": "fitted_roofs.npz", "buildings": 3, "triangles": 400})
+    assert ctx.validate(doc) == []
+    doc["lidar"]["fitted"].update(change)
+    assert ctx.validate(doc) == ["The fitted roofs need a file name beside context.json and counts."]

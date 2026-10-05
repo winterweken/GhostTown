@@ -49,6 +49,14 @@ def test_tiers_share_the_lowest_ground_under_the_whole_building():
     assert sorted(s["z1"] for s in el["solids"]) == [12.0, 32.0]
 
 
+def test_every_tier_records_the_ground_of_its_building():
+    el, = buildings.from_toronto(_features(
+        square(20, 0, 10, BUILDINGID=7, DERIVED_HEIGHT=10.0, SUBTYPE_DESC=OUTLINE, OBJECTID=1),
+        square(40, 0, 10, BUILDINGID=7, DERIVED_HEIGHT=30.0, SUBTYPE_DESC=OUTLINE, OBJECTID=2),
+    ), F, Ramp())
+    assert {s["ground"] for s in el["solids"]} == {2.0}
+
+
 def test_a_missing_height_is_guessed():
     el, = buildings.from_toronto(_features(
         square(0, 0, 10, BUILDINGID=7, DERIVED_HEIGHT=None, SUBTYPE_DESC=OUTLINE, OBJECTID=1)), F, FlatTerrain())

@@ -36,9 +36,17 @@ def element(element_id, kind, *, name="", solids=(), meshes=(), lines=()):
             "solids": list(solids), "meshes": list(meshes), "lines": list(lines)}
 
 
-def solid(kind, rings, z0, z1, height_source):
-    return {"kind": kind, "rings": rings, "z0": round(float(z0), 3), "z1": round(float(z1), 3),
-            "height_source": height_source}
+def solid(kind, rings, z0, z1, height_source, ground=None, roof=None):
+    """A prism. `ground` is the ground level its top stands on (z1 - ground is its height), which LiDAR
+    roofs measure up from; the base z0 can sit lower, buried under a whole building. `roof` holds
+    OpenStreetMap's roof tags for fitted roofs: {"shape": "gabled", "height": 2.5}, each key optional."""
+    out = {"kind": kind, "rings": rings, "z0": round(float(z0), 3), "z1": round(float(z1), 3),
+           "height_source": height_source}
+    if ground is not None:
+        out["ground"] = round(float(ground), 3)
+    if roof:
+        out["roof"] = dict(roof)
+    return out
 
 
 def note(doc, level, code, text):
@@ -75,11 +83,75 @@ def validate(doc):
             problems.append(f"The context has no {key}.")
     if problems:
         return problems
+    if doc.get("survey") is not None:
+        problems += _survey_problems(doc["survey"])
+    if doc.get("photo") is not None:
+        problems += _photo_problems(doc["photo"])
+    if doc.get("lidar") is not None:
+        problems += _lidar_problems(doc["lidar"])
     for el in doc["elements"]:
         problems += _element_problems(el)
         if len(problems) >= _MAX_PROBLEMS:
             break
     return problems[:_MAX_PROBLEMS]
+
+
+def _survey_problems(point):
+    """The survey point is optional (older files have none) but must hold numbers and name its grid when
+    present."""
+    if not (isinstance(point, dict) and all(_num(point.get(k)) for k in ("easting_m", "northing_m", "grid_angle_deg"))
+            and (point.get("elevation_m") is None or _num(point["elevation_m"]))):
+        return ["The survey point needs a numeric easting, northing and grid angle."]
+    if not all(isinstance(point.get(k), str) and point[k].strip() for k in ("epsg", "name")):
+        return ["The survey point needs its grid's name and EPSG code."]
+    return []
+
+
+def _beside(name):
+    """A file name beside context.json: no folders in it, and no ':' (on Windows 'C:x.jpg' is relative
+    to a drive's current folder)."""
+    return (isinstance(name, str) and bool(name.strip()) and not any(c in name for c in "/\\:")
+            and name not in (".", ".."))
+
+
+def _count(v):
+    return isinstance(v, int) and not isinstance(v, bool) and v >= 0
+
+
+def _photo_problems(photo):
+    """The photo is optional (older files have none) but must say where it is and what it covers."""
+    bounds = photo.get("bounds_m") if isinstance(photo, dict) else None
+    ok = (isinstance(photo, dict) and _beside(photo.get("file"))
+          and isinstance(bounds, list) and len(bounds) == 4 and all(_num(v) for v in bounds)
+          and bounds[0] < bounds[2] and bounds[1] < bounds[3]
+          and all(isinstance(photo.get(k), int) and not isinstance(photo.get(k), bool) and photo[k] > 0
+                  for k in ("width_px", "height_px"))
+          and (photo.get("year") is None or (isinstance(photo["year"], int) and not isinstance(photo["year"], bool))))
+    if not ok:
+        return ["The photo needs a file name beside context.json, a pixel size and bounds_m [xmin, ymin, xmax, ymax]."]
+    return []
+
+
+def _lidar_problems(lidar):
+    """LiDAR roofs are optional but must name their file, grid, counts and building kinds."""
+    kinds = lidar.get("kinds") if isinstance(lidar, dict) else None
+    ok = (isinstance(lidar, dict) and _beside(lidar.get("file")) and _num(lidar.get("cell_m")) and lidar["cell_m"] > 0
+          and _count(lidar.get("buildings")) and _count(lidar.get("triangles"))
+          and isinstance(kinds, list) and kinds and all(k in BUILDING_KINDS for k in kinds)
+          and (lidar.get("year") is None or _count(lidar["year"])))
+    if not ok:
+        return ["The LiDAR roofs need a file name beside context.json, a cell size, counts and building kinds."]
+    fitted = lidar.get("fitted")
+    if fitted is not None and not (isinstance(fitted, dict) and _beside(fitted.get("file"))
+                                   and _count(fitted.get("buildings")) and _count(fitted.get("triangles"))):
+        return ["The fitted roofs need a file name beside context.json and counts."]
+    return []
+
+
+def _roof_ok(roof):
+    return (isinstance(roof, dict) and set(roof) <= {"shape", "height"}
+            and ("shape" not in roof or (isinstance(roof["shape"], str) and roof["shape"].strip() != ""))
+            and ("height" not in roof or (_num(roof["height"]) and roof["height"] > 0)))
 
 
 def _element_problems(el):
@@ -94,6 +166,10 @@ def _element_problems(el):
             p.append(f"{eid}: a solid needs rings of at least 3 points.")
         elif not (_num(s.get("z0")) and _num(s.get("z1")) and s["z0"] < s["z1"]):
             p.append(f"{eid}: a solid needs z0 below z1.")
+        elif "ground" in s and not _num(s["ground"]):
+            p.append(f"{eid}: a solid's ground must be a number.")
+        elif "roof" in s and not _roof_ok(s["roof"]):
+            p.append(f"{eid}: a solid's roof tags need a shape name and a positive height, each optional.")
     for m in el.get("meshes", []):
         n = len(m.get("verts", []))
         if not all(len(f) == 3 and all(isinstance(i, int) and 0 <= i < n for i in f) for f in m.get("faces", [])):

@@ -63,6 +63,6 @@ body:
     attributes:
       label: Ghost Town version
       description: Edit › Preferences › Add-ons › Ghost Town.
-      placeholder: "0.2.0"
+      placeholder: "0.3.0"
     validations:
       required: true

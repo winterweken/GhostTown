@@ -4,15 +4,19 @@ The centre decides the region. Inside the City of Toronto, the City's own layers
 ground, trees and parcels; elsewhere, OpenStreetMap supplies buildings on plain ground. NRCan supplies
 the terrain in Canada. Each source runs on its own: a failure becomes a warning note, and only a run
 where every data source failed raises NothingFetched. Real-world outlines occasionally defeat the
-geometry library; that too costs only the layer it happens in."""
+geometry library; that too costs only the layer it happens in. In Ontario, with LiDAR roofs asked for,
+Geospatial Ontario's LiDAR gives every building a second, measured roof, written beside the context."""
+import os
+
+import numpy as np
 import shapely
 
-from . import buildings, ground, parcels, region, trees
+from . import BUILDING_KINDS, buildings, fitted_roofs, ground, lidar_roofs, parcels, region, survey, trees
 from . import context as ctx
 from . import terrain as terrain_mod
 from .frame import Frame
 from .net import SourceError
-from .sources import osm, toronto
+from .sources import ontario_lidar, osm, toronto, toronto_massing, toronto_photo
 
 KIND_LAYERS = {"road": "roads", "sidewalk": "sidewalks", "parking": "parking", "rail": "rail",
                "green": "green", "water": "water"}
@@ -41,6 +45,99 @@ def _region(net, frame, radius):
     return where, None
 
 
+def _city_buildings(net, request, frame, radius, progress, doc):
+    """("massing", parts, year) from the City's newest 3D Massing edition (or, when that can't be had, the
+    newest one saved on this computer, with a note saying so), else ("outlines", features, None) from the
+    older topographic outlines, with one warning saying so."""
+    try:
+        parts, year = toronto_massing.fetch(net, request["cache_dir"], frame, radius + toronto.WHOLE_MARGIN_M, progress,
+                                            note=lambda text: ctx.note(doc, "info", "city_massing", text))
+    except SourceError as e:
+        ctx.note(doc, "warn", "city_massing", f"{e} Using the City's older building outlines instead.")
+        return "outlines", toronto.fetch_buildings(net, frame.lat0, frame.lon0, radius), None
+    ctx.note(doc, "info", "city_massing", f"Buildings: City of Toronto 3D Massing {year}.")
+    return "massing", parts, year
+
+
+LIDAR_STAGE = "LiDAR (the first request can take a minute)"
+FLAT_ROOFS = "The buildings keep flat roofs."
+CITY_MODEL_ONLY = "The buildings come from the City's 3D Massing model, so no LiDAR was fetched."
+FITTED_STAGE = "Fitted roofs"
+FITTED_KEPT = "Flat and LiDAR roofs are still available."
+
+
+def _lidar(doc, net, frame, radius, out_dir, progress):
+    """LiDAR roofs for the site's buildings outside the City's 3D Massing model, written beside the context
+    as lidar_roofs.npz, with a `lidar` block saying so; otherwise a note says why there are none."""
+    if not any(el["kind"] in BUILDING_KINDS for el in doc["elements"]):
+        return
+    outlines = [s["rings"][0] for el in doc["elements"] if lidar_roofs.wanted(el) for s in el["solids"]]
+    if not outlines:
+        ctx.note(doc, "info", "lidar", CITY_MODEL_ONLY)
+        return
+    if not ontario_lidar.covers(frame.lat0, frame.lon0):
+        ctx.note(doc, "info", "lidar", f"LiDAR roofs are available in Ontario only. {FLAT_ROOFS}")
+        return
+    progress(LIDAR_STAGE, 77)
+    cell = ontario_lidar.cell_for(radius)
+    reach = radius + toronto.WHOLE_MARGIN_M
+    xy = np.array([p for ring in outlines for p in ring], dtype=float)
+    bounds = [max(xy[:, 0].min() - 2 * cell, -reach), max(xy[:, 1].min() - 2 * cell, -reach),
+              min(xy[:, 0].max() + 2 * cell, reach), min(xy[:, 1].max() + 2 * cell, reach)]
+    try:
+        heights = ontario_lidar.fetch(net, frame, bounds, cell)
+        if lidar_roofs.coverage(heights, doc["elements"]) < lidar_roofs.MIN_COVERAGE:
+            raise ontario_lidar.NoLidar(ontario_lidar.NONE_HERE)
+    except ontario_lidar.NoLidar as e:
+        ctx.note(doc, "info", "lidar", f"{e} {FLAT_ROOFS}")
+        return
+    except SourceError as e:
+        ctx.note(doc, "warn", "lidar", f"{e} {FLAT_ROOFS}")
+        return
+    except shapely.errors.GEOSException as e:
+        ctx.note(doc, "warn", "lidar", f"The LiDAR roofs couldn't be built ({str(e)[:80]}). {FLAT_ROOFS}")
+        return
+    progress("LiDAR roofs", 78)
+    try:
+        arrays, counts = lidar_roofs.build(doc["elements"], heights, cell)
+        if arrays is None:
+            return
+        lidar_roofs.write(os.path.join(out_dir, lidar_roofs.FILE), arrays)
+    except shapely.errors.GEOSException as e:
+        ctx.note(doc, "warn", "lidar", f"The LiDAR roofs couldn't be built ({str(e)[:80]}). {FLAT_ROOFS}")
+        return
+    except OSError as e:
+        ctx.note(doc, "warn", "lidar", f"The LiDAR roofs couldn't be saved ({e}). {FLAT_ROOFS}")
+        return
+    doc["lidar"] = {"file": lidar_roofs.FILE, "cell_m": cell, "year": None, "source": "ontario",
+                    "buildings": counts["buildings"], "triangles": counts["triangles"], "kinds": list(BUILDING_KINDS)}
+    ctx.add_source(doc, "ontario")
+    text = f"LiDAR roofs: Geospatial Ontario, {counts['buildings']} buildings, {counts['triangles']:,} triangles."
+    if counts["newer"] == 1:
+        text += " 1 building part is newer than the LiDAR survey and keeps a flat top."
+    elif counts["newer"]:
+        text += f" {counts['newer']:,} building parts are newer than the LiDAR survey and keep flat tops."
+    ctx.note(doc, "info", "lidar", text)
+    _fitted(doc, heights, cell, out_dir, progress)
+
+
+def _fitted(doc, heights, cell, out_dir, progress):
+    """Fitted roofs written beside the LiDAR roofs as fitted_roofs.npz, with a `fitted` entry in the
+    `lidar` block. A failure is a warning that leaves the LiDAR roofs as they are."""
+    progress(FITTED_STAGE, 79)
+    try:
+        arrays, counts = fitted_roofs.build(doc["elements"], heights, cell)
+        if arrays is None:
+            return
+        lidar_roofs.write(os.path.join(out_dir, fitted_roofs.FILE), arrays)
+    except Exception as e:  # anything at all costs only the fitted roofs, never the build
+        ctx.note(doc, "warn", "fitted", f"The fitted roofs couldn't be built ({str(e)[:80]}). {FITTED_KEPT}")
+        return
+    doc["lidar"]["fitted"] = {"file": fitted_roofs.FILE, "buildings": counts["buildings"],
+                              "triangles": counts["triangles"]}
+    ctx.note(doc, "info", "fitted", fitted_roofs.note_text(counts))
+
+
 def assemble(request, net, *, progress=None):
     progress = progress or (lambda stage, pct: None)
     lat, lon = request["centre"]["lat"], request["centre"]["lon"]
@@ -64,6 +161,7 @@ def assemble(request, net, *, progress=None):
         ctx.add_source(doc, "nrcan")
     doc["terrain"] = {"source": terrain.source, "cell_m": terrain.cell_m}
     doc["ground_at_centre_m"] = terrain.ground_at_centre_m
+    doc["survey"] = survey.survey_point(where, lat, lon, terrain.ground_at_centre_m)
 
     tried = failed = 0
 
@@ -95,10 +193,14 @@ def assemble(request, net, *, progress=None):
     if where == "toronto":
         if "buildings" in layers:
             found = attempt("City buildings", 25, "city_buildings", "toronto",
-                            lambda: toronto.fetch_buildings(net, lat, lon, radius))
+                            lambda: _city_buildings(net, request, frame, radius, progress, doc))
             if found is not None:
-                doc["elements"].extend(built("city_buildings", "City buildings",
-                                             lambda: buildings.from_toronto(found, frame, terrain, radius)))
+                how, data, year = found
+                if how == "massing":
+                    make = lambda: buildings.from_massing(data, terrain, radius, year)  # noqa: E731
+                else:
+                    make = lambda: buildings.from_toronto(data, frame, terrain, radius)  # noqa: E731
+                doc["elements"].extend(built("city_buildings", "City buildings", make))
         kinds = [kind for kind, layer in KIND_LAYERS.items() if layer in layers]
         if kinds:
             skipped = []
@@ -127,6 +229,22 @@ def assemble(request, net, *, progress=None):
 
     if tried and failed == tried:
         raise NothingFetched(" ".join(n["text"] for n in doc["notes"] if n["level"] == "warn"))
+
+    if where == "toronto" and "photo" in layers:
+        progress("Site photo", 75)
+        try:
+            doc["photo"] = toronto_photo.fetch(net, frame, radius, request["out_dir"])
+        except SourceError as e:
+            ctx.note(doc, "warn", "city_photo", f"{e} The site has no aerial photo.")
+        except OSError as e:
+            ctx.note(doc, "warn", "city_photo", f"The aerial photo couldn't be saved ({e}). The site has no aerial photo.")
+        else:
+            ctx.add_source(doc, "toronto")
+            year = doc["photo"]["year"]
+            ctx.note(doc, "info", "city_photo", f"Aerial photo: City of Toronto, {year or 'current year'}.")
+
+    if "lidar" in layers:
+        _lidar(doc, net, frame, radius, request["out_dir"], progress)
 
     progress("Ground", 80)
     plain = "terrain" in layers

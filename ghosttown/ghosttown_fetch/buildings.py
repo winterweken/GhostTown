@@ -49,6 +49,18 @@ def osm_height(tags):
     return GUESS_M, "guessed"
 
 
+def roof_tags(tags):
+    """OpenStreetMap's roof:shape and roof:height as a solid's `roof` object, or None without either."""
+    roof = {}
+    shape = str(tags.get("roof:shape") or "").strip().lower()
+    if shape:
+        roof["shape"] = shape
+    height = parse_length(tags.get("roof:height"))
+    if height and round(height, 3) > 0:  # a height that rounds to nothing would fail validation
+        roof["height"] = round(height, 3)
+    return roof or None
+
+
 def _min_height(tags):
     height = parse_length(tags.get("min_height"))
     if height is not None:
@@ -123,7 +135,7 @@ def _element(feature, pieces, terrain):
             z0 = ground + base if base > 0 else ground - SINK_M
             z1 = ground + height
             if z1 - z0 >= MIN_SOLID_M:
-                solids.append(ctx.solid(kind, r, z0, z1, source))
+                solids.append(ctx.solid(kind, r, z0, z1, source, ground=ground, roof=roof_tags(f.tags)))
     if not solids:
         return None
     kind = "building_guessed" if all(s["kind"] == "building_guessed" for s in solids) else "building"
@@ -167,14 +179,16 @@ def _cut_back(poly, smaller):
     return rest, [part for part in polygons(kept) if part.area >= 4 * SLIVER_M * SLIVER_M]
 
 
-def _resolve_overlaps(items):
+def _resolve_overlaps(items, infer=True):
     """[(Polygon, height | None, payload)] -> [(Polygon, height | None, inferred, payload)], no overlaps.
 
     The City draws a whole-building outline at the building's tallest height *and* every roof level
     inside it (sometimes under another BUILDINGID, sometimes twice). Smaller outlines win: each
     outline keeps only what no smaller one covers. What is left of an outline that was mostly
     covered is a digitising gap between roof levels, not a tower, so it takes the height of the
-    roof level it shares the most boundary with (`inferred`), never more than its own."""
+    roof level it shares the most boundary with (`inferred`), never more than its own. With
+    infer=False (the City's massing model, where a mostly covered part is a real lower or higher
+    storey), nothing takes a neighbour's height."""
     geoms = [item[0] for item in items]
     if not geoms:
         return []
@@ -194,7 +208,7 @@ def _resolve_overlaps(items):
         except shapely.errors.GEOSException:
             pieces[i] = [(poly, height, False)]  # one stubborn outline must not fail the build: keep it uncut
             continue
-        container = rest.area <= (1.0 - CONTAINER_COVER) * poly.area
+        container = infer and rest.area <= (1.0 - CONTAINER_COVER) * poly.area
         neighbours = [piece for j in smaller for piece in pieces[j]] if container else []
         resolved = []
         for part in parts:
@@ -249,8 +263,97 @@ def from_toronto(features, frame, terrain, radius_m=None):
                 kind, source = "building", ("toronto_inferred" if inferred else "toronto_derived")
             r = rings(poly)
             if r is not None:
-                solids.append(ctx.solid(kind, r, ground - SINK_M, ground + height, source))
+                solids.append(ctx.solid(kind, r, ground - SINK_M, ground + height, source, ground=ground))
         if solids:
             kind = "building_guessed" if all(s["kind"] == "building_guessed" for s in solids) else "building"
             elements.append(ctx.element(f"toronto:building:{key}", kind, solids=solids))
+    return elements
+
+
+GROUP_OVERLAP_M2 = 1.0  # massing parts overlapping by more than this are storeys of one building
+GROUP_TOUCH_M = 0.5     # ...and so are parts sharing at least this much wall
+
+
+def _joined(a, b):
+    """True when two massing parts overlap by more than GROUP_OVERLAP_M2 or share GROUP_TOUCH_M of wall."""
+    if a.intersection(b).area > GROUP_OVERLAP_M2:
+        return True
+    return a.boundary.intersection(b.buffer(TOUCH_M)).length >= GROUP_TOUCH_M
+
+
+def _groups(shapes):
+    """For each shape, the index of its group: shapes that overlap (more than GROUP_OVERLAP_M2) or share
+    a wall (at least GROUP_TOUCH_M, give or take TOUCH_M of digitising gap) share one, like a tower and
+    its podium, or the two halves of a block; shapes that only meet at a corner don't."""
+    parent = list(range(len(shapes)))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    a, b = shapely.STRtree(shapes).query(shapely.buffer(shapes, TOUCH_M), predicate="intersects")
+    for i, j in sorted({(min(i, j), max(i, j)) for i, j in zip(a.tolist(), b.tolist()) if i != j}):
+        if find(i) != find(j) and _joined(shapes[i], shapes[j]):
+            parent[find(i)] = find(j)
+    return [find(i) for i in range(len(shapes))]
+
+
+def _tallest_wins(members, parts, shapes, tops):
+    """[(Polygon, part index)] for the parts of one building, with no overlaps: where parts overlap,
+    the one with the higher top keeps the ground (ties: the lower record). Each part keeps only what no
+    taller part covers; what is left of a cut part and thinner than 1 m is a digitising gap and goes."""
+    order = sorted(members, key=lambda i: (-tops[i], parts[i].record))
+    tree = shapely.STRtree([shapes[i] for i in order])
+    kept = []
+    for rank, i in enumerate(order):
+        for poly in parts[i].polygons:
+            taller = [shapes[order[r]] for r in tree.query(poly, predicate="intersects")
+                      if r < rank and not poly.touches(shapes[order[r]])]
+            if not taller:
+                kept.append((poly, i))
+                continue
+            try:
+                _, pieces = _cut_back(poly, taller)
+            except shapely.errors.GEOSException:
+                pieces = [poly]  # one stubborn outline must not fail the build: keep it uncut
+            kept.extend((piece, i) for piece in pieces)
+    return kept
+
+
+def from_massing(parts, terrain, radius_m, year):
+    """Buildings from the City's 3D Massing parts (toronto_massing.Part, local metres).
+
+    Parts that overlap in plan or share a wall are one building and become one element, named after
+    its lowest record number; parts that only meet at a corner stay apart. Where parts overlap, the
+    taller one (by absolute top) wins. Each part's top stands on its own ground, while the building keeps
+    one buried base under its lowest ground. Only buildings touching the site circle are built, whole."""
+    if not parts:
+        return []
+    shapes = [shapely.union_all(p.polygons) for p in parts]
+    group_of = _groups(shapes)
+    members = {}
+    for i, g in enumerate(group_of):
+        members.setdefault(g, []).append(i)
+    site = Point(0.0, 0.0).buffer(radius_m, quad_segs=64)
+
+    elements = []
+    for idx in members.values():
+        if not any(shapes[i].intersects(site) for i in idx):
+            continue
+        ground = {i: terrain.min_under(shapes[i]) for i in idx}
+        tops = {i: ground[i] + parts[i].height for i in idx}
+        base = min(ground.values()) - SINK_M
+        solids = []
+        for poly, i in _tallest_wins(idx, parts, shapes, tops):
+            r = rings(poly)
+            if r is None:
+                continue
+            z0 = ground[i] + parts[i].base if parts[i].base > 0 else base
+            if tops[i] - z0 >= MIN_SOLID_M:
+                solids.append(ctx.solid("building", r, z0, tops[i], parts[i].source, ground=ground[i]))
+        if solids:
+            first = min(parts[i].record for i in idx)
+            elements.append(ctx.element(f"toronto:massing:{year}:{first}", "building", solids=solids))
     return elements

@@ -15,40 +15,53 @@ Type an address in Blender and get the city around it: buildings, terrain, roads
 water, parks, trees and lot lines, built from open data as clean geometry you can take into Revit or
 any BIM tool.
 
-![The Toronto waterfront around 235 Queens Quay W, built by Ghost Town](media/waterfront.jpg)
+![Ghost Town in Blender: searching for 1140 Dundas St W, building the site, and the blocks around Dundas and Ossington appearing on the City's aerial photo](media/build-toronto.gif)
 
-*235 Queens Quay W, Toronto, 300 m radius, built in about 8 seconds. Data: City of Toronto and Natural
-Resources Canada (see [Data and credits](#data-and-credits)).*
+*1140 Dundas St W at Ossington, Toronto, 150 m radius: find the address, build, and switch the ground
+between colours by kind and the aerial photo. The build is shortened here. Data: City of Toronto and
+Natural Resources Canada (see [Data and credits](#data-and-credits)).*
 
 Ghost Town is a free, open-source extension for Blender 5.2 and later. It is at an early stage
-(version 0.2): Toronto is covered in depth, and the rest of the world gets buildings only.
+(version 0.3): Toronto is covered in depth, and the rest of the world gets buildings only.
 
 ## What you get
 
 | Where the site is | Buildings | Terrain | Ground, trees, lot lines | Address search |
 |---|---|---|---|---|
-| **City of Toronto** | City data: stepped tiers with measured heights | NRCan elevation, 2 m grid | Roads, sidewalks, parking, rail, water, parks, trees, parcels | Yes |
+| **City of Toronto** | City 3D Massing model, newest edition: stepped parts with measured heights | NRCan elevation, 2 m grid | Roads, sidewalks, parking, rail, water, parks, trees, parcels | Yes |
 | **Elsewhere in Canada** | OpenStreetMap | NRCan elevation where available | Plain ground only | Not yet (type coordinates) |
 | **Rest of the world** | OpenStreetMap | Flat | Plain ground only | Not yet (type coordinates) |
 
 Each build makes one collection, `Context · <site>`:
 
 - **Buildings:** one object per building. Each tier is a closed prism standing on the terrain.
-  Buildings that cross the circle come in whole.
+  Buildings that cross the circle come in whole. In Toronto, parts of the City's model that touch or
+  overlap form one building object, and where parts overlap the taller one wins. On a main street a
+  whole block face can become one object; Separate › By Loose Parts splits it in Blender. Elsewhere in
+  Ontario, with **LiDAR roofs** ticked, each building also gets two roofs measured from the province's
+  LiDAR: a fitted roof of a few planar faces, which a build shows, and the sampled LiDAR surface. You can
+  switch between them and the flat top. Buildings from the City of Toronto's model keep its massing, the
+  same flat-topped blocks the City publishes as SketchUp and AutoCAD files.
 - **Ground:** one draped surface per kind (road, sidewalk, parking, rail, water, green, plain ground).
   The pieces share their edges, so there are no cracks or overlaps. Water lies flat at its shoreline.
 - **Trees:** a trunk and a low-poly crown each, sized from the City's tree heights, merged into one object.
 - **Parcels:** lot lines draped 15 cm above the ground.
+- **Aerial photo** (Toronto): the City's newest aerial photo of the site, kept inside the .blend file,
+  for the ground and low roofs. See [Use](#use).
 - **Materials:** one per kind, named `Context - Building`, `Context - Road`, and so on. A building whose
   height had to be guessed is orange (`Context - Building (height guessed)`).
 - **Location:** a `Context origin` empty at 0,0,0 holding the latitude, longitude, ground elevation above
-  sea level and the data credits.
+  sea level, the origin's survey grid coordinates and the data credits.
 
 Everything is in metres, with x east, y north, the address at the origin and z = 0 at its ground level.
 
+![The Toronto waterfront around 235 Queens Quay W, built by Ghost Town](media/waterfront.jpg)
+
+*235 Queens Quay W, Toronto, 300 m radius, built in about 8 seconds.*
+
 ![Downtown Toronto around 320 Bay St](media/downtown.jpg)
 
-*320 Bay St, Toronto, 300 m radius: 64 buildings in 773 tiers.*
+*320 Bay St, Toronto, 300 m radius.*
 
 ## Install
 
@@ -87,11 +100,46 @@ executable first. Install the zip as above.
    `51.5074, -0.1278`.
 3. **Site name** (optional) names the collection. A found address fills it in.
 4. **Radius:** 150, 300, 500 or 1000 m.
-5. Press **Build Context**. A 300 m site takes about 10 seconds and a 1000 m site about 20. Cancel or
-   Esc stops it, and Ctrl+Z removes a finished build in one step.
+5. **Fetch:** tick **Aerial photo** (on by default) to fetch the City of Toronto's newest aerial photo
+   of the site with the build. It is kept inside the .blend file. Tick **LiDAR roofs (slower)** in Ontario
+   to fetch the province's LiDAR and give buildings outside the City of Toronto's 3D Massing model
+   measured roofs. It is a large download, and the province's server can take a minute to answer the
+   first request.
+6. Press **Build Context**. A 300 m site takes about 10 seconds and a 1000 m site about 20. With **LiDAR
+   roofs** ticked a build takes a few minutes more, because the province's server is slow to send the LiDAR
+   (a 300 m site in Hamilton took about 4 minutes). Cancel or Esc stops it, and Ctrl+Z removes a finished
+   build in one step.
 
 Building the same site again replaces what Ghost Town made and keeps anything you added, including
 your own objects and collections inside the context collection.
+
+The **Site** section under the panel shows one site at a time; pick it at the top. It lists the site's
+survey point, and, when the site has an aerial photo:
+
+- **Ground: Colours | Photo** shows the photo on the ground, or the colours by kind.
+  Shows in Material Preview, or Solid view with Color: Texture.
+- **Roofs: Plain | Photo** puts the photo on the roofs of buildings up to a height you set (20 m to start).
+  Taller buildings lean in the photo, so their roof texture would be offset.
+- **Save Site Photo…** writes the photo and a world file, for an underlay in Revit or CAD.
+
+When the site has LiDAR roofs:
+
+- **Roof shapes: Flat | Fitted | LiDAR** switches every building between its flat-topped prism, its
+  fitted roof and its LiDAR roof. **Fitted** shows after a build: a house gets the flat, shed, gable or hip
+  roof that best explains the LiDAR, its planes running out to the walls, and a larger building gets
+  stepped tiers at its measured roof levels, at least a storey apart. Every fitted roof is a closed solid.
+  Sites built before fitted roofs existed show Flat | LiDAR.
+- **Roof detail** simplifies LiDAR roofs, from 100 % down to 5 %, without moving walls or eaves.
+- **For Revit** shows the site's triangle count. Past the budget in Preferences (500,000 to start) it
+  says: Heavy for Revit: use Fitted or Flat roofs, or lower Roof detail, before exporting.
+
+![Houses in Wismer, Markham switching between flat, LiDAR and fitted roofs in Ghost Town](media/roofs-markham.gif)
+
+*Wismer, Markham, 150 m radius with LiDAR roofs: the houses switch between flat tops, the LiDAR surface
+and fitted roofs, and the triangle count for Revit follows. The LiDAR download, a few minutes, is cut
+here. Data: OpenStreetMap, Natural Resources Canada and Geospatial Ontario.*
+
+Switching never downloads anything again, and each site in a file keeps its own choices.
 
 ## Taking it into Revit
 
@@ -102,8 +150,28 @@ metres, closed building solids, outlines cleaned of edges under 3 mm, and stable
 - **FBX:** tick **Loose Edges** if you want the parcel lines.
 - In Revit, import **origin to origin**. The material names become the layers or materials you control
   under Object Styles › Imported Objects.
-- To place the model at its true height, use `ground_at_centre_m` on the `Context origin` empty: it is
-  the elevation above sea level of z = 0.
+- Before exporting, set the site's **Ground** to Colours and **Roofs** to Plain, so every piece keeps its
+  `Context - …` material. While the photo shows, exporters see the photo material on those faces instead.
+- Fitted roofs export as closed solids of a few faces each: the lightest measured roofs, and the ones to
+  take into Revit.
+- LiDAR roofs export as meshes, which Revit imports as DirectShapes: heavier than prisms. Exporters apply
+  Roof detail (modifiers are applied by default), so keep the site under the panel's budget, or use Fitted
+  or Flat roofs.
+- To use the aerial photo in Revit, **Save Site Photo…**, then in a site plan use **Insert › Image**, set
+  the image's width to the width Ghost Town reports (twice the radius, in metres), and centre it on the
+  origin.
+- **Survey point.** The model stays at the origin, which is the site's latitude and longitude at ground
+  level. After a build, the panel shows where that origin sits on the survey grid, and its copy button
+  puts the values on the clipboard. The grid is the City's own in Toronto (NAD83(CSRS) / MTM zone 10,
+  EPSG:2952) and the site's UTM zone elsewhere. The same values are on the `Context origin` empty as
+  `survey_easting_m`, `survey_northing_m`, `survey_elevation_m` and `survey_grid_angle_deg`.
+- To set Revit's survey point, go to **Manage › Coordinates › Specify Coordinates at Point**, pick the
+  model's origin, and enter the northing, easting and elevation. Ghost Town's +y is true north, while
+  Revit's true north is the survey grid's north; enter the grid angle as the **Angle from Project North
+  to True North**, East or West as the panel says.
+- The elevation is the height above sea level of z = 0 (`ground_at_centre_m`). Latitude and longitude
+  are used as given, which matches the City's data; positions from OpenStreetMap or a phone can be 1–2 m
+  off. The survey point lines up context, not a legal survey.
 
 ## Data and credits
 
@@ -112,8 +180,9 @@ you used. The panel lists them after every build.
 
 | Source | Used for | Credit |
 |---|---|---|
-| City of Toronto open data | Buildings, ground, trees, parcels, addresses, city boundary | Contains information licensed under the Open Government Licence – Toronto |
+| City of Toronto open data | Buildings (3D Massing, newest yearly edition), aerial photo, ground, trees, parcels, addresses, city boundary | Contains information licensed under the Open Government Licence – Toronto |
 | Natural Resources Canada (HRDEM) | Terrain | Contains information licensed under the Open Government Licence – Canada |
+| Geospatial Ontario (lidar-derived surface and terrain models) | LiDAR roofs in Ontario | Contains information licensed under the Open Government Licence – Ontario |
 | OpenStreetMap | Buildings outside Toronto | © OpenStreetMap contributors (ODbL) |
 
 More detail is in [CREDITS.md](CREDITS.md).
@@ -122,22 +191,36 @@ More detail is in [CREDITS.md](CREDITS.md).
 heights are derived from aerial data, some are guessed, and lot lines are approximate. Check anything
 you rely on against a survey.
 
-**Privacy.** Ghost Town contacts only `gis.toronto.ca`, `datacube.services.geo.ca` and
-`overpass-api.de`, and only when you press the search button or Build Context. It sends what the query
-needs (the address you search for, or the location and radius you build) and nothing else. Answers are
-cached on your computer for 30 days.
+**Privacy.** Ghost Town contacts only `gis.toronto.ca` and the City's open data portal
+(`ckan0.cf.opendata.inter.prod-toronto.ca`), `datacube.services.geo.ca` and `overpass-api.de`, and, only with
+**LiDAR roofs** ticked, `ws.geoservices.lrc.gov.on.ca`, and only when you press the search button or Build
+Context. It sends what the query needs (the address you search for, or the location and radius you build) and
+nothing else. Answers are cached on your computer for 30 days. The City's 3D Massing model is downloaded
+once per yearly edition (81 MB, about 300 MB unpacked in the cache folder) and kept until a newer edition
+comes out. It lives in the cache folder (Preferences › Cache folder; by default the extension's own folder);
+deleting its `toronto_massing` folder is safe, and the next Toronto build downloads it again. With
+**Aerial photo** ticked, the photo comes from `gis.toronto.ca` with the build and is kept inside the .blend
+file, which adds up to about 5 MB. LiDAR answers (10–30 MB a site) are cached like the rest, and LiDAR roofs
+are kept inside the .blend file, about 20 to 30 MB for a dense 300 m site (less with Compress, in File › Save
+As or Preferences › Save & Load).
 
 Ghost Town is an independent project. It is not affiliated with or endorsed by the City of Toronto,
-Natural Resources Canada or OpenStreetMap.
+Natural Resources Canada, the Province of Ontario or OpenStreetMap.
 
 ## Known limits
 
 - Outside Toronto there are no roads, trees or parcels yet, and outside Canada the ground is flat.
-- Buildings are flat-topped prisms: no roof shapes, and canopies and kiosks are left out.
+- Buildings are flat-topped prisms unless they have measured roofs (Ontario, outside the City of Toronto's
+  3D Massing model). LiDAR roofs carry no roof planes, just measured points.
+- Fitted roofs give a house one roof for its whole outline, so an L-shaped house whose wings have their own
+  ridges gets the main roof's planes, and a house under thick canopy may keep a flat top at its measured
+  height. Larger buildings become tiers at least 3 m apart, so their sloped or curved roofs become steps.
+- LiDAR roofs on house-sized buildings (up to 400 m² and 20 m tall) are trimmed to their own typical height plus
+  3 m, which removes a tree crown over part of the roof; trees over most of a roof still raise it.
+- A building newer than the province's LiDAR survey keeps its flat top in Fitted and LiDAR modes, and one surveyed while
+  under construction can show a partly built roof.
 - Bridges and elevated rail are draped onto the ground.
 - A stream is flat at one level along its length instead of following its valley.
-- Where the City's data leaves a gap between roof levels, Ghost Town fills it at the height of the
-  neighbouring roof.
 - Rebuilding a site resets colours you changed on the `Context - …` materials.
 
 ## How it works

@@ -10,6 +10,7 @@ from osm_samples import body, way
 from osm_samples import square as osm_square
 from tiff_samples import east_slope_tiff
 from toronto_samples import LAT0, LON0, page, point, polygon, square
+import photo_samples
 
 OUTLINE = "Building Outline"
 CITY = polygon([(-3000, -3000), (3000, -3000), (3000, 3000), (-3000, 3000)], AREA_NAME="Toronto")
@@ -33,8 +34,10 @@ def _city(**overrides):
         "cot_geospatial3/FeatureServer/3/": page(polygon([(-200, -4), (200, -4), (200, 4), (-200, 4)], OBJECTID=2)),
         "cot_geospatial3/FeatureServer/10/": page(point(5, 30, OBJECTID=9, DERIVED_HEIGHT=10.0)),
         "cot_geospatial27/FeatureServer/36/": page(square(-20, -20, 40, OBJECTID=3, PARCELID=55)),
+        "package_show?id=3d-massing": DOWN,  # the massing model is unavailable: these tests cover the fallback
         "FeatureServer/": page(),
     }
+    table.update(photo_samples.ANSWERS)
     table.update(overrides)
     return router(table)
 
@@ -95,7 +98,7 @@ def test_one_city_layer_failing_is_a_warning_not_a_failure(tmp_path):
 
 
 def test_when_every_data_source_fails_nothing_is_fetched(tmp_path):
-    everything_down = router({"FeatureServer/40/": page(CITY), "FeatureServer/": DOWN})
+    everything_down = router({"FeatureServer/40/": page(CITY), "package_show?id=3d-massing": DOWN, "FeatureServer/": DOWN})
     with pytest.raises(NothingFetched, match="503"):
         assemble(_req(tmp_path), _net(toronto=everything_down))
 
@@ -184,3 +187,12 @@ def test_a_geometry_error_reading_the_city_boundary_means_the_world(tmp_path, mo
     doc = assemble(_req(tmp_path), _net())
     assert doc["region"] == "world" and any(n["code"] == "region" and n["level"] == "warn" for n in doc["notes"])
     assert "osm:way:1" in {e["id"] for e in doc["elements"]}
+
+
+def test_the_survey_point_of_the_origin_is_recorded(tmp_path):
+    doc = assemble(_req(tmp_path), _net())
+    s = doc["survey"]
+    assert s["epsg"] == "EPSG:2952" and s["elevation_m"] == round(doc["ground_at_centre_m"], 3)
+    assert 300000 < s["easting_m"] < 330000 and 4.82e6 < s["northing_m"] < 4.85e6
+    world = assemble(_req(tmp_path), _net(toronto=_city(**{"FeatureServer/40/": page(FAR)})))
+    assert world["survey"]["epsg"] == "EPSG:32617" and ctx.validate(world) == []

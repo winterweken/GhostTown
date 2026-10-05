@@ -1,4 +1,4 @@
-"""HTTP for every source: identifying User-Agent, one retry for busy servers, a file cache.
+"""HTTP for every source: identifying User-Agent, one retry for busy servers and unreadable answers, a file cache.
 
 Proxies come from the usual environment variables (https_proxy etc.), which urllib honours.
 """
@@ -17,6 +17,10 @@ RETRY_WAIT_S = 30
 
 class SourceError(Exception):
     """A source couldn't be fetched or read. The message is one plain sentence."""
+
+
+class Unreadable(SourceError):
+    """An answer came through but can't be read, like NRCan's `null`; asking once more may get a good one."""
 
 
 def urllib_transport(url, data, headers, timeout):
@@ -47,9 +51,11 @@ class Net:
         self.transport = transport or urllib_transport
         self.sleep = sleep
 
-    def get(self, url, *, source, data=None, check=None, timeout=120):
+    def get(self, url, *, source, data=None, check=None, timeout=120, keep=True):
+        """The answer's bytes. keep=False is for one-off downloads, like the City's 81 MB massing model,
+        that skip the response cache because their caller keeps its own copy."""
         key = url if data is None else url + "\n" + data.decode("utf-8", "replace")
-        if not self.fresh:
+        if keep and not self.fresh:
             body = self.cache.read(source, key)
             if body is not None and _still_good(body, check):
                 return body
@@ -60,13 +66,22 @@ class Net:
                 self.sleep(RETRY_WAIT_S)
             try:
                 status, body = self.transport(url, data, {"User-Agent": USER_AGENT}, timeout)
+            except http.client.IncompleteRead:
+                problem = f"{name} sent an answer that was cut off"
+                continue
             except (OSError, http.client.HTTPException) as e:
                 problem = f"{name} couldn't be reached ({e})"
                 continue
             if status == 200:
                 if check is not None:
-                    check(body)
-                self.cache.write(source, key, body)
+                    try:
+                        check(body)
+                    except Unreadable:
+                        if attempt < RETRIES:
+                            continue
+                        raise
+                if keep:
+                    self.cache.write(source, key, body)
                 return body
             problem = f"{name} answered HTTP {status}"
             if status != 429 and status < 500:

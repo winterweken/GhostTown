@@ -10,6 +10,7 @@ from ghosttown_fetch.frame import Frame
 from ghosttown_fetch.sources import osm
 from ghosttown_fetch.terrain import FlatTerrain
 from osm_samples import LAT0, LON0, body, relation, square, way
+from terrains import Ramp
 
 FRAME = Frame(LAT0, LON0)
 FLAT = FlatTerrain()
@@ -51,6 +52,14 @@ def test_height_tag_wins_over_levels():
     el, = build(way(1, square(0, 0, 10), {"building": "yes", "height": "30", "building:levels": "3"}))
     s, = el["solids"]
     assert (s["z0"], s["z1"], s["height_source"], el["kind"]) == (-0.3, 30.0, "osm_height", "building")
+
+
+def test_each_solid_records_the_ground_under_it():
+    el, = buildings.from_osm(osm.parse(body(way(1, square(20, 0, 10), {"building": "yes", "height": "12", "min_height": "3"}))),
+                             FRAME, Ramp())
+    s, = el["solids"]
+    assert s["ground"] == pytest.approx(2.0, abs=0.01)
+    assert (s["z0"], s["z1"]) == (pytest.approx(5.0, abs=0.01), pytest.approx(14.0, abs=0.01))
 
 
 def test_levels_when_there_is_no_height():
@@ -133,3 +142,22 @@ def test_a_self_touching_way_gives_rings_that_do_not_touch():
         lrs = [LinearRing(r) for r in s["rings"]]
         assert all(lr.is_simple for lr in lrs)
         assert not any(a.intersects(b) for i, a in enumerate(lrs) for b in lrs[i + 1:])
+
+
+def test_roof_tags_reach_the_solids():
+    el, = build(way(1, square(0, 0, 10), {"building": "house", "height": "9", "roof:shape": "Gabled",
+                                          "roof:height": "2.5 m"}))
+    assert el["solids"][0]["roof"] == {"shape": "gabled", "height": 2.5} and valid([el]) == []
+
+def test_a_part_keeps_its_own_roof_tags_and_a_plain_building_has_none():
+    outline = way(1, square(0, 0, 20), {"building": "yes", "roof:shape": "flat"})
+    part = way(2, square(0, 0, 10), {"building:part": "yes", "roof:shape": "hipped"})
+    el, = build(outline, part)
+    assert [s.get("roof") for s in el["solids"]] == [{"shape": "hipped"}]
+    plain, = build(way(3, square(40, 0, 10), {"building": "yes", "roof:height": "tall"}))
+    assert "roof" not in plain["solids"][0]
+
+
+def test_a_roof_height_that_rounds_to_nothing_is_left_out():
+    el, = build(way(1, square(0, 0, 10), {"building": "yes", "roof:height": "0.0004"}))
+    assert "roof" not in el["solids"][0] and valid([el]) == []

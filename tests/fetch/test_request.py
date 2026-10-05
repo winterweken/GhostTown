@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from ghosttown_fetch import LAYERS
+from ghosttown_fetch import DEFAULT_LAYERS, LAYERS
 from ghosttown_fetch import request as rq
 
 
@@ -15,7 +15,7 @@ def test_build_fills_defaults_and_is_valid():
     d = good()
     assert rq.validate(d) == []
     assert d["schema"] == 1 and d["tool"].startswith("ghosttown ")
-    assert d["layers"] == list(LAYERS)
+    assert d["layers"] == list(DEFAULT_LAYERS) and "lidar" not in d["layers"]
     assert d["site_polys_m"] == [] and d["fetch_fresh"] is False and d["overpass_url"] == ""
 
 
@@ -59,3 +59,8 @@ def test_read_round_trip(tmp_path):
     path.write_text(json.dumps(good()), encoding="utf-8")
     doc, problems = rq.read(str(path))
     assert problems == [] and doc == good()
+
+
+def test_lidar_roofs_are_a_layer_asked_for_by_name():
+    assert "lidar" in LAYERS and set(LAYERS) - set(DEFAULT_LAYERS) == {"lidar"}
+    assert rq.validate(good(layers=list(DEFAULT_LAYERS) + ["lidar"])) == []
