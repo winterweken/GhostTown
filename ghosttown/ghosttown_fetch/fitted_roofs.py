@@ -39,6 +39,14 @@ AXIS_EDGE_M = 3.0      # outline edges this long or longer set main axes
 OFFSETS = 15           # ridge positions tried across the house
 HIP_ENDS = (0.5, 0.75, 1.0)
 LOWEST_ROOF_M = OTHER_RANGE_M[0]  # no roof point below this height above the ground
+TIER_STEP_M = 3.0      # a storey: tiers stand at least this far apart...
+MIN_TIER_M2 = 25.0     # ...and cover at least this much
+ROUGH_M = 0.5          # a cell whose 3 x 3 neighbourhood strays this far from a plane is a tree, wall or clutter
+LEVEL_BIN_M = 0.5
+LEVEL_SIGMA_M = 1.0
+SMOOTH_PASSES = 2
+SMOOTH_VOTES = 5       # of 9: a cell takes its neighbourhood's majority label
+TIER_SIMPLIFY_M = 1.0
 
 
 def _grid(poly, cell):
@@ -318,3 +326,189 @@ def house_solid(rings, z0, ground, m):
     top, loops, edge, base = surface
     z = np.maximum(ground + roof_z(m, xy[:, 0], xy[:, 1]), max(ground + LOWEST_ROOF_M, z0 + MIN_WALL_M))
     return _close(top, xy, z, z0, loops, edge, base)
+
+
+def _windows(a, fill=None):
+    """The 9 shifted copies of `a` that line up each cell's 3 x 3 neighbourhood on the first axis; the
+    border is padded with `fill`, or with the edge's own values."""
+    ni, nj = a.shape
+    p = np.pad(a, 1, mode="edge") if fill is None else np.pad(a, 1, constant_values=fill)
+    return np.stack([p[r:r + ni, c:c + nj] for r in range(3) for c in range(3)])
+
+def _rough(h):
+    """True where a cell's 3 x 3 neighbourhood strays more than ROUGH_M (RMS) from its best plane; a
+    neighbourhood with a NaN in it counts as rough."""
+    win = _windows(h, np.nan)
+    dr = np.repeat([-1.0, 0.0, 1.0], 3)[:, None, None]
+    dc = np.tile([-1.0, 0.0, 1.0], 3)[:, None, None]
+    plane = win.mean(axis=0) + dr * (dr * win).sum(axis=0) / 6.0 + dc * (dc * win).sum(axis=0) / 6.0
+    with np.errstate(invalid="ignore"):
+        return ~(np.sqrt(((win - plane) ** 2).mean(axis=0)) <= ROUGH_M)
+
+def _levels(smooth_heights, valid_heights, cell):
+    """The roof levels: peaks of the smooth cells' height histogram (LEVEL_BIN_M bins, smoothed by a
+    LEVEL_SIGMA_M Gaussian), taken from the tallest peak down, each TIER_STEP_M from those taken and with
+    MIN_TIER_M2 of valid cells within half a step of it. The median when no peak qualifies."""
+    lo, hi = smooth_heights.min(), smooth_heights.max()
+    edges = np.arange(lo - 3 * LEVEL_SIGMA_M, hi + 3 * LEVEL_SIGMA_M + LEVEL_BIN_M, LEVEL_BIN_M)
+    counts, _ = np.histogram(smooth_heights, edges)
+    reach = int(round(2 * LEVEL_SIGMA_M / LEVEL_BIN_M))
+    kernel = np.exp(-0.5 * (np.arange(-reach, reach + 1) * LEVEL_BIN_M / LEVEL_SIGMA_M) ** 2)
+    smooth = np.convolve(counts, kernel / kernel.sum(), mode="same")
+    centres = (edges[:-1] + edges[1:]) / 2
+    peaks = [i for i in range(1, len(smooth) - 1) if smooth[i] >= smooth[i - 1] and smooth[i] > smooth[i + 1]]
+    taken = []
+    for i in sorted(peaks, key=lambda i: -smooth[i]):
+        level = float(centres[i])
+        if (all(abs(level - t) >= TIER_STEP_M for t in taken)
+                and np.count_nonzero(np.abs(valid_heights - level) < TIER_STEP_M / 2) * cell * cell >= MIN_TIER_M2):
+            taken.append(level)
+    return np.array(sorted(taken)) if taken else np.array([float(np.median(smooth_heights))])
+
+def _label(mask):
+    """The 4-connected pieces of `mask`: each cell's label is the smallest flat index in its piece, -1
+    off the mask."""
+    ni, nj = mask.shape
+    index = np.arange(ni * nj).reshape(ni, nj)
+    down, right = mask[:-1, :] & mask[1:, :], mask[:, :-1] & mask[:, 1:]
+    a = np.concatenate([index[:-1, :][down], index[:, :-1][right]])
+    b = np.concatenate([index[1:, :][down], index[:, 1:][right]])
+    lab = np.where(mask, index, -1).ravel()
+    while True:
+        low = np.minimum(lab[a], lab[b])
+        new = lab.copy()
+        np.minimum.at(new, a, low)
+        np.minimum.at(new, b, low)
+        on = new >= 0
+        new[on] = new[new[on]]
+        if np.array_equal(new, lab):
+            return lab.reshape(ni, nj)
+        lab = new
+
+def _fill(lab):
+    """Every cell takes the label of its nearest labelled cell, growing outwards one cell per pass."""
+    full = lab.copy()
+    shifts = ((np.s_[:-1, :], np.s_[1:, :]), (np.s_[1:, :], np.s_[:-1, :]),
+              (np.s_[:, :-1], np.s_[:, 1:]), (np.s_[:, 1:], np.s_[:, :-1]))
+    while (full < 0).any():
+        before = full.copy()
+        for src, dst in shifts:
+            grow = (full[dst] < 0) & (before[src] >= 0)
+            full[dst][grow] = before[src][grow]
+        if np.array_equal(full, before):
+            break
+    return full
+
+def _borders(full):
+    """{(a, b): shared cell sides} between neighbouring labels a < b."""
+    pairs = []
+    for x, y in ((full[:-1, :], full[1:, :]), (full[:, :-1], full[:, 1:])):
+        d = x != y
+        pairs.append(np.stack([np.minimum(x[d], y[d]), np.maximum(x[d], y[d])], axis=1))
+    pairs = np.concatenate(pairs)
+    if not len(pairs):
+        return {}
+    keys, counts = np.unique(pairs, axis=0, return_counts=True)
+    return {(int(a), int(b)): int(n) for (a, b), n in zip(keys, counts)}
+
+def _merge(full, inside, smooth, h, min_cells):
+    """Tiers under MIN_TIER_M2 (inside the outline) join the neighbour they share the longest border
+    with, smallest first; then neighbours whose medians are under TIER_STEP_M apart merge, closest
+    first."""
+    while True:
+        keys = [int(k) for k in np.unique(full)]
+        if len(keys) == 1:
+            return full
+        borders = _borders(full)
+        size = {k: int(np.count_nonzero(inside & (full == k))) for k in keys}
+        small = [k for k in keys if size[k] < min_cells]
+        if small:
+            k = min(small, key=lambda k: (size[k], k))
+            near = {(b if a == k else a): n for (a, b), n in borders.items() if k in (a, b)}
+            full[full == k] = max(near, key=lambda j: (near[j], -j))
+            continue
+        level = {k: float(np.median(h[smooth & (full == k)])) for k in keys}
+        close = sorted((abs(level[a] - level[b]), a, b) for a, b in borders if abs(level[a] - level[b]) < TIER_STEP_M)
+        if not close:
+            return full
+        _, a, b = close[0]
+        full[full == b] = a
+
+def _smooth(full):
+    """SMOOTH_PASSES passes in which each cell takes the label held by SMOOTH_VOTES of its 3 x 3 cells."""
+    for _ in range(SMOOTH_PASSES):
+        win = _windows(full)
+        keys = np.unique(full)
+        votes = np.stack([(win == k).sum(axis=0) for k in keys])
+        full = np.where(votes.max(axis=0) >= SMOOTH_VOTES, keys[votes.argmax(axis=0)], full)
+    return full
+
+def _absorb(parts):
+    """Polygons under MIN_TIER_M2 join the neighbour they share the longest edge with, keeping its height;
+    one that shares no edge, or wouldn't make one polygon with it, stays as it is."""
+    todo = sorted(parts, key=lambda ph: ph[0].area)
+    done = []
+    while todo:
+        p, height = todo.pop(0)
+        others = todo + done
+        if p.area >= MIN_TIER_M2 or not others:
+            done.append((p, height))
+            continue
+        lengths = [p.boundary.intersection(q.boundary).length for q, _ in others]
+        j = int(np.argmax(lengths))
+        merged = shapely.union(others[j][0], p) if lengths[j] > 0 else None
+        if merged is None or merged.geom_type != "Polygon":
+            done.append((p, height))
+            continue
+        if j < len(todo):
+            todo[j] = (merged, todo[j][1])
+            todo.sort(key=lambda ph: ph[0].area)
+        else:
+            done[j - len(todo)] = (merged, done[j - len(todo)][1])
+    return done
+
+def _cells(mask, i0, j0, cell):
+    """The union of the mask's cells, built from its runs of cells along y (far fewer shapes than cells)."""
+    steps = np.diff(np.pad(mask, ((0, 0), (1, 1))).astype(np.int8), axis=1)
+    si, sj = np.nonzero(steps == 1)   # a run starts at sj...
+    _, ej = np.nonzero(steps == -1)   # ...and stops before ej, in the same order
+    return shapely.union_all(shapely.box((si + i0) * cell, (sj + j0) * cell, (si + i0 + 1) * cell, (ej + j0) * cell))
+
+def _outlines(full, i0, j0, cell, poly, level):
+    """[(Polygon, height)]: each tier's cells unioned, their shared edges simplified by TIER_SIMPLIFY_M
+    with the outer edge fixed, cut to the outline, and the small pieces absorbed."""
+    keys = [int(k) for k in np.unique(full)]
+    regions = [_cells(full == k, i0, j0, cell) for k in keys]
+    try:
+        regions = list(shapely.coverage_simplify(np.array(regions, dtype=object), TIER_SIMPLIFY_M,
+                                                 simplify_boundary=False))
+    except shapely.errors.GEOSException:
+        pass  # the cells' own edges, unsimplified
+    parts = []
+    for k, region in zip(keys, regions):
+        parts += [(p, level[k]) for p in shapely.get_parts(shapely.intersection(region, poly))
+                  if p.geom_type == "Polygon" and p.area > 0]
+    return _absorb(parts)
+
+def tiers(poly, own, heights, cell, city, taller=None):
+    """[(Polygon, height above ground)] filling `poly` at its measured roof levels, or None when less
+    than MIN_TIER_M2 of its roof is smooth LiDAR. Cells under `taller` (other solids standing higher)
+    are left out: the LiDAR there sees those solids."""
+    i0, j0, gx, gy, inside = _grid(poly, cell)
+    h = heights.sample(gx.ravel(), gy.ravel()).reshape(gx.shape)
+    valid = inside & _kept(h, own, city)
+    if taller is not None and not taller.is_empty:
+        valid &= ~shapely.contains_xy(taller, gx.ravel(), gy.ravel()).reshape(gx.shape)
+    smooth = valid & ~_rough(np.where(valid, h, np.nan))
+    min_cells = MIN_TIER_M2 / (cell * cell)
+    if np.count_nonzero(smooth) < min_cells:
+        return None
+    levels = _levels(h[smooth], h[valid], cell)
+    nearest = np.abs(np.where(np.isfinite(h), h, 0.0)[..., None] - levels).argmin(axis=-1)
+    lab = np.full(h.shape, -1)
+    for q in range(len(levels)):
+        pieces = _label(smooth & (nearest == q))
+        lab = np.where(pieces >= 0, pieces, lab)
+    full = _merge(_fill(lab), inside, smooth, h, min_cells)
+    level = {int(k): float(np.median(h[smooth & (full == k)])) for k in np.unique(full)}
+    return _outlines(_smooth(full), i0, j0, cell, poly, level)

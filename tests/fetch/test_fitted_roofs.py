@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import shapely
 from shapely.affinity import rotate
-from shapely.geometry import box
+from shapely.geometry import Polygon, box
 
 from ghosttown_fetch import fitted_roofs as fit
 from test_lidar_roofs import FLAT20, Field, closed_outward, square
@@ -142,3 +142,57 @@ def test_a_roof_never_dips_under_2_m_or_its_base():
     steep = {"kind": "gable", "th": 0.0, "u0": 0.0, "H": 6.0, "s": 2.0}  # eaves would be at -4 m
     verts, faces = fit.house_solid([square(-5, -5, 10)], -0.3, 0.0, steep)
     assert closed_outward(verts, faces) and verts[verts[:, 2] > 0][:, 2].min() == pytest.approx(2.0)
+
+
+def heights_at(*blocks, base=None):
+    """A roof made of axis-aligned blocks (x0, y0, x1, y1, height), later blocks over earlier ones."""
+    def f(x, y):
+        z = np.full(np.shape(x), np.nan) if base is None else np.full(np.shape(x), float(base))
+        for x0, y0, x1, y1, height in blocks:
+            z = np.where((x >= x0) & (x < x1) & (y >= y0) & (y < y1), height, z)
+        return z
+    return Field(f)
+
+def tier_levels(parts):
+    return sorted(round(level, 1) for _, level in parts)
+
+def test_a_tower_on_a_podium_is_two_tiers_that_fill_the_footprint():
+    podium = box(0, 0, 40, 40)
+    parts = fit.tiers(podium, 10.0, heights_at((0, 0, 40, 40, 10.0), (12.5, 12.5, 27.5, 27.5, 40.0)), CELL, city=False)
+    assert tier_levels(parts) == [10.0, 40.0]
+    assert sum(p.area for p, _ in parts) == pytest.approx(1600.0, abs=1e-6)
+    tower, = [p for p, level in parts if level > 20]
+    assert tower.area == pytest.approx(225.0, rel=0.1)
+
+@pytest.mark.parametrize("extra, count", [
+    ((10, 10, 16, 15, 16.0), 2),    # a 30 m2 penthouse 4 m up is a tier
+    ((10, 10, 12.5, 14, 16.0), 1),  # a 10 m2 lift overrun is not
+])
+def test_a_penthouse_is_a_tier_and_a_lift_overrun_is_not(extra, count):
+    parts = fit.tiers(box(0, 0, 30, 30), 12.0, heights_at((0, 0, 30, 30, 12.0), extra), CELL, city=False)
+    assert len(parts) == count and tier_levels(parts)[0] == 12.0
+
+def test_a_parapet_is_not_a_tier():
+    roof = heights_at((0, 0, 30, 30, 13.0), (0.5, 0.5, 29.5, 29.5, 12.0))  # 1 m higher round the edge
+    assert tier_levels(fit.tiers(box(0, 0, 30, 30), 12.0, roof, CELL, city=False)) == [12.0]
+
+def test_a_tree_crown_on_a_low_roof_is_not_a_tier():
+    rng = np.random.default_rng(3)
+    flat = heights_at((0, 0, 30, 30, 6.0))
+    crown = Field(lambda x, y: np.where((x > 20) & (x < 28) & (y > 20) & (y < 27.5),
+                                        rng.uniform(6.0, 14.0, size=np.shape(x)), flat.sample(x, y)))
+    assert tier_levels(fit.tiers(box(0, 0, 30, 30), 6.0, crown, CELL, city=False)) == [6.0]
+
+def test_a_taller_solid_over_the_outline_adds_no_tier():
+    lidar = heights_at((0, 0, 40, 40, 10.0), (12.5, 12.5, 27.5, 27.5, 40.0))
+    parts = fit.tiers(box(0, 0, 40, 40), 10.0, lidar, CELL, city=False, taller=box(12.5, 12.5, 27.5, 27.5))
+    assert tier_levels(parts) == [10.0] and parts[0][0].area == pytest.approx(1600.0)
+
+def test_too_little_smooth_roof_is_no_tiers():
+    assert fit.tiers(box(0, 0, 40, 40), 10.0, heights_at((0, 0, 3, 3, 10.0)), CELL, city=False) is None
+
+def test_an_l_shaped_building_keeps_its_shape_in_tiers():
+    ell = Polygon([(0, 0), (40, 0), (40, 15), (15, 15), (15, 40), (0, 40)])
+    parts = fit.tiers(ell, 8.0, heights_at((0, 0, 40, 40, 8.0), (0, 20, 15, 40, 20.0)), CELL, city=False)
+    assert tier_levels(parts) == [8.0, 20.0]
+    assert shapely.union_all([p for p, _ in parts]).symmetric_difference(ell).area < 1e-6
