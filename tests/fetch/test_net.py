@@ -1,21 +1,11 @@
+import http.client
+
 import pytest
 
-from ghosttown_fetch.net import USER_AGENT, Net, SourceError
+from ghosttown_fetch.net import USER_AGENT, Net, SourceError, Unreadable
+from fakes import Transport
 
 URL = "https://example.org/api"
-
-
-class Transport:
-    def __init__(self, *answers):
-        self.answers = list(answers)
-        self.calls = []
-
-    def __call__(self, url, data, headers, timeout):
-        self.calls.append((url, data, headers))
-        answer = self.answers.pop(0)
-        if isinstance(answer, Exception):
-            raise answer
-        return answer
 
 
 def test_200_is_cached(tmp_path):
@@ -104,3 +94,38 @@ def test_a_one_off_download_skips_the_response_cache(tmp_path):
     assert net.get(URL, source="toronto", keep=False) == b"big"
     assert not (tmp_path / "toronto").exists()
     assert net.get(URL, source="toronto", keep=False) == b"big" and len(t.calls) == 2
+
+
+def _readable(body):
+    if body != b"good":
+        raise Unreadable("The answer couldn't be read.")
+
+
+def test_an_unreadable_answer_is_asked_for_once_more(tmp_path):
+    slept, t = [], Transport((200, b"null"), (200, b"good"))
+    assert Net(str(tmp_path), transport=t, sleep=slept.append).get(URL, source="osm", check=_readable) == b"good"
+    assert len(t.calls) == 2 and slept == [30]
+
+
+def test_a_second_unreadable_answer_gives_up_and_stores_nothing(tmp_path):
+    t = Transport((200, b"null"), (200, b"<html>busy</html>"))
+    with pytest.raises(SourceError, match="couldn't be read"):
+        Net(str(tmp_path), transport=t, sleep=lambda s: None).get(URL, source="osm", check=_readable)
+    assert len(t.calls) == 2 and not (tmp_path / "osm").exists()
+
+
+def test_a_refusal_that_asking_again_wont_change_is_final(tmp_path):
+    def check(body):
+        raise SourceError("There is no data here.")  # like "Ontario has no LiDAR here"
+
+    t = Transport((200, b"empty"), (200, b"empty"))
+    with pytest.raises(SourceError, match="no data here"):
+        Net(str(tmp_path), transport=t, sleep=lambda s: None).get(URL, source="osm", check=check)
+    assert len(t.calls) == 1
+
+
+def test_an_answer_cut_off_twice_says_so_in_plain_words(tmp_path):
+    cut = http.client.IncompleteRead(b"x" * 10, 90)
+    with pytest.raises(SourceError) as e:
+        Net(str(tmp_path), transport=Transport(cut, cut), sleep=lambda s: None).get(URL, source="nrcan")
+    assert str(e.value) == "Natural Resources Canada sent an answer that was cut off; try again in a minute."

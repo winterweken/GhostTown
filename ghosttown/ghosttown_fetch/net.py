@@ -1,4 +1,4 @@
-"""HTTP for every source: identifying User-Agent, one retry for busy servers, a file cache.
+"""HTTP for every source: identifying User-Agent, one retry for busy servers and unreadable answers, a file cache.
 
 Proxies come from the usual environment variables (https_proxy etc.), which urllib honours.
 """
@@ -17,6 +17,10 @@ RETRY_WAIT_S = 30
 
 class SourceError(Exception):
     """A source couldn't be fetched or read. The message is one plain sentence."""
+
+
+class Unreadable(SourceError):
+    """An answer came through but can't be read, like NRCan's `null`; asking once more may get a good one."""
 
 
 def urllib_transport(url, data, headers, timeout):
@@ -62,12 +66,20 @@ class Net:
                 self.sleep(RETRY_WAIT_S)
             try:
                 status, body = self.transport(url, data, {"User-Agent": USER_AGENT}, timeout)
+            except http.client.IncompleteRead:
+                problem = f"{name} sent an answer that was cut off"
+                continue
             except (OSError, http.client.HTTPException) as e:
                 problem = f"{name} couldn't be reached ({e})"
                 continue
             if status == 200:
                 if check is not None:
-                    check(body)
+                    try:
+                        check(body)
+                    except Unreadable:
+                        if attempt < RETRIES:
+                            continue
+                        raise
                 if keep:
                     self.cache.write(source, key, body)
                 return body

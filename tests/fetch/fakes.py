@@ -26,6 +26,21 @@ class FakeNet:
         return answer
 
 
+class Transport:
+    """Stands in for net.urllib_transport: hands out (status, body) answers in turn, or raises one."""
+
+    def __init__(self, *answers):
+        self.answers = list(answers)
+        self.calls = []
+
+    def __call__(self, url, data, headers, timeout):
+        self.calls.append((url, data, headers))
+        answer = self.answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+
 def router(table):
     """A FakeNet answer that picks a body by the first key found in the URL or the decoded POSTed form."""
     def answer(url, data):

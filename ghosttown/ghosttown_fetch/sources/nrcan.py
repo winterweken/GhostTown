@@ -11,7 +11,7 @@ import numpy as np
 
 from .. import tiff
 from ..frame import lonlat_to_merc
-from ..net import SourceError
+from ..net import SourceError, Unreadable
 
 ENDPOINT = "https://datacube.services.geo.ca/wrapper/ogc/elevation-hrdem-mosaic"
 CRS = "urn:ogc:def:crs:EPSG::3857"
@@ -57,7 +57,7 @@ def _read(body):
     try:
         return tiff.read(body)
     except tiff.TiffError as e:
-        raise SourceError(f"Natural Resources Canada sent elevation data that couldn't be read ({e})") from None
+        raise Unreadable(f"Natural Resources Canada sent elevation data that couldn't be read ({e})") from None
 
 
 def check(body):

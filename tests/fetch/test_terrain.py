@@ -9,9 +9,9 @@ from shapely.geometry import box
 
 from ghosttown_fetch import terrain, tiff
 from ghosttown_fetch.frame import Frame, lonlat_to_merc
-from ghosttown_fetch.net import SourceError
+from ghosttown_fetch.net import Net, SourceError, Unreadable
 from ghosttown_fetch.sources import nrcan
-from fakes import FakeNet
+from fakes import FakeNet, Transport
 from tiff_samples import east_slope_tiff, nrcan_server, write_tiff
 
 FIX = Path(__file__).parent / "fixtures"
@@ -204,3 +204,28 @@ def test_pieces_that_dont_line_up_give_flat_ground_with_a_warning():
 
     t, note = terrain.load(FakeNet({"nrcan": answer}), f, 300)
     assert t.source == "flat" and note[0] == "warn" and "line up" in note[2]
+
+
+def test_an_unreadable_nrcan_answer_asks_once_more_and_is_never_stored(tmp_path):
+    f = Frame(*BAY)
+    good = nrcan_server(_plane(f))
+    url = nrcan.pieces(f, 180.0, 2.0)[3][0][2]
+    tif = good(url, None)
+    net = Net(str(tmp_path), transport=Transport((200, b"null"), (200, tif)), sleep=lambda s: None)
+    t, note = terrain.load(net, f, 150)
+    assert t.source == "nrcan-dtm" and note is None
+    assert [p.read_bytes() for p in (tmp_path / "nrcan").iterdir()] == [tif]
+
+
+def test_two_unreadable_nrcan_answers_give_flat_ground_and_store_nothing(tmp_path):
+    net = Net(str(tmp_path), transport=Transport((200, b"null"), (200, b"null")), sleep=lambda s: None)
+    t, note = terrain.load(net, Frame(*BAY), 150)
+    assert t.source == "flat" and note == ("warn", "terrain", "Natural Resources Canada sent elevation data that "
+                                           "couldn't be read (This isn't a TIFF file.) The ground is flat.")
+    assert not (tmp_path / "nrcan").exists()
+
+
+@pytest.mark.parametrize("body", [b"null", b"<html><body>502 Bad Gateway</body></html>", b"MM\x00*\x00\x00\x00\x08cut"])
+def test_nrcan_answers_that_cant_be_read_are_worth_asking_for_again(body):
+    with pytest.raises(Unreadable):
+        nrcan.check(body)
