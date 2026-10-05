@@ -232,6 +232,13 @@ def test_a_build_shows_the_fitted_roofs_and_keeps_the_flat_and_lidar_ones():
     assert site_use.roof_choices(root) == ["flat", "fitted", "lidar"]
 
 
+def test_fitted_roofs_are_flat_shaded_like_the_flat_meshes():
+    root, _ = fitted_site()
+    for ob in buildings(root):
+        assert not any(p.use_smooth for p in ob[site_use.FITTED_KEY].polygons)  # solids, not a smooth surface
+        assert not any(p.use_smooth for p in ob[site_use.FLAT_KEY].polygons)
+
+
 def test_all_three_meshes_survive_saving_and_reopening():
     root, folder = fitted_site()
     name = buildings(root)[0].name

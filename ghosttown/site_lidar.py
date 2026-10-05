@@ -16,10 +16,11 @@ SUFFIX = " · LiDAR"
 FITTED_SUFFIX = " · Fitted"
 
 
-def _mesh(name, verts, faces, face_kind, kinds):
+def _mesh(name, verts, faces, face_kind, kinds, flat=False):
     """A triangle mesh built with foreach_set (LiDAR roofs run to millions of triangles), its materials
-    the building kinds in the order its faces first use them, as the flat mesh lists them. Nothing is
-    left behind when it fails."""
+    the building kinds in the order its faces first use them, as the flat mesh lists them; flat-shaded
+    when `flat`, like the flat meshes (fitted roofs are solids), else smooth. Nothing is left behind when
+    it fails."""
     me = bpy.data.meshes.new(name)
     try:
         me.vertices.add(len(verts))
@@ -34,6 +35,8 @@ def _mesh(name, verts, faces, face_kind, kinds):
         slot = np.zeros(len(kinds), dtype=np.int32)
         slot[order] = np.arange(len(order), dtype=np.int32)
         me.polygons.foreach_set("material_index", slot[face_kind])
+        if flat:
+            me.shade_flat()
         me.update(calc_edges=True)
         me.validate(clean_customdata=False)
     except Exception:
@@ -85,11 +88,11 @@ def _read(path):
     return arrays
 
 
-def _attach(root, data, key, suffix, interior=None):
+def _attach(root, data, key, suffix, interior=None, flat=False):
     """Give each building listed in `data` a mesh kept under `key` (its flat mesh under FLAT_KEY, unless it
-    has one there already) and show it; with `interior`, the roof interior group too. Returns how many
-    buildings got one. When a mesh fails, removes every mesh it made, puts back what each building showed,
-    and raises."""
+    has one there already) and show it; with `interior`, the roof interior group too, and with `flat`,
+    flat shading. Returns how many buildings got one. When a mesh fails, removes every mesh it made, puts
+    back what each building showed, and raises."""
     kinds = [str(k) for k in data["kinds"]]
     buildings = {ob["ctx_id"]: ob for ob in site_use.made_objects(root, BUILDING_KINDS)}
     vs, fs = data["vert_start"], data["face_start"]
@@ -103,7 +106,7 @@ def _attach(root, data, key, suffix, interior=None):
             faces = data["faces"][fs[b]:fs[b + 1]]
             if len(faces) == 0 or faces.min() < 0 or faces.max() >= len(verts):
                 continue  # a damaged slice: this building goes without this roof shape
-            me = _mesh(ob.name + suffix, verts, faces, data["face_kind"][fs[b]:fs[b + 1]], kinds)
+            me = _mesh(ob.name + suffix, verts, faces, data["face_kind"][fs[b]:fs[b + 1]], kinds, flat)
             made.append((ob, ob.data, me, site_use.FLAT_KEY in ob))
             if site_use.FLAT_KEY not in ob:
                 ob[site_use.FLAT_KEY] = ob.data
@@ -144,7 +147,7 @@ def attach_fitted(root, path, block):
     """Give every building in the site its fitted mesh and show it: fitted roofs are what a build shows.
     Raises OSError or ValueError when the file can't be read, leaving the site as it was."""
     data = _read(path)
-    if not _attach(root, data, site_use.FITTED_KEY, FITTED_SUFFIX):
+    if not _attach(root, data, site_use.FITTED_KEY, FITTED_SUFFIX, flat=True):
         return False
     _settle(root, block, "fitted")
     return True
