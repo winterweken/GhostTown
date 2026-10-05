@@ -15,10 +15,11 @@ Type an address in Blender and get the city around it: buildings, terrain, roads
 water, parks, trees and lot lines, built from open data as clean geometry you can take into Revit or
 any BIM tool.
 
-![The Toronto waterfront around 235 Queens Quay W, built by Ghost Town](media/waterfront.jpg)
+![Ghost Town in Blender: searching for 1140 Dundas St W, building the site, and the blocks around Dundas and Ossington appearing on the City's aerial photo](media/build-toronto.gif)
 
-*235 Queens Quay W, Toronto, 300 m radius, built in about 8 seconds. Data: City of Toronto and Natural
-Resources Canada (see [Data and credits](#data-and-credits)).*
+*1140 Dundas St W at Ossington, Toronto, 150 m radius: find the address, build, and switch the ground
+between colours by kind and the aerial photo. The build is shortened here. Data: City of Toronto and
+Natural Resources Canada (see [Data and credits](#data-and-credits)).*
 
 Ghost Town is a free, open-source extension for Blender 5.2 and later. It is at an early stage
 (version 0.3): Toronto is covered in depth, and the rest of the world gets buildings only.
@@ -53,6 +54,10 @@ Each build makes one collection, `Context · <site>`:
   sea level, the origin's survey grid coordinates and the data credits.
 
 Everything is in metres, with x east, y north, the address at the origin and z = 0 at its ground level.
+
+![The Toronto waterfront around 235 Queens Quay W, built by Ghost Town](media/waterfront.jpg)
+
+*235 Queens Quay W, Toronto, 300 m radius, built in about 8 seconds.*
 
 ![Downtown Toronto around 320 Bay St](media/downtown.jpg)
 
@@ -127,6 +132,12 @@ When the site has LiDAR roofs:
 - **Roof detail** simplifies LiDAR roofs, from 100 % down to 5 %, without moving walls or eaves.
 - **For Revit** shows the site's triangle count. Past the budget in Preferences (500,000 to start) it
   says: Heavy for Revit: use Fitted or Flat roofs, or lower Roof detail, before exporting.
+
+![Houses in Wismer, Markham switching between flat, LiDAR and fitted roofs in Ghost Town](media/roofs-markham.gif)
+
+*Wismer, Markham, 150 m radius with LiDAR roofs: the houses switch between flat tops, the LiDAR surface
+and fitted roofs, and the triangle count for Revit follows. The LiDAR download, a few minutes, is cut
+here. Data: OpenStreetMap, Natural Resources Canada and Geospatial Ontario.*
 
 Switching never downloads anything again, and each site in a file keeps its own choices.
 
