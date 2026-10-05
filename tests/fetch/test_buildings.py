@@ -142,3 +142,22 @@ def test_a_self_touching_way_gives_rings_that_do_not_touch():
         lrs = [LinearRing(r) for r in s["rings"]]
         assert all(lr.is_simple for lr in lrs)
         assert not any(a.intersects(b) for i, a in enumerate(lrs) for b in lrs[i + 1:])
+
+
+def test_roof_tags_reach_the_solids():
+    el, = build(way(1, square(0, 0, 10), {"building": "house", "height": "9", "roof:shape": "Gabled",
+                                          "roof:height": "2.5 m"}))
+    assert el["solids"][0]["roof"] == {"shape": "gabled", "height": 2.5} and valid([el]) == []
+
+def test_a_part_keeps_its_own_roof_tags_and_a_plain_building_has_none():
+    outline = way(1, square(0, 0, 20), {"building": "yes", "roof:shape": "flat"})
+    part = way(2, square(0, 0, 10), {"building:part": "yes", "roof:shape": "hipped"})
+    el, = build(outline, part)
+    assert [s.get("roof") for s in el["solids"]] == [{"shape": "hipped"}]
+    plain, = build(way(3, square(40, 0, 10), {"building": "yes", "roof:height": "tall"}))
+    assert "roof" not in plain["solids"][0]
+
+
+def test_a_roof_height_that_rounds_to_nothing_is_left_out():
+    el, = build(way(1, square(0, 0, 10), {"building": "yes", "roof:height": "0.0004"}))
+    assert "roof" not in el["solids"][0] and valid([el]) == []

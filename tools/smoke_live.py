@@ -70,7 +70,15 @@ if with_lidar:
     city_model = any(n["code"] == "lidar" and "3D Massing" in n["text"] for n in doc["notes"])
     assert doc.get("lidar") or city_model, [n["text"] for n in doc["notes"]]
     if doc.get("lidar"):
-        assert site_use.has_lidar(root) and root["use_roof_shapes"] == "lidar"
+        fitted = doc["lidar"].get("fitted")
+        assert fitted and site_use.has_fitted(root) and root["use_roof_shapes"] == "fitted", \
+            [n["text"] for n in doc["notes"]]
+        run = os.path.dirname(result["context"])
+        took = os.path.getmtime(os.path.join(run, fitted["file"])) - os.path.getmtime(os.path.join(run, doc["lidar"]["file"]))
+        print("FITTED", fitted, f"step {took:.1f} s", [n["text"] for n in doc["notes"] if n["code"] == "fitted"])
         print("TRIANGLES", site_use.count_triangles(root, bpy.context.evaluated_depsgraph_get()))
+        site_use.apply_roof_shapes(root, "lidar")
+        print("TRIANGLES LIDAR", site_use.count_triangles(root, bpy.context.evaluated_depsgraph_get()))
+        site_use.apply_roof_shapes(root, "fitted")
 bpy.ops.wm.save_as_mainfile(filepath=os.path.join(work, "smoke.blend"))
 print("SMOKE OK", work)

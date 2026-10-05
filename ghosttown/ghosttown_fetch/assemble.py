@@ -11,7 +11,7 @@ import os
 import numpy as np
 import shapely
 
-from . import BUILDING_KINDS, buildings, ground, lidar_roofs, parcels, region, survey, trees
+from . import BUILDING_KINDS, buildings, fitted_roofs, ground, lidar_roofs, parcels, region, survey, trees
 from . import context as ctx
 from . import terrain as terrain_mod
 from .frame import Frame
@@ -62,6 +62,8 @@ def _city_buildings(net, request, frame, radius, progress, doc):
 LIDAR_STAGE = "LiDAR (the first request can take a minute)"
 FLAT_ROOFS = "The buildings keep flat roofs."
 CITY_MODEL_ONLY = "The buildings come from the City's 3D Massing model, so no LiDAR was fetched."
+FITTED_STAGE = "Fitted roofs"
+FITTED_KEPT = "Flat and LiDAR roofs are still available."
 
 
 def _lidar(doc, net, frame, radius, out_dir, progress):
@@ -116,6 +118,24 @@ def _lidar(doc, net, frame, radius, out_dir, progress):
     elif counts["newer"]:
         text += f" {counts['newer']:,} building parts are newer than the LiDAR survey and keep flat tops."
     ctx.note(doc, "info", "lidar", text)
+    _fitted(doc, heights, cell, out_dir, progress)
+
+
+def _fitted(doc, heights, cell, out_dir, progress):
+    """Fitted roofs written beside the LiDAR roofs as fitted_roofs.npz, with a `fitted` entry in the
+    `lidar` block. A failure is a warning that leaves the LiDAR roofs as they are."""
+    progress(FITTED_STAGE, 79)
+    try:
+        arrays, counts = fitted_roofs.build(doc["elements"], heights, cell)
+        if arrays is None:
+            return
+        lidar_roofs.write(os.path.join(out_dir, fitted_roofs.FILE), arrays)
+    except Exception as e:  # anything at all costs only the fitted roofs, never the build
+        ctx.note(doc, "warn", "fitted", f"The fitted roofs couldn't be built ({str(e)[:80]}). {FITTED_KEPT}")
+        return
+    doc["lidar"]["fitted"] = {"file": fitted_roofs.FILE, "buildings": counts["buildings"],
+                              "triangles": counts["triangles"]}
+    ctx.note(doc, "info", "fitted", fitted_roofs.note_text(counts))
 
 
 def assemble(request, net, *, progress=None):

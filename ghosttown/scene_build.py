@@ -109,7 +109,14 @@ def build(scene, doc, folder=None):
             try:
                 site_lidar.attach(root, path, lidar)
             except (OSError, ValueError, KeyError):
-                pass  # a roofs file numpy can't read: the site builds with flat roofs
+                pass  # a roofs file numpy can't read: the site builds without LiDAR roofs
+        fitted = lidar.get("fitted")
+        path = os.path.join(folder, fitted["file"]) if fitted else None
+        if path and os.path.isfile(path):
+            try:
+                site_lidar.attach_fitted(root, path, lidar)
+            except (OSError, ValueError, KeyError):
+                pass  # the same for fitted roofs
     photo = doc.get("photo")
     if photo and folder:
         path = os.path.join(folder, photo["file"])
@@ -136,12 +143,12 @@ def remove(root, scene):
 
     doomed, kept_objects, kept_collections = [], [], []
     refs = collections.Counter()  # each mesh's users among the doomed objects: the one shown, and the
-    for coll in ours:             # flat and LiDAR meshes a building keeps in its ID properties
+    for coll in ours:             # flat, fitted and LiDAR meshes a building keeps in its ID properties
         for ob in coll.objects:
             if ob.name in made and "ctx_id" in ob:
                 if ob not in doomed:
                     doomed.append(ob)
-                    refs.update(me for me in (ob.data, ob.get(site_use.FLAT_KEY), ob.get(site_use.LIDAR_KEY))
+                    refs.update(me for me in (ob.data, *(ob.get(key) for key in site_use.SHAPE_KEYS.values()))
                                 if me is not None)
             elif ob not in kept_objects:
                 kept_objects.append(ob)

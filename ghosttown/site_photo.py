@@ -14,7 +14,7 @@ DEFAULT_ROOF_MAX_M = 20.0
 
 def add_uvs(ob, bounds):
     """A UV map projecting the photo straight down on every mesh the object can show (a building with
-    LiDAR roofs has two): u and v run 0 to 1 across bounds_m."""
+    measured roofs has up to three): u and v run 0 to 1 across bounds_m."""
     for me in site_use.meshes_of(ob):
         _add_uvs(me, bounds)
 

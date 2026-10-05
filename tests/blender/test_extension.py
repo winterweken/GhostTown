@@ -389,7 +389,7 @@ def test_picking_a_site_shows_its_roof_detail():
 def test_triangle_counts_read_well_and_the_warning_says_what_to_do():
     from ghosttown import ui
     assert ui.triangles_text(1_400_000) == "1.4 M" and ui.triangles_text(86_000) == "86,000"
-    assert " ".join(ui.HEAVY) == "Heavy for Revit: lower Roof detail or use Flat roofs before exporting."
+    assert " ".join(ui.HEAVY) == "Heavy for Revit: use Fitted or Flat roofs, or lower Roof detail, before exporting."
 
 
 def test_a_recount_is_scheduled_again_once_a_file_load_has_dropped_its_timer():

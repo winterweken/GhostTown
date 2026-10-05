@@ -112,11 +112,18 @@ def import_into_scene(context, path, report):
     elif photo:
         report({"WARNING"}, "The aerial photo file is missing or unreadable beside the context file, "
                             "so the site has no photo.")
-    if doc.get("lidar") and site_use.has_lidar(root):
-        settings.summary += ", LiDAR roofs"
-    elif doc.get("lidar"):
-        report({"WARNING"}, "The LiDAR roofs file is missing or unreadable beside the context file, "
-                            "so the buildings have flat roofs.")
+    lidar = doc.get("lidar")
+    if lidar:
+        choices = site_use.roof_choices(root) if site_use.has_lidar(root) else ["flat"]
+        shown = [name for use, name in (("fitted", "fitted"), ("lidar", "LiDAR")) if use in choices]
+        if shown:
+            settings.summary += ", " + " and ".join(shown) + " roofs"
+        if "lidar" not in choices:
+            report({"WARNING"}, "The LiDAR roofs file is missing or unreadable beside the context file, so the "
+                                + ("buildings have no LiDAR roofs." if shown else "buildings have flat roofs."))
+        if lidar.get("fitted") and "fitted" not in choices:
+            report({"WARNING"}, "The fitted roofs file is missing or unreadable beside the context file, "
+                                "so the buildings have no fitted roofs.")
     site_use.count_triangles(root, context.evaluated_depsgraph_get())
     settings.credits = "\n".join(dict.fromkeys(s["credit"] for s in doc["sources"]))
     for note in doc["notes"]:
@@ -369,10 +376,11 @@ def _has_lidar(context):
 class GHOSTTOWN_OT_use_roof_shapes(bpy.types.Operator):
     bl_idname = "ghosttown.use_roof_shapes"
     bl_label = "Roof shapes"
-    bl_description = "Show the picked site's buildings with flat roofs, or with roofs from the LiDAR"
+    bl_description = "Show the picked site's buildings with flat roofs, roofs fitted to the LiDAR, or roofs sampled from it"
     bl_options = {"REGISTER", "UNDO"}
 
     use: EnumProperty(items=(("flat", "Flat", "Flat-topped prisms, the shapes the City or OpenStreetMap give"),
+                             ("fitted", "Fitted", "Solids with roofs fitted to Ontario's LiDAR: the light choice for Revit"),
                              ("lidar", "LiDAR", "Roofs sampled from Ontario's LiDAR")))
 
     @classmethod
@@ -381,6 +389,10 @@ class GHOSTTOWN_OT_use_roof_shapes(bpy.types.Operator):
 
     def execute(self, context):
         root = site_use.picked(context)
+        if self.use not in site_use.roof_choices(root):
+            missing = "fitted" if self.use == "fitted" else "LiDAR"
+            self.report({"WARNING"}, f"This site has no {missing} roofs. Build it again to get them.")
+            return {"CANCELLED"}
         reset = site_use.apply_roof_shapes(root, self.use)
         if reset:
             self.report({"WARNING"}, roofs_reset_warning(reset))

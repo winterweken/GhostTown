@@ -36,13 +36,16 @@ def element(element_id, kind, *, name="", solids=(), meshes=(), lines=()):
             "solids": list(solids), "meshes": list(meshes), "lines": list(lines)}
 
 
-def solid(kind, rings, z0, z1, height_source, ground=None):
+def solid(kind, rings, z0, z1, height_source, ground=None, roof=None):
     """A prism. `ground` is the ground level its top stands on (z1 - ground is its height), which LiDAR
-    roofs measure up from; the base z0 can sit lower, buried under a whole building."""
+    roofs measure up from; the base z0 can sit lower, buried under a whole building. `roof` holds
+    OpenStreetMap's roof tags for fitted roofs: {"shape": "gabled", "height": 2.5}, each key optional."""
     out = {"kind": kind, "rings": rings, "z0": round(float(z0), 3), "z1": round(float(z1), 3),
            "height_source": height_source}
     if ground is not None:
         out["ground"] = round(float(ground), 3)
+    if roof:
+        out["roof"] = dict(roof)
     return out
 
 
@@ -135,7 +138,17 @@ def _lidar_problems(lidar):
           and (lidar.get("year") is None or _count(lidar["year"])))
     if not ok:
         return ["The LiDAR roofs need a file name beside context.json, a cell size, counts and building kinds."]
+    fitted = lidar.get("fitted")
+    if fitted is not None and not (isinstance(fitted, dict) and _beside(fitted.get("file"))
+                                   and _count(fitted.get("buildings")) and _count(fitted.get("triangles"))):
+        return ["The fitted roofs need a file name beside context.json and counts."]
     return []
+
+
+def _roof_ok(roof):
+    return (isinstance(roof, dict) and set(roof) <= {"shape", "height"}
+            and ("shape" not in roof or (isinstance(roof["shape"], str) and roof["shape"].strip() != ""))
+            and ("height" not in roof or (_num(roof["height"]) and roof["height"] > 0)))
 
 
 def _element_problems(el):
@@ -152,6 +165,8 @@ def _element_problems(el):
             p.append(f"{eid}: a solid needs z0 below z1.")
         elif "ground" in s and not _num(s["ground"]):
             p.append(f"{eid}: a solid's ground must be a number.")
+        elif "roof" in s and not _roof_ok(s["roof"]):
+            p.append(f"{eid}: a solid's roof tags need a shape name and a positive height, each optional.")
     for m in el.get("meshes", []):
         n = len(m.get("verts", []))
         if not all(len(f) == 3 and all(isinstance(i, int) and 0 <= i < n for i in f) for f in m.get("faces", [])):
