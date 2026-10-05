@@ -138,3 +138,79 @@ def test_a_missing_roofs_file_builds_flat_roofs():
         assert "LiDAR" not in settings.summary and not site_use.has_lidar(settings.site)
     finally:
         ghosttown.unregister()
+
+
+FITTED = site_use.FITTED_KEY
+
+def test_the_switch_goes_every_way_between_all_three():
+    from test_site_lidar import fitted_site
+    root, _ = fitted_site()
+    for use, key in (("flat", FLAT), ("lidar", LIDAR), ("fitted", FITTED), ("flat", FLAT), ("fitted", FITTED),
+                     ("lidar", LIDAR)):
+        site_use.apply_roof_shapes(root, use)
+        assert all(ob.data == ob[key] for ob in buildings(root)) and root["use_roof_shapes"] == use
+
+def test_the_roof_photo_follows_onto_the_fitted_roofs():
+    from test_site_lidar import fitted_site
+    root, _ = fitted_site(photo=True)
+    photo = root["ctx_photo_material"]
+    site_use.apply_roofs(root, "photo", 100.0)
+    tower = buildings(root)[0]
+    assert _names(tower[FITTED])[-1] == photo
+    site_use.apply_roof_shapes(root, "lidar")
+    assert _names(tower[LIDAR])[-1] == photo and photo not in _names(tower[FITTED])
+
+def test_roof_detail_touches_only_lidar_roofs():
+    from test_site_lidar import fitted_site
+    root, _ = fitted_site(dense=True)
+    site_use.apply_roof_detail(root, 0.4)
+    assert all(site_use.DETAIL_MODIFIER not in ob.modifiers for ob in buildings(root))  # fitted shows
+    site_use.apply_roof_shapes(root, "lidar")
+    assert abs(buildings(root)[1].modifiers[site_use.DETAIL_MODIFIER].ratio - 0.4) < 1e-6
+    site_use.apply_roof_shapes(root, "fitted")
+    assert all(site_use.DETAIL_MODIFIER not in ob.modifiers for ob in buildings(root))
+
+def test_the_triangle_count_follows_the_choice():
+    from test_site_lidar import fitted_site
+    root, _ = fitted_site(dense=True)
+    counts = {}
+    for use in ("lidar", "fitted", "flat"):
+        site_use.apply_roof_shapes(root, use)
+        counts[use] = site_use.count_triangles(root, bpy.context.evaluated_depsgraph_get())
+    others = sum(len(p.vertices) - 2 for ob in root.all_objects if ob.type == "MESH" and ob not in buildings(root)
+                 for p in ob.data.polygons)
+    for use, key in (("flat", FLAT), ("fitted", FITTED), ("lidar", LIDAR)):
+        assert counts[use] == others + sum(len(p.vertices) - 2 for ob in buildings(root) for p in ob[key].polygons)
+    assert counts["fitted"] < counts["lidar"]
+
+def test_the_operator_refuses_fitted_on_a_site_without_them():
+    ghosttown.register()
+    try:
+        root, _ = lidar_site()
+        bpy.context.scene.ghosttown.site = root
+        assert bpy.ops.ghosttown.use_roof_shapes(use="fitted") == {"CANCELLED"}
+        assert root["use_roof_shapes"] == "lidar"
+    finally:
+        ghosttown.unregister()
+
+def test_importing_fitted_roofs_says_so_and_shows_them():
+    from helpers import fitted_doc
+    ghosttown.register()
+    try:
+        folder = tempfile.mkdtemp()
+        settings = _import(fitted_doc(folder), folder)
+        assert settings.summary.endswith(", fitted and LiDAR roofs") and settings.site["use_roof_shapes"] == "fitted"
+    finally:
+        ghosttown.unregister()
+
+def test_a_missing_fitted_file_leaves_the_lidar_roofs():
+    from helpers import fitted_doc
+    ghosttown.register()
+    try:
+        folder = tempfile.mkdtemp()
+        doc = fitted_doc(folder)
+        os.remove(os.path.join(folder, "fitted_roofs.npz"))
+        settings = _import(doc, folder)
+        assert settings.summary.endswith(", LiDAR roofs") and settings.site["use_roof_shapes"] == "lidar"
+    finally:
+        ghosttown.unregister()

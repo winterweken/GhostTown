@@ -121,7 +121,7 @@ When the site has LiDAR roofs:
 - **Roof shapes: Flat | LiDAR** switches every building between its flat-topped prism and its LiDAR roof.
 - **Roof detail** simplifies LiDAR roofs, from 100 % down to 5 %, without moving walls or eaves.
 - **For Revit** shows the site's triangle count. Past the budget in Preferences (500,000 to start) it
-  says: Heavy for Revit: lower Roof detail or use Flat roofs before exporting.
+  says: Heavy for Revit: use Fitted or Flat roofs, or lower Roof detail, before exporting.
 
 Switching never downloads anything again, and each site in a file keeps its own choices.
 

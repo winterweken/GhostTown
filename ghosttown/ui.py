@@ -89,7 +89,8 @@ class GHOSTTOWN_PT_main(bpy.types.Panel):
 
 
 SITE_ICONS = ("EMPTY_AXIS", "COPYDOWN", "IMAGE_DATA", "INFO", "EXPORT", "MOD_DECIM", "ERROR")
-HEAVY = ("Heavy for Revit: lower Roof detail", "or use Flat roofs before exporting.")
+HEAVY = ("Heavy for Revit: use Fitted or Flat roofs,", "or lower Roof detail, before exporting.")
+ROOF_SHAPES = {"flat": "Flat", "fitted": "Fitted", "lidar": "LiDAR"}
 
 
 def triangles_text(count):
@@ -153,7 +154,7 @@ class GHOSTTOWN_PT_site(bpy.types.Panel):
             box = layout.box()
             box.label(text="LiDAR roofs", icon="MOD_DECIM")
             _choice(box, "Roof shapes", "ghosttown.use_roof_shapes", root.get("use_roof_shapes"),
-                    (("flat", "Flat"), ("lidar", "LiDAR")))
+                    [(use, ROOF_SHAPES[use]) for use in site_use.roof_choices(root)])
             if root.get("use_roof_shapes") == "lidar":
                 box.prop(settings, "roof_detail")
             count = root.get("ctx_triangles")
