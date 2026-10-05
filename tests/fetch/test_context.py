@@ -101,6 +101,20 @@ def test_survey_is_optional_but_must_hold_numbers_when_present():
     assert ctx.validate(doc) == ["The survey point needs a numeric easting, northing and grid angle."]
 
 
+def test_survey_must_name_its_grid():
+    doc = ctx.new(rq.build(centre={"lat": 43.65, "lon": -79.38}, radius_m=150, cache_dir="/c", out_dir="/o"),
+                  region="toronto", terrain_source="flat")
+    good = {"epsg": "EPSG:2952", "name": "NAD83(CSRS) / MTM zone 10", "easting_m": 314400.285,
+            "northing_m": 4834420.675, "elevation_m": None, "grid_angle_deg": 0.082146}
+    for key, bad in (("epsg", None), ("name", None), ("epsg", ""), ("name", "  "), ("epsg", 2952)):
+        doc["survey"] = dict(good)
+        if bad is None:
+            del doc["survey"][key]
+        else:
+            doc["survey"][key] = bad
+        assert ctx.validate(doc) == ["The survey point needs its grid's name and EPSG code."], (key, bad)
+
+
 def test_photo_is_optional_but_must_be_well_formed():
     doc = ctx.new(rq.build(centre={"lat": 43.65, "lon": -79.38}, radius_m=150, cache_dir="/c", out_dir="/o"),
                   region="toronto", terrain_source="flat")

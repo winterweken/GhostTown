@@ -97,10 +97,13 @@ def validate(doc):
 
 
 def _survey_problems(point):
-    """The survey point is optional (older files have none) but must hold numbers when present."""
+    """The survey point is optional (older files have none) but must hold numbers and name its grid when
+    present."""
     if not (isinstance(point, dict) and all(_num(point.get(k)) for k in ("easting_m", "northing_m", "grid_angle_deg"))
             and (point.get("elevation_m") is None or _num(point["elevation_m"]))):
         return ["The survey point needs a numeric easting, northing and grid angle."]
+    if not all(isinstance(point.get(k), str) and point[k].strip() for k in ("epsg", "name")):
+        return ["The survey point needs its grid's name and EPSG code."]
     return []
 
 
