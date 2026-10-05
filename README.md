@@ -37,8 +37,9 @@ Each build makes one collection, `Context · <site>`:
   Buildings that cross the circle come in whole. In Toronto, parts of the City's model that touch or
   overlap form one building object, and where parts overlap the taller one wins. On a main street a
   whole block face can become one object; Separate › By Loose Parts splits it in Blender. Elsewhere in
-  Ontario, with **LiDAR roofs** ticked, each building also gets a roof measured from the province's LiDAR,
-  which you can switch to and simplify. Buildings from the City of Toronto's model keep its massing, the
+  Ontario, with **LiDAR roofs** ticked, each building also gets two roofs measured from the province's
+  LiDAR: a fitted roof of a few planar faces, which a build shows, and the sampled LiDAR surface. You can
+  switch between them and the flat top. Buildings from the City of Toronto's model keep its massing, the
   same flat-topped blocks the City publishes as SketchUp and AutoCAD files.
 - **Ground:** one draped surface per kind (road, sidewalk, parking, rail, water, green, plain ground).
   The pieces share their edges, so there are no cracks or overlaps. Water lies flat at its shoreline.
@@ -96,9 +97,9 @@ executable first. Install the zip as above.
 4. **Radius:** 150, 300, 500 or 1000 m.
 5. **Fetch:** tick **Aerial photo** (on by default) to fetch the City of Toronto's newest aerial photo
    of the site with the build. It is kept inside the .blend file. Tick **LiDAR roofs (slower)** in Ontario
-   to fetch the province's LiDAR and give buildings outside the City of Toronto's 3D Massing model a
-   second, measured roof. It is a large download, and the province's server can take a minute to answer
-   the first request.
+   to fetch the province's LiDAR and give buildings outside the City of Toronto's 3D Massing model
+   measured roofs. It is a large download, and the province's server can take a minute to answer the
+   first request.
 6. Press **Build Context**. A 300 m site takes about 10 seconds and a 1000 m site about 20. With **LiDAR
    roofs** ticked a build takes a few minutes more, because the province's server is slow to send the LiDAR
    (a 300 m site in Hamilton took about 4 minutes). Cancel or Esc stops it, and Ctrl+Z removes a finished
@@ -118,7 +119,11 @@ survey point, and, when the site has an aerial photo:
 
 When the site has LiDAR roofs:
 
-- **Roof shapes: Flat | LiDAR** switches every building between its flat-topped prism and its LiDAR roof.
+- **Roof shapes: Flat | Fitted | LiDAR** switches every building between its flat-topped prism, its
+  fitted roof and its LiDAR roof. **Fitted** shows after a build: a house gets the flat, shed, gable or hip
+  roof that best explains the LiDAR, its planes running out to the walls, and a larger building gets
+  stepped tiers at its measured roof levels, at least a storey apart. Every fitted roof is a closed solid.
+  Sites built before fitted roofs existed show Flat | LiDAR.
 - **Roof detail** simplifies LiDAR roofs, from 100 % down to 5 %, without moving walls or eaves.
 - **For Revit** shows the site's triangle count. Past the budget in Preferences (500,000 to start) it
   says: Heavy for Revit: use Fitted or Flat roofs, or lower Roof detail, before exporting.
@@ -136,8 +141,11 @@ metres, closed building solids, outlines cleaned of edges under 3 mm, and stable
   under Object Styles › Imported Objects.
 - Before exporting, set the site's **Ground** to Colours and **Roofs** to Plain, so every piece keeps its
   `Context - …` material. While the photo shows, exporters see the photo material on those faces instead.
+- Fitted roofs export as closed solids of a few faces each: the lightest measured roofs, and the ones to
+  take into Revit.
 - LiDAR roofs export as meshes, which Revit imports as DirectShapes: heavier than prisms. Exporters apply
-  Roof detail (modifiers are applied by default), so keep the site under the panel's budget, or use Flat roofs.
+  Roof detail (modifiers are applied by default), so keep the site under the panel's budget, or use Fitted
+  or Flat roofs.
 - To use the aerial photo in Revit, **Save Site Photo…**, then in a site plan use **Insert › Image**, set
   the image's width to the width Ghost Town reports (twice the radius, in metres), and centre it on the
   origin.
@@ -191,8 +199,11 @@ Natural Resources Canada, the Province of Ontario or OpenStreetMap.
 ## Known limits
 
 - Outside Toronto there are no roads, trees or parcels yet, and outside Canada the ground is flat.
-- Buildings are flat-topped prisms unless they have LiDAR roofs (Ontario, outside the City of Toronto's 3D
-  Massing model), and LiDAR roofs carry no roof planes, just measured points.
+- Buildings are flat-topped prisms unless they have measured roofs (Ontario, outside the City of Toronto's
+  3D Massing model). LiDAR roofs carry no roof planes, just measured points.
+- Fitted roofs give a house one roof for its whole outline, so an L-shaped house whose wings have their own
+  ridges gets the main roof's planes, and a house under thick canopy may keep a flat top at its measured
+  height. Larger buildings become tiers at least 3 m apart, so their sloped or curved roofs become steps.
 - LiDAR roofs on house-sized buildings (up to 400 m² and 20 m tall) are trimmed to their own typical height plus
   3 m, which removes a tree crown over part of the roof; trees over most of a roof still raise it.
 - A building newer than the province's LiDAR survey keeps its flat top in LiDAR mode, and one surveyed while
