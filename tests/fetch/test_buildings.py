@@ -156,3 +156,8 @@ def test_a_part_keeps_its_own_roof_tags_and_a_plain_building_has_none():
     assert [s.get("roof") for s in el["solids"]] == [{"shape": "hipped"}]
     plain, = build(way(3, square(40, 0, 10), {"building": "yes", "roof:height": "tall"}))
     assert "roof" not in plain["solids"][0]
+
+
+def test_a_roof_height_that_rounds_to_nothing_is_left_out():
+    el, = build(way(1, square(0, 0, 10), {"building": "yes", "roof:height": "0.0004"}))
+    assert "roof" not in el["solids"][0] and valid([el]) == []

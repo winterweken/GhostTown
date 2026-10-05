@@ -206,7 +206,7 @@ Natural Resources Canada, the Province of Ontario or OpenStreetMap.
   height. Larger buildings become tiers at least 3 m apart, so their sloped or curved roofs become steps.
 - LiDAR roofs on house-sized buildings (up to 400 m² and 20 m tall) are trimmed to their own typical height plus
   3 m, which removes a tree crown over part of the roof; trees over most of a roof still raise it.
-- A building newer than the province's LiDAR survey keeps its flat top in LiDAR mode, and one surveyed while
+- A building newer than the province's LiDAR survey keeps its flat top in Fitted and LiDAR modes, and one surveyed while
   under construction can show a partly built roof.
 - Bridges and elevated rail are draped onto the ground.
 - A stream is flat at one level along its length instead of following its valley.

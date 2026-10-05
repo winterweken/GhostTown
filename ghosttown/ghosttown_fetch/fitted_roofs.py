@@ -77,15 +77,15 @@ def _kept(above, own, city):
         return np.isfinite(above) & (above >= OTHER_RANGE_M[0]) & (above <= OTHER_RANGE_M[1])
 
 
-def house_samples(poly, own, heights, cell, city):
+def house_samples(poly, own, heights, cell, city, taller=None):
     """x, y and height above ground of the kept samples INSET_M inside the walls (the whole outline when
-    the inset keeps too little), capped at their median plus 3 m like LiDAR roofs."""
+    the inset keeps too little) and clear of `taller`, capped at their median plus 3 m like LiDAR roofs."""
     inner = poly.buffer(-INSET_M)
     if inner.is_empty or inner.area < INSET_MIN_SHARE * poly.area:
         inner = poly
     xs, ys = _centres(inner, cell)
     above = heights.sample(xs, ys)
-    keep = _kept(above, own, city)
+    keep = _kept(above, own, city) & _clear_of(taller, xs, ys)
     xs, ys, above = xs[keep], ys[keep], above[keep]
     if above.size:
         above = np.minimum(above, float(np.median(above)) + RIDGE_M)
@@ -338,6 +338,7 @@ def _windows(a, fill=None):
     p = np.pad(a, 1, mode="edge") if fill is None else np.pad(a, 1, constant_values=fill)
     return np.stack([p[r:r + ni, c:c + nj] for r in range(3) for c in range(3)])
 
+
 def _rough(h):
     """True where a cell's 3 x 3 neighbourhood strays more than ROUGH_M (RMS) from its best plane; a
     neighbourhood with a NaN in it counts as rough."""
@@ -347,6 +348,7 @@ def _rough(h):
     plane = win.mean(axis=0) + dr * (dr * win).sum(axis=0) / 6.0 + dc * (dc * win).sum(axis=0) / 6.0
     with np.errstate(invalid="ignore"):
         return ~(np.sqrt(((win - plane) ** 2).mean(axis=0)) <= ROUGH_M)
+
 
 def _levels(smooth_heights, valid_heights, cell):
     """The roof levels: peaks of the smooth cells' height histogram (LEVEL_BIN_M bins, smoothed by a
@@ -368,6 +370,7 @@ def _levels(smooth_heights, valid_heights, cell):
             taken.append(level)
     return np.array(sorted(taken)) if taken else np.array([float(np.median(smooth_heights))])
 
+
 def _label(mask):
     """The 4-connected pieces of `mask`: each cell's label is the smallest flat index in its piece, -1
     off the mask."""
@@ -388,6 +391,7 @@ def _label(mask):
             return lab.reshape(ni, nj)
         lab = new
 
+
 def _fill(lab):
     """Every cell takes the label of its nearest labelled cell, growing outwards one cell per pass."""
     full = lab.copy()
@@ -402,6 +406,7 @@ def _fill(lab):
             break
     return full
 
+
 def _borders(full):
     """{(a, b): shared cell sides} between neighbouring labels a < b."""
     pairs = []
@@ -413,6 +418,7 @@ def _borders(full):
         return {}
     keys, counts = np.unique(pairs, axis=0, return_counts=True)
     return {(int(a), int(b)): int(n) for (a, b), n in zip(keys, counts)}
+
 
 def _by_label(values, labels, count):
     """`values` split into one array per label 0..count-1."""
@@ -431,7 +437,7 @@ def _merge(full, inside, smooth, h, min_cells, min_seed_cells):
     keys, flat = np.unique(full, return_inverse=True)
     full = flat.reshape(full.shape)
     count = len(keys)
-    size = np.bincount(full[inside], minlength=count)
+    size = np.bincount(full[inside], minlength=count).tolist()  # Python ints: the scan below reads them often
     heights = _by_label(h[smooth], full[smooth], count)
     near = [{} for _ in range(count)]
     for (a, b), n in _borders(full).items():
@@ -469,6 +475,7 @@ def _merge(full, inside, smooth, h, min_cells, min_seed_cells):
         del level[b]
     return into[full], level
 
+
 def _smooth(full):
     """SMOOTH_PASSES passes in which each cell takes the label held by SMOOTH_VOTES of its 3 x 3 cells."""
     for _ in range(SMOOTH_PASSES):
@@ -480,6 +487,7 @@ def _smooth(full):
             most, pick = np.where(better, votes, most), np.where(better, k, pick)
         full = np.where(most >= SMOOTH_VOTES, pick, full)
     return full
+
 
 def _absorb(parts):
     """Polygons under MIN_TIER_M2 join the neighbour they share the longest edge with, keeping its height;
@@ -505,12 +513,14 @@ def _absorb(parts):
             done[j - len(todo)] = (merged, done[j - len(todo)][1])
     return done
 
+
 def _cells(mask, i0, j0, cell):
     """The union of the mask's cells, built from its runs of cells along y (far fewer shapes than cells)."""
     steps = np.diff(np.pad(mask, ((0, 0), (1, 1))).astype(np.int8), axis=1)
     si, sj = np.nonzero(steps == 1)   # a run starts at sj...
     _, ej = np.nonzero(steps == -1)   # ...and stops before ej, in the same order
     return shapely.union_all(shapely.box((si + i0) * cell, (sj + j0) * cell, (si + i0 + 1) * cell, (ej + j0) * cell))
+
 
 def _outlines(full, i0, j0, cell, poly, level):
     """[(Polygon, height)]: each tier's cells unioned, their shared edges simplified by TIER_SIMPLIFY_M
@@ -528,15 +538,14 @@ def _outlines(full, i0, j0, cell, poly, level):
                   if p.geom_type == "Polygon" and p.area > 0]
     return _absorb(parts)
 
+
 def tiers(poly, own, heights, cell, city, taller=None):
     """[(Polygon, height above ground)] filling `poly` at its measured roof levels, or None when less
     than MIN_TIER_M2 of its roof is smooth LiDAR. Cells under `taller` (other solids standing higher)
     are left out: the LiDAR there sees those solids."""
     i0, j0, gx, gy, inside = _grid(poly, cell)
     h = heights.sample(gx.ravel(), gy.ravel()).reshape(gx.shape)
-    valid = inside & _kept(h, own, city)
-    if taller is not None and not taller.is_empty:
-        valid &= ~shapely.contains_xy(taller, gx.ravel(), gy.ravel()).reshape(gx.shape)
+    valid = inside & _kept(h, own, city) & _clear_of(taller, gx.ravel(), gy.ravel()).reshape(gx.shape)
     smooth = valid & ~_rough(np.where(valid, h, np.nan))
     min_cells = MIN_TIER_M2 / (cell * cell)
     if np.count_nonzero(smooth) < min_cells:
@@ -555,57 +564,73 @@ def tiers(poly, own, heights, cell, city, taller=None):
     return _outlines(_smooth(full), i0, j0, cell, poly, level)
 
 
-def measured(poly, own, heights, cell, city):
-    """The median height above ground of the kept samples inside `poly`, or None without any."""
+def _clear_of(taller, xs, ys):
+    """True for the points not under `taller` (other solids standing higher; None for none)."""
+    if taller is None or taller.is_empty:
+        return np.ones(np.shape(xs), dtype=bool)
+    return ~shapely.contains_xy(taller, xs, ys)
+
+
+def measured(poly, own, heights, cell, city, taller=None):
+    """The median height above ground of the kept samples inside `poly` and clear of `taller`, or None
+    without any."""
     xs, ys = _centres(poly, cell)
     if xs.size == 0:
         p = poly.point_on_surface()
         xs, ys = np.array([p.x]), np.array([p.y])
     above = heights.sample(xs, ys)
-    above = above[_kept(above, own, city)]
+    above = above[_kept(above, own, city) & _clear_of(taller, xs, ys)]
     return float(np.median(above)) if above.size else None
+
 
 def _rings(p):
     """A polygon as context rings: the outline counter-clockwise and courtyards clockwise, unclosed."""
     p = shapely.orient_polygons(p)
     return [np.asarray(p.exterior.coords)[:-1].tolist()] + [np.asarray(r.coords)[:-1].tolist() for r in p.interiors]
 
+
 def _fit_solid(s, heights, cell, over):
     """([(verts, faces)], outcome) for one solid. Outcome: a roof model's name, ("tiers", n), "newer"
-    (the survey predates it: its own height) or "unfitted" (a flat top at its measured height)."""
+    (the survey predates it: its own height) or "unfitted" (a flat top at its measured height). Samples
+    under other solids standing higher (`over(poly)`) are left out everywhere: the LiDAR there sees them."""
     ground = s.get("ground", s["z0"] + SINK_M)
     own = s["z1"] - ground
     city = s["height_source"].startswith("toronto")
     poly = Polygon(s["rings"][0], s["rings"][1:])
-    made = None
+    made, taller = None, None
     try:
         if s["height_source"] != "guessed" and predates(s["rings"], heights, cell):
             made, outcome = [prism(s["rings"], s["z0"], s["z1"])], "newer"
-        elif not poly.is_valid or poly.area <= 0:
-            pass
-        elif poly.area <= HOUSE_MAX_M2 and own <= HOUSE_MAX_HEIGHT_M:
-            m = fit_house(*house_samples(poly, own, heights, cell, city), poly, s.get("roof"),
-                          own if s["height_source"] == "osm_height" else None)
-            solid = house_solid(s["rings"], s["z0"], ground, m) if m is not None else None
-            if solid is not None:
-                made, outcome = [solid], m["kind"]
-        else:
-            parts = tiers(poly, own, heights, cell, city, over(poly))
-            if parts:
-                made = [prism(_rings(p), s["z0"], max(ground + level, s["z0"] + MIN_WALL_M)) for p, level in parts]
-                outcome = ("tiers", len(made))
-                if any(m is None for m in made):
-                    made = None
+        elif poly.is_valid and poly.area > 0:
+            taller = over(poly)
+            if poly.area <= HOUSE_MAX_M2 and own <= HOUSE_MAX_HEIGHT_M:
+                m = fit_house(*house_samples(poly, own, heights, cell, city, taller), poly, s.get("roof"),
+                              own if s["height_source"] == "osm_height" else None)
+                solid = house_solid(s["rings"], s["z0"], ground, m) if m is not None else None
+                if solid is not None:
+                    made, outcome = [solid], m["kind"]
+            else:
+                parts = tiers(poly, own, heights, cell, city, taller)
+                if parts:
+                    made = [prism(_rings(p), s["z0"], max(ground + level, s["z0"] + MIN_WALL_M)) for p, level in parts]
+                    outcome = ("tiers", len(made))
+                    if any(m is None for m in made):
+                        made = None
     except shapely.errors.GEOSException:  # the geometry library chokes on this outline: measured flat top
         made = None
     if made is None:
         try:
-            above = measured(poly, own, heights, cell, city)
+            above = measured(poly, own, heights, cell, city, taller)
         except shapely.errors.GEOSException:
             above = None
         top = ground + above if above is not None else s["z1"]
-        made, outcome = [prism(s["rings"], s["z0"], max(top, s["z0"] + MIN_WALL_M))], "unfitted"
+        try:
+            fallback = prism(s["rings"], s["z0"], max(top, s["z0"] + MIN_WALL_M))
+        except shapely.errors.GEOSException:  # not even a prism: this solid has no fitted roof
+            fallback = None
+        made, outcome = [fallback], "unfitted"
     return [m[:2] for m in made if m is not None], outcome
+
 
 def build(elements, heights, cell):
     """(arrays, counts) for every building that gets LiDAR roofs, or (None, counts) when there is none.
@@ -645,8 +670,10 @@ def build(elements, heights, cell):
     counts["buildings"], counts["triangles"] = packed_counts(arrays)
     return arrays, counts
 
+
 def _plural(n, word):
     return f"{n:,} {word}" if n == 1 else f"{n:,} {word}s"
+
 
 def note_text(counts):
     """The build note: what was fitted, and how many kept a flat top at their measured height."""

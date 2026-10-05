@@ -56,7 +56,7 @@ def roof_tags(tags):
     if shape:
         roof["shape"] = shape
     height = parse_length(tags.get("roof:height"))
-    if height:
+    if height and round(height, 3) > 0:  # a height that rounds to nothing would fail validation
         roof["height"] = round(height, 3)
     return roof or None
 

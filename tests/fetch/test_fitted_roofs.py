@@ -274,6 +274,32 @@ def test_city_model_buildings_are_left_alone():
     assert fit.build(els, FLAT20, CELL) == (None, dict.fromkeys(
         ("buildings", "triangles", "flat", "shed", "gable", "hip", "larger", "tiers", "unfitted", "newer"), 0))
 
+def test_a_podium_too_narrow_or_rough_to_tier_doesnt_take_a_separate_towers_height():
+    rng = np.random.default_rng(2)
+    for setback, cell, rough in ((2.0, 1.0, False), (8.0, 0.5, True)):  # a 2 m ledge; an 8 m green roof
+        def lidar(x, y, a=setback, b=60.0 - setback, rough=rough):
+            tower = (x >= a) & (x < b) & (y >= a) & (y < b)
+            low = rng.uniform(10.0, 18.0, np.shape(x)) if rough else np.full(np.shape(x), 10.0)
+            return np.where(tower, 90.0, np.where((x >= 0) & (x < 60) & (y >= 0) & (y < 60), low, np.nan))
+        podium = solid(square(0, 0, 60), 10.0, source="osm_levels")
+        tower = solid(square(setback, setback, 60 - 2 * setback), 90.0, source="osm_levels")
+        arrays, _ = fit.build([ctx.element("p", "building", solids=[podium]), ctx.element("t", "building", solids=[tower])],
+                              Field(lidar), cell)
+        vs = arrays["vert_start"]
+        assert arrays["verts"][vs[0]:vs[1], 2].max() < 20.0, (setback, cell)
+
+
+def test_a_solid_whose_fallback_chokes_too_costs_only_itself(monkeypatch):
+    def boom(*args, **kw):
+        raise shapely.errors.GEOSException("boom")
+
+    monkeypatch.setattr(fit, "house_solid", boom)
+    monkeypatch.setattr(fit, "prism", boom)
+    ring = square(-8, -5, 16)[:2] + [[8, 5], [-8, 5]]
+    arrays, counts = fit.build([ctx.element("a", "building", solids=[house(ring)])], gable(0, 0, 0, 0.0), CELL)
+    assert arrays is None and counts["unfitted"] == 1
+
+
 def test_a_separate_taller_building_over_a_podium_grows_no_copy():
     podium = solid(square(0, 0, 40), 10.0, source="osm_levels")
     tower = solid(square(12.5, 12.5, 15), 40.0, source="osm_levels")
