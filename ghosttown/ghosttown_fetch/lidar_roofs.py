@@ -192,6 +192,51 @@ def closed(faces):
     return np.unique(key).size == key.size and bool(np.isin(b * n + a, key).all())
 
 
+def _outline(top, xy):
+    """(top, loops, edge, base) of the roof surface `top` (triangles over the points `xy`): the triangles
+    without collapsed ones, wound up; its edge as closed loops (the outline counter-clockwise, courtyards
+    clockwise); every edge point; and the base polygon. None when it isn't one clean surface."""
+    top = top[(top[:, 0] != top[:, 1]) & (top[:, 1] != top[:, 2]) & (top[:, 0] != top[:, 2])]
+    top = _wind(top, xy)
+    loops = _loops(top, len(xy))
+    if not loops:
+        return None
+    edge = np.concatenate([np.asarray(loop) for loop in loops])
+    outer = [loop for loop in loops if _area(xy[loop]) > 0]
+    holes = [loop for loop in loops if _area(xy[loop]) < 0]
+    if len(outer) != 1:
+        return None
+    base = Polygon(xy[outer[0]], [xy[h] for h in holes])
+    if not base.is_valid:
+        return None
+    return top, loops, edge, base
+
+
+def _close(top, xy, z, z0, loops, edge, base):
+    """(verts, faces) of the solid whose top is the surface from _outline at heights `z`, closed by walls
+    from its edge loops down to z0 and a flat base; or None when it doesn't close. The top's points come
+    first in verts, in the order of `xy`."""
+    n = len(xy)
+    bottom_of = np.full(n, -1, dtype=np.int64)
+    bottom_of[edge] = n + np.arange(len(edge))
+    verts = np.concatenate([np.column_stack([xy, z]), np.column_stack([xy[edge], np.full(len(edge), float(z0))])])
+    faces = [top]
+    for loop in loops:
+        a = np.asarray(loop)
+        b = np.roll(a, -1)
+        faces += [np.stack([bottom_of[a], bottom_of[b], b], axis=1), np.stack([bottom_of[a], b, a], axis=1)]
+    corners = _triangle_coords(base).reshape(-1, 2)
+    tree = shapely.STRtree(shapely.points(xy[edge]))
+    found, hit = tree.query_nearest(shapely.points(corners), max_distance=EXACT_M, all_matches=False)
+    if len(found) != len(corners):
+        return None
+    ids = np.empty(len(corners), dtype=np.int64)
+    ids[found] = n + hit
+    faces.append(_wind(ids.reshape(-1, 3), verts[:, :2], up=False))
+    faces = np.concatenate(faces)
+    return (verts, faces) if closed(faces) else None
+
+
 def _heights(xy, edge, poly, z0, z1, ground, heights, cell, city):
     """Roof z at every top vertex: edge points sample half a cell inside, then the outlier rules."""
     sample = xy.copy()
@@ -248,46 +293,18 @@ def roof_solid(rings, z0, z1, ground, heights, cell, city):
         parts.append(table.points(corners.reshape(-1, 2)).reshape(-1, 3))
     if not parts:
         return None
-    top = np.concatenate(parts)
-    top = top[(top[:, 0] != top[:, 1]) & (top[:, 1] != top[:, 2]) & (top[:, 0] != top[:, 2])]
     xy = table.coords()
-    n = len(xy)
-    top = _wind(top, xy)
-
-    loops = _loops(top, n)
-    if not loops:
+    surface = _outline(np.concatenate(parts), xy)
+    if surface is None:
         return None
-    edge = np.concatenate([np.asarray(loop) for loop in loops])
-    outer = [loop for loop in loops if _area(xy[loop]) > 0]
-    holes = [loop for loop in loops if _area(xy[loop]) < 0]
-    if len(outer) != 1:
-        return None
-    base = Polygon(xy[outer[0]], [xy[h] for h in holes])
-    if not base.is_valid:
-        return None
-
+    top, loops, edge, base = surface
     z = _heights(xy, edge, poly, z0, z1, ground, heights, cell, city)
-    bottom_of = np.full(n, -1, dtype=np.int64)
-    bottom_of[edge] = n + np.arange(len(edge))
-    verts = np.concatenate([np.column_stack([xy, z]), np.column_stack([xy[edge], np.full(len(edge), float(z0))])])
-    faces = [top]
-    for loop in loops:
-        a = np.asarray(loop)
-        b = np.roll(a, -1)
-        faces += [np.stack([bottom_of[a], bottom_of[b], b], axis=1), np.stack([bottom_of[a], b, a], axis=1)]
-    corners = _triangle_coords(base).reshape(-1, 2)
-    tree = shapely.STRtree(shapely.points(xy[edge]))
-    found, hit = tree.query_nearest(shapely.points(corners), max_distance=EXACT_M, all_matches=False)
-    if len(found) != len(corners):
+    made = _close(top, xy, z, z0, loops, edge, base)
+    if made is None:
         return None
-    ids = np.empty(len(corners), dtype=np.int64)
-    ids[found] = n + hit
-    faces.append(_wind(ids.reshape(-1, 3), verts[:, :2], up=False))
-    faces = np.concatenate(faces)
-    if not closed(faces):
-        return None
+    verts, faces = made
     interior = np.zeros(len(verts), dtype=bool)
-    interior[:n] = True
+    interior[:len(xy)] = True
     interior[edge] = False
     return verts, faces, interior
 

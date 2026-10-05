@@ -21,8 +21,8 @@ import numpy as np
 import shapely
 from shapely.geometry import Polygon
 
-from .lidar_roofs import (CITY_ABOVE_M, CITY_GROUND_M, EXACT_M, MIN_WALL_M, OTHER_RANGE_M, RIDGE_M, _area, _loops,
-                          _triangle_coords, _wind, closed)
+from .lidar_roofs import (CITY_ABOVE_M, CITY_GROUND_M, MIN_WALL_M, OTHER_RANGE_M, RIDGE_M, _close, _outline,
+                          _triangle_coords)
 
 MODELS = ("flat", "shed", "gable", "hip")  # simplest first
 SHAPES = {"flat": "flat", "skillion": "shed", "gabled": "gable", "hipped": "hip", "half-hipped": "hip"}
@@ -312,37 +312,9 @@ def house_solid(rings, z0, ground, m):
     _, first, inverse = np.unique(np.round(corners * 1000.0).astype(np.int64), axis=0,
                                   return_index=True, return_inverse=True)
     xy = corners[first]
-    top = inverse.reshape(-1, 3)
-    top = top[(top[:, 0] != top[:, 1]) & (top[:, 1] != top[:, 2]) & (top[:, 0] != top[:, 2])]
-    n = len(xy)
-    top = _wind(top, xy)
-    loops = _loops(top, n)
-    if not loops:
+    surface = _outline(inverse.reshape(-1, 3), xy)
+    if surface is None:
         return None
-    edge = np.concatenate([np.asarray(loop) for loop in loops])
-    outer = [loop for loop in loops if _area(xy[loop]) > 0]
-    holes = [loop for loop in loops if _area(xy[loop]) < 0]
-    if len(outer) != 1:
-        return None
-    base = Polygon(xy[outer[0]], [xy[h] for h in holes])
-    if not base.is_valid:
-        return None
+    top, loops, edge, base = surface
     z = np.maximum(ground + roof_z(m, xy[:, 0], xy[:, 1]), max(ground + LOWEST_ROOF_M, z0 + MIN_WALL_M))
-    bottom_of = np.full(n, -1, dtype=np.int64)
-    bottom_of[edge] = n + np.arange(len(edge))
-    verts = np.concatenate([np.column_stack([xy, z]), np.column_stack([xy[edge], np.full(len(edge), float(z0))])])
-    faces = [top]
-    for loop in loops:
-        a = np.asarray(loop)
-        b = np.roll(a, -1)
-        faces += [np.stack([bottom_of[a], bottom_of[b], b], axis=1), np.stack([bottom_of[a], b, a], axis=1)]
-    corners = _triangle_coords(base).reshape(-1, 2)
-    tree = shapely.STRtree(shapely.points(xy[edge]))
-    found, hit = tree.query_nearest(shapely.points(corners), max_distance=EXACT_M, all_matches=False)
-    if len(found) != len(corners):
-        return None
-    ids = np.empty(len(corners), dtype=np.int64)
-    ids[found] = n + hit
-    faces.append(_wind(ids.reshape(-1, 3), verts[:, :2], up=False))
-    faces = np.concatenate(faces)
-    return (verts, faces) if closed(faces) else None
+    return _close(top, xy, z, z0, loops, edge, base)

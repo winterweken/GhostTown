@@ -129,10 +129,14 @@ def test_house_solids_close_and_their_planes_reach_the_walls(m, ring):
     corners = np.asarray(ring, dtype=float)
     assert np.allclose(fit.roof_z(m, corners[:, 0], corners[:, 1]).clip(fit.LOWEST_ROOF_M),
                        [roof[np.argmin(np.hypot(*(roof[:, :2] - c).T))][2] for c in corners], atol=1e-6)
+    top = verts[faces[(verts[faces][:, :, 2] > 0).all(axis=1)]].mean(axis=1)  # each top triangle's middle
+    assert np.allclose(top[:, 2], fit.roof_z(m, top[:, 0], top[:, 1]), atol=1e-6)  # flat on its own plane
 
 def test_a_house_with_a_courtyard_keeps_it_open():
     verts, faces = fit.house_solid([square(0, 0, 20), square(5, 5, 10)[::-1]], -0.3, 0.0, MODELS[2])
     assert closed_outward(verts, faces)
+    x, y = verts[:, 0], verts[:, 1]
+    assert not ((x > 5) & (x < 15) & (y > 5) & (y < 15)).any()  # nothing inside the courtyard
 
 def test_a_roof_never_dips_under_2_m_or_its_base():
     steep = {"kind": "gable", "th": 0.0, "u0": 0.0, "H": 6.0, "s": 2.0}  # eaves would be at -4 m
