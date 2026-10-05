@@ -21,8 +21,10 @@ import numpy as np
 import shapely
 from shapely.geometry import Polygon
 
-from .lidar_roofs import (CITY_ABOVE_M, CITY_GROUND_M, MIN_WALL_M, OTHER_RANGE_M, RIDGE_M, _close, _outline,
-                          _triangle_coords)
+from . import BUILDING_KINDS
+from .buildings import SINK_M
+from .lidar_roofs import (CITY_ABOVE_M, CITY_GROUND_M, HOUSE_MAX_HEIGHT_M, HOUSE_MAX_M2, MIN_WALL_M, OTHER_RANGE_M,
+                          RIDGE_M, _close, _outline, _triangle_coords, predates, prism, wanted)
 
 MODELS = ("flat", "shed", "gable", "hip")  # simplest first
 SHAPES = {"flat": "flat", "skillion": "shed", "gabled": "gable", "hipped": "hip", "half-hipped": "hip"}
@@ -48,6 +50,7 @@ LEVEL_SIGMA_M = 1.0
 SMOOTH_PASSES = 2
 SMOOTH_VOTES = 5       # of 9: a cell takes its neighbourhood's majority label
 TIER_SIMPLIFY_M = 1.0
+FILE = "fitted_roofs.npz"
 
 
 def _grid(poly, cell):
@@ -551,3 +554,129 @@ def tiers(poly, own, heights, cell, city, taller=None):
         lab = np.where(pieces >= 0, pieces, lab)
     full, level = _merge(_fill(lab), inside, smooth, h, min_cells, MIN_SEED_M2 / (cell * cell))
     return _outlines(_smooth(full), i0, j0, cell, poly, level)
+
+
+def measured(poly, own, heights, cell, city):
+    """The median height above ground of the kept samples inside `poly`, or None without any."""
+    xs, ys = _centres(poly, cell)
+    if xs.size == 0:
+        p = poly.point_on_surface()
+        xs, ys = np.array([p.x]), np.array([p.y])
+    above = heights.sample(xs, ys)
+    above = above[_kept(above, own, city)]
+    return float(np.median(above)) if above.size else None
+
+def _rings(p):
+    """A polygon as context rings: the outline counter-clockwise and courtyards clockwise, unclosed."""
+    p = shapely.orient_polygons(p)
+    return [np.asarray(p.exterior.coords)[:-1].tolist()] + [np.asarray(r.coords)[:-1].tolist() for r in p.interiors]
+
+def _fit_solid(s, heights, cell, over):
+    """([(verts, faces)], outcome) for one solid. Outcome: a roof model's name, ("tiers", n), "newer"
+    (the survey predates it: its own height) or "unfitted" (a flat top at its measured height)."""
+    ground = s.get("ground", s["z0"] + SINK_M)
+    own = s["z1"] - ground
+    city = s["height_source"].startswith("toronto")
+    poly = Polygon(s["rings"][0], s["rings"][1:])
+    made = None
+    try:
+        if s["height_source"] != "guessed" and predates(s["rings"], heights, cell):
+            made, outcome = [prism(s["rings"], s["z0"], s["z1"])], "newer"
+        elif not poly.is_valid or poly.area <= 0:
+            pass
+        elif poly.area <= HOUSE_MAX_M2 and own <= HOUSE_MAX_HEIGHT_M:
+            m = fit_house(*house_samples(poly, own, heights, cell, city), poly, s.get("roof"),
+                          own if s["height_source"] == "osm_height" else None)
+            solid = house_solid(s["rings"], s["z0"], ground, m) if m is not None else None
+            if solid is not None:
+                made, outcome = [solid], m["kind"]
+        else:
+            parts = tiers(poly, own, heights, cell, city, over(poly))
+            if parts:
+                made = [prism(_rings(p), s["z0"], max(ground + level, s["z0"] + MIN_WALL_M)) for p, level in parts]
+                outcome = ("tiers", len(made))
+                if any(m is None for m in made):
+                    made = None
+    except shapely.errors.GEOSException:  # the geometry library chokes on this outline: measured flat top
+        made = None
+    if made is None:
+        try:
+            above = measured(poly, own, heights, cell, city)
+        except shapely.errors.GEOSException:
+            above = None
+        top = ground + above if above is not None else s["z1"]
+        made, outcome = [prism(s["rings"], s["z0"], max(top, s["z0"] + MIN_WALL_M))], "unfitted"
+    return [m[:2] for m in made if m is not None], outcome
+
+def build(elements, heights, cell):
+    """(arrays, counts) for every building that gets LiDAR roofs, or (None, counts) when there is none.
+    Arrays follow lidar_roofs.npz's layout, with `interior` all zero. counts: buildings, triangles, the
+    houses by roof (flat, shed, gable, hip), larger (solids in tiers) and tiers, unfitted (flat at their
+    measured height) and newer (flat at their own height: the survey predates them)."""
+    solids = [(e, k, Polygon(s["rings"][0], s["rings"][1:]), s["z1"])
+              for e, el in enumerate(elements) if wanted(el) for k, s in enumerate(el["solids"])]
+    solids = [t for t in solids if t[2].is_valid and t[2].area > 0]
+    index = shapely.STRtree([t[2] for t in solids]) if solids else None
+
+    def taller_than(e, k, z1):
+        def over(poly):
+            if index is None:
+                return None
+            hits = [solids[i] for i in index.query(poly, predicate="intersects")]
+            found = [p for (ee, kk, p, top) in hits if (ee, kk) != (e, k) and top > z1]
+            return shapely.union_all(found) if found else None
+        return over
+
+    counts = dict.fromkeys(("buildings", "triangles", *MODELS, "larger", "tiers", "unfitted", "newer"), 0)
+    verts, faces, face_kind, ids = [], [], [], []
+    vert_start, face_start = [0], [0]
+    for e, el in enumerate(elements):
+        if not wanted(el):
+            continue
+        nv = nf = 0
+        for k, s in enumerate(el["solids"]):
+            made, outcome = _fit_solid(s, heights, cell, taller_than(e, k, s["z1"]))
+            if isinstance(outcome, tuple):
+                counts["larger"] += 1
+                counts["tiers"] += outcome[1]
+            else:
+                counts[outcome] += 1
+            for v, f in made:
+                verts.append(v.astype(np.float32))
+                faces.append((f + nv).astype(np.int32))
+                face_kind.append(np.full(len(f), BUILDING_KINDS.index(s["kind"]), dtype=np.uint8))
+                nv += len(v)
+                nf += len(f)
+        if nf:
+            ids.append(el["id"])
+            vert_start.append(vert_start[-1] + nv)
+            face_start.append(face_start[-1] + nf)
+    counts["buildings"], counts["triangles"] = len(ids), face_start[-1]
+    if not ids:
+        return None, counts
+    all_verts = np.concatenate(verts)
+    arrays = {
+        "verts": all_verts, "faces": np.concatenate(faces), "face_kind": np.concatenate(face_kind),
+        "interior": np.zeros(len(all_verts), dtype=np.uint8), "building_ids": np.array(ids, dtype=str),
+        "vert_start": np.array(vert_start, dtype=np.int64), "face_start": np.array(face_start, dtype=np.int64),
+        "kinds": np.array(BUILDING_KINDS, dtype=str),
+    }
+    return arrays, counts
+
+def _plural(n, word):
+    return f"{n:,} {word}" if n == 1 else f"{n:,} {word}s"
+
+def note_text(counts):
+    """The build note: what was fitted, and how many kept a flat top at their measured height."""
+    houses = sum(counts[k] for k in MODELS)
+    parts = []
+    if houses:
+        models = ", ".join(f"{counts[k]:,} {k}" for k in ("gable", "hip", "shed", "flat") if counts[k])
+        parts.append(f"{_plural(houses, 'house')} ({models})")
+    if counts["larger"]:
+        parts.append(f"{counts['larger']:,} larger {'building' if counts['larger'] == 1 else 'buildings'} "
+                     f"in {_plural(counts['tiers'], 'tier')}")
+    text = "Fitted roofs: " + (", ".join(parts) if parts else "none could be fitted") + "."
+    if counts["unfitted"]:
+        text += f" {counts['unfitted']:,} kept a flat top at the measured height."
+    return text

@@ -6,8 +6,10 @@ import shapely
 from shapely.affinity import rotate
 from shapely.geometry import Polygon, box
 
+from ghosttown_fetch import context as ctx
 from ghosttown_fetch import fitted_roofs as fit
-from test_lidar_roofs import FLAT20, Field, closed_outward, square
+from ghosttown_fetch import lidar_roofs
+from test_lidar_roofs import FLAT20, Field, closed_outward, east_of, solid, square, volume
 
 CELL = 0.5
 
@@ -209,3 +211,83 @@ def test_an_l_shaped_building_keeps_its_shape_in_tiers():
     assert tier_levels(parts) == [8.0, 20.0]
     assert shapely.union_all([p for p, _ in parts]).symmetric_difference(ell).area < 1e-6
     assert sum(p.area for p, _ in parts) == pytest.approx(ell.area, abs=1e-6)  # and they don't overlap
+
+
+def house(ring, top=9.0, source="guessed", kind="building_guessed", **extra):
+    s = solid(ring, top, kind=kind, source=source)
+    s.update(extra)
+    return s
+
+def test_build_fits_houses_tiers_larger_buildings_and_counts_them():
+    els = [ctx.element("osm:way:1", "building_guessed", solids=[house(square(-8, -5, 16)[:2] + [[8, 5], [-8, 5]])]),
+           ctx.element("osm:way:2", "building", solids=[house(square(100, 0, 40), 12.0, "osm_levels", "building")])]
+    field = Field(lambda x, y: np.where(x < 50, gable(0, 0, 0, 0.0).sample(x, y),
+                                        heights_at((100, 0, 140, 40, 10.0), (112.5, 12.5, 127.5, 27.5, 40.0)).sample(x, y)))
+    arrays, counts = fit.build(els, field, CELL)
+    assert list(arrays["building_ids"]) == ["osm:way:1", "osm:way:2"]
+    assert (counts["gable"], counts["larger"], counts["tiers"], counts["unfitted"], counts["newer"]) == (1, 1, 2, 0, 0)
+    vs, fs = arrays["vert_start"], arrays["face_start"]
+    assert counts["triangles"] == fs[-1] == len(arrays["faces"]) and counts["buildings"] == 2
+    for b in range(2):
+        v, f = arrays["verts"][vs[b]:vs[b + 1]].astype(float), arrays["faces"][fs[b]:fs[b + 1]]
+        assert f.min() == 0 and f.max() == len(v) - 1 and lidar_roofs.closed(f) and volume(v, f) > 0
+    assert not arrays["interior"].any() and len(arrays["interior"]) == len(arrays["verts"])
+    assert arrays["verts"].dtype == np.float32 and arrays["faces"].dtype == np.int32
+    assert set(data_kinds(arrays, 0)) == {2} and set(data_kinds(arrays, 1)) == {0}
+
+def data_kinds(arrays, b):
+    fs = arrays["face_start"]
+    return arrays["face_kind"][fs[b]:fs[b + 1]].tolist()
+
+def test_a_house_that_cant_be_fitted_keeps_a_flat_top_at_its_measured_height():
+    rng = np.random.default_rng(1)
+    noise = Field(lambda x, y: rng.uniform(5.0, 13.0, size=np.shape(x)))
+    arrays, counts = fit.build([ctx.element("a", "building", solids=[house(square(0, 0, 10))])], noise, CELL)
+    assert counts["unfitted"] == 1 and counts["triangles"] == 12
+    top = arrays["verts"][:, 2].max()
+    assert 8.0 < top < 10.0  # the median of 5-13 m, not the guessed 9 m by chance alone
+    assert sorted(set(np.round(arrays["verts"][:, 2], 3).tolist()))[0] == pytest.approx(-0.3)
+
+def test_no_lidar_at_all_keeps_the_solids_own_height():
+    nothing = Field(lambda x, y: np.full(np.shape(x), np.nan))
+    arrays, counts = fit.build([ctx.element("a", "building", solids=[house(square(0, 0, 10), 9.0)])], nothing, CELL)
+    assert counts["unfitted"] == 1 and arrays["verts"][:, 2].max() == pytest.approx(9.0)
+
+def test_a_building_newer_than_the_survey_keeps_its_own_height():
+    s = solid(square(0, 0, 10), 48.0, source="osm_levels")
+    arrays, counts = fit.build([ctx.element("a", "building", solids=[s])], east_of(7.0, 0.5, 30.0), CELL)
+    assert counts["newer"] == 1 and arrays["verts"][:, 2].max() == pytest.approx(48.0)
+
+def test_city_model_buildings_are_left_alone():
+    els = [ctx.element("toronto:massing:2025:7", "building", solids=[solid(square(0, 0, 10), 18.0)])]
+    assert fit.build(els, FLAT20, CELL) == (None, dict.fromkeys(
+        ("buildings", "triangles", "flat", "shed", "gable", "hip", "larger", "tiers", "unfitted", "newer"), 0))
+
+def test_a_separate_taller_building_over_a_podium_grows_no_copy():
+    podium = solid(square(0, 0, 40), 10.0, source="osm_levels")
+    tower = solid(square(12.5, 12.5, 15), 40.0, source="osm_levels")
+    lidar = heights_at((0, 0, 40, 40, 10.0), (12.5, 12.5, 27.5, 27.5, 40.0))
+    _, counts = fit.build([ctx.element("p", "building", solids=[podium]), ctx.element("t", "building", solids=[tower])],
+                          lidar, CELL)
+    assert counts["larger"] == 2 and counts["tiers"] == 2  # one tier each
+
+def test_one_solid_the_geometry_library_chokes_on_keeps_a_flat_top(monkeypatch):
+    def boom(*args, **kw):
+        raise shapely.errors.GEOSException("boom")
+
+    monkeypatch.setattr(fit, "house_solid", boom)
+    arrays, counts = fit.build([ctx.element("a", "building", solids=[house(square(-8, -5, 16)[:2] + [[8, 5], [-8, 5]])])],
+                               gable(0, 0, 0, 0.0), CELL)
+    assert counts["unfitted"] == 1 and counts["triangles"] == 12
+
+@pytest.mark.parametrize("counts, text", [
+    ({"gable": 46, "hip": 10, "shed": 11, "flat": 0, "larger": 3, "tiers": 77, "unfitted": 0},
+     "Fitted roofs: 67 houses (46 gable, 10 hip, 11 shed), 3 larger buildings in 77 tiers."),
+    ({"gable": 0, "hip": 0, "shed": 0, "flat": 1, "larger": 1, "tiers": 1, "unfitted": 2},
+     "Fitted roofs: 1 house (1 flat), 1 larger building in 1 tier. "
+     "2 kept a flat top at the measured height."),
+    ({"gable": 0, "hip": 0, "shed": 0, "flat": 0, "larger": 0, "tiers": 0, "unfitted": 4},
+     "Fitted roofs: none could be fitted. 4 kept a flat top at the measured height."),
+])
+def test_the_note_says_what_was_fitted(counts, text):
+    assert fit.note_text(counts) == text
