@@ -294,6 +294,7 @@ def test_fitted_roofs_without_lidar_ones_keep_the_true_flat_mesh():
     os.remove(os.path.join(folder, "lidar_roofs.npz"))
     root = scene_build.build(bpy.context.scene, doc, folder=folder)
     assert root["use_roof_shapes"] == "fitted" and site_use.roof_choices(root) == ["flat", "fitted"]
+    assert site_use.has_lidar(root)  # measured roofs to switch to, though only fitted ones
     for ob in buildings(root):
         assert ob[site_use.FLAT_KEY].name == ob.name and site_use.LIDAR_KEY not in ob
 

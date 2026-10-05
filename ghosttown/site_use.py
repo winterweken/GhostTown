@@ -175,7 +175,7 @@ def _detail(ob, ratio):
 
 
 def apply_roof_shapes(root, use):
-    """`use` is "flat", "fitted" or "lidar": each building shows that mesh. The roof photo choice moves to the mesh
+    """`use` is "lidar" or "flat": each building shows that mesh. The roof photo choice moves to the mesh
     now shown (the other is left plain), and Roof detail follows. Buildings in Edit Mode are skipped.
     Returns how many buildings were reset rather than restored exactly."""
     material = photo_material(root)
@@ -184,7 +184,7 @@ def apply_roof_shapes(root, use):
     ratio = float(root.get("roof_detail", 1.0))
     reset = 0
     for ob in made_objects(root, BUILDING_KINDS):
-        target = ob.get(SHAPE_KEYS[use]) if use in SHAPE_KEYS else None
+        target = ob.get(LIDAR_KEY if use == "lidar" else FLAT_KEY)
         if target is None or ob.data.is_editmode:
             continue
         if ob.data != target:
