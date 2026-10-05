@@ -145,3 +145,14 @@ def test_a_solids_roof_tags_are_optional_but_must_be_well_formed(roof, ok):
     doc["elements"] = [ctx.element("osm:way:1", "building", solids=[s])]
     problems = ctx.validate(doc)
     assert problems == ([] if ok else ["osm:way:1: a solid's roof tags need a shape name and a positive height, each optional."])
+
+
+@pytest.mark.parametrize("change", [
+    {"file": "../fitted_roofs.npz"}, {"file": ""}, {"buildings": -1}, {"triangles": 1.5}, {"triangles": None},
+])
+def test_fitted_roofs_are_optional_but_must_be_well_formed(change):
+    doc = _doc()
+    doc["lidar"] = dict(LIDAR, fitted={"file": "fitted_roofs.npz", "buildings": 3, "triangles": 400})
+    assert ctx.validate(doc) == []
+    doc["lidar"]["fitted"].update(change)
+    assert ctx.validate(doc) == ["The fitted roofs need a file name beside context.json and counts."]

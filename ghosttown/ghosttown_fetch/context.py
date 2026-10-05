@@ -138,6 +138,10 @@ def _lidar_problems(lidar):
           and (lidar.get("year") is None or _count(lidar["year"])))
     if not ok:
         return ["The LiDAR roofs need a file name beside context.json, a cell size, counts and building kinds."]
+    fitted = lidar.get("fitted")
+    if fitted is not None and not (isinstance(fitted, dict) and _beside(fitted.get("file"))
+                                   and _count(fitted.get("buildings")) and _count(fitted.get("triangles"))):
+        return ["The fitted roofs need a file name beside context.json and counts."]
     return []
 
 

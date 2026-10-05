@@ -125,3 +125,33 @@ def test_buildings_from_the_city_model_fetch_no_lidar(tmp_path):
     doc = assemble(_req(tmp_path, layers=WITH_LIDAR), net)
     assert "lidar" not in doc and all(source != "ontario" for _, source, _ in net.calls)
     assert _notes(doc, "info") == [CITY_MODEL_ONLY]
+
+
+def test_fitted_roofs_are_written_beside_the_lidar_roofs(tmp_path):
+    from ghosttown_fetch import fitted_roofs
+    from ghosttown_fetch.assemble import FITTED_STAGE
+    stages = []
+    doc = assemble(_req(tmp_path, layers=WITH_LIDAR), _net(_lidar(tops=[(0, 0, 10, 10, 22.0)])),
+                   progress=lambda stage, pct: stages.append((stage, pct)))
+    fitted = doc["lidar"]["fitted"]
+    with np.load(tmp_path / "o" / fitted_roofs.FILE) as data:
+        assert set(data.files) == set(np.load(tmp_path / "o" / "lidar_roofs.npz").files)
+        assert list(data["building_ids"]) == ["toronto:building:7"] and not data["interior"].any()
+        assert fitted == {"file": "fitted_roofs.npz", "buildings": 1, "triangles": len(data["faces"])}
+    assert ctx.validate(doc) == [] and (FITTED_STAGE, 79) in stages
+    note, = [n["text"] for n in doc["notes"] if n["code"] == "fitted"]
+    assert note.startswith("Fitted roofs: 1 house (") and not any(n["level"] == "warn" for n in doc["notes"] if n["code"] == "fitted")
+
+def test_failing_fitted_roofs_are_a_warning_and_the_lidar_roofs_stay(tmp_path, monkeypatch):
+    from ghosttown_fetch import fitted_roofs
+
+    def boom(*args):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(fitted_roofs, "build", boom)
+    doc = assemble(_req(tmp_path, layers=WITH_LIDAR), _net(_lidar(tops=[(0, 0, 10, 10, 22.0)])))
+    assert doc["lidar"]["buildings"] == 1 and "fitted" not in doc["lidar"] and ctx.validate(doc) == []
+    assert (tmp_path / "o" / "lidar_roofs.npz").exists() and not (tmp_path / "o" / "fitted_roofs.npz").exists()
+    assert [n["text"] for n in doc["notes"] if n["code"] == "fitted"] == [
+        "The fitted roofs couldn't be built (boom). Flat and LiDAR roofs are still available."]
+    assert [n["level"] for n in doc["notes"] if n["code"] == "fitted"] == ["warn"]
