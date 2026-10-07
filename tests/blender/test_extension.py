@@ -494,8 +494,11 @@ def test_street_look_registers_with_its_defaults():
 
     ghosttown.register()
     try:
-        assert hasattr(bpy.ops.ghosttown, "street_look") and hasattr(bpy.ops.ghosttown, "add_sky")
+        assert ops.GHOSTTOWN_OT_street_look.is_registered and ops.GHOSTTOWN_OT_add_sky.is_registered
+        for name in ("street_look", "add_sky"):   # hasattr(bpy.ops.ghosttown, ...) is true for any name, so look it up
+            getattr(bpy.ops.ghosttown, name).get_rna_type()   # raises KeyError unless the operator is registered
         assert ui.GHOSTTOWN_PT_street_look.is_registered and ui.GHOSTTOWN_PT_street_look.bl_parent_id == "GHOSTTOWN_PT_site"
+        assert ui.GHOSTTOWN_PT_street_look.bl_options == {"DEFAULT_CLOSED"}
         s = bpy.context.scene.ghosttown
         assert (s.look_budget, s.look_not_before, s.look_detail, s.look_keep) == (150, 0, False, True)
         assert (s.show_look, s.show_detail) == (True, True) and abs(s.look_brightness - 1.15) < 1e-6
@@ -634,4 +637,174 @@ def test_cancel_stops_a_running_street_look_too():
         assert run.proc.poll() is not None and "look" not in runner.ACTIVE
     finally:
         runner.cancel_all()
+        ghosttown.unregister()
+
+
+def test_launching_street_look_gives_the_run_the_token_in_its_environment_only():
+    from types import SimpleNamespace
+
+    prior = os.environ.get(ls.TOKEN_ENV)
+    ghosttown.register()
+    os.environ[ls.TOKEN_ENV] = "MLY|secret"
+    seen, real_run, real_ensure = {}, runner.Run, runner.ensure_wheels
+    try:
+        _picked_site()
+        launch, problem = ops.look_launch(bpy.context, tempfile.mkdtemp(), online=True)
+        assert problem is None
+        runner.Run = lambda args, **kwargs: seen.update(args=args, **kwargs) or "run"   # no child is started
+        runner.ensure_wheels = lambda wheels, refresh, package="shapely": True
+        wm = SimpleNamespace(event_timer_add=lambda *a, **kw: "timer", modal_handler_add=lambda op: None)
+        op = SimpleNamespace(key="look", needs=ops.GHOSTTOWN_OT_street_look.needs, report=lambda *a: None)
+        context = SimpleNamespace(window_manager=wm, window=None)
+        result = ops._FetcherOperator._launch(op, context, launch["args"], launch["work_dir"], env_extra=launch["env"])
+        assert result == {"RUNNING_MODAL"} and runner.ACTIVE["look"] == "run"
+        assert seen["env_extra"] == {ls.TOKEN_ENV: "MLY|secret"}   # the child's environment gets the token...
+        assert seen["args"] == launch["args"] and "secret" not in repr(seen["args"])   # ...and its arguments don't
+        assert seen["work_dir"] == launch["work_dir"]
+    finally:
+        runner.Run, runner.ensure_wheels = real_run, real_ensure
+        runner.ACTIVE.pop("look", None)
+        runner.STATUS.pop("look", None)
+        _restore_env(ls.TOKEN_ENV, prior)
+        ghosttown.unregister()
+
+
+class DrawnLayout:
+    """Stands in for a UILayout while a panel draws: every call lands in `drawn`, a box, row or column starts
+    as enabled as its parent, and what Blender's own layout would refuse (a property, an operator or an icon
+    that doesn't exist) fails here too."""
+
+    def __init__(self, drawn, enabled=True):
+        self.drawn, self.enabled = drawn, enabled
+
+    def _nested(self, kind):
+        self.drawn.append((kind,))
+        return DrawnLayout(self.drawn, self.enabled)
+
+    def box(self):
+        return self._nested("box")
+
+    def row(self, **kwargs):
+        return self._nested("row")
+
+    def column(self, **kwargs):
+        return self._nested("column")
+
+    def label(self, text="", icon="NONE"):
+        self._check_icon(icon)
+        self.drawn.append(("label", text))
+
+    def prop(self, data, name, **kwargs):
+        assert name in data.bl_rna.properties, name
+        self.drawn.append(("prop", name))
+
+    def operator(self, idname, text="", icon="NONE", **kwargs):
+        module, name = idname.split(".")
+        getattr(getattr(bpy.ops, module), name).get_rna_type()   # raises KeyError for an operator that isn't registered
+        self._check_icon(icon)
+        self.drawn.append(("operator", idname, self.enabled))
+
+    @staticmethod
+    def _check_icon(icon):
+        icons = bpy.types.UILayout.bl_rna.functions["label"].parameters["icon"].enum_items.keys()
+        assert icon == "NONE" or icon in icons, icon
+
+
+def _draw_street_look():
+    """What the Street Look panel draws now: the calls it made on its layout, in order. Background Blender has
+    no region and reports online access as off, so the context gets a wide region (no sentence wraps) and
+    look_refusal answers as if online access were on."""
+    from types import SimpleNamespace
+
+    from ghosttown import ui
+
+    class Context:
+        region = SimpleNamespace(width=2000)
+
+        def __getattr__(self, name):   # everything else is the real context's
+            return getattr(bpy.context, name)
+
+    drawn, real = [], ops.look_refusal
+    try:
+        ops.look_refusal = lambda context, online=None: real(context, online=True)
+        ui.GHOSTTOWN_PT_street_look.draw(SimpleNamespace(layout=DrawnLayout(drawn)), Context())
+    finally:
+        ops.look_refusal = real
+    return drawn
+
+
+def test_the_street_look_panel_explains_a_refusal_and_offers_its_settings():
+    prior = os.environ.get(ls.TOKEN_ENV)
+    ghosttown.register()
+    os.environ.pop(ls.TOKEN_ENV, None)
+    try:
+        drawn = _draw_street_look()   # no token
+        assert ("box",) in drawn and ("label", ops.NO_TOKEN) in drawn
+        assert ("operator", "ghosttown.street_look", False) in drawn   # Apply Street Look is greyed out
+
+        os.environ[ls.TOKEN_ENV] = "MLY|abc"
+        root = _picked_site()
+        drawn = _draw_street_look()   # a token and a picked site
+        assert ("box",) not in drawn and ("operator", "ghosttown.street_look", True) in drawn
+        assert [d[1] for d in drawn if d[0] == "prop"] == [
+            "look_budget", "look_not_before", "look_detail", "look_keep",   # the four settings
+            "show_look", "show_detail", "look_brightness"]   # and the three switches
+        assert ("operator", "ghosttown.add_sky", True) in drawn   # the scene has no world yet
+        look_build.add_sky(bpy.context.scene)
+        assert not any(d[:2] == ("operator", "ghosttown.add_sky") for d in _draw_street_look())
+
+        root[look_build.SUMMARY_PROP] = "Look from photos: 2 buildings · guessed: 0"
+        root[look_build.CREDITS_PROP] = CREDIT + "\nA second credit"
+        drawn = _draw_street_look()   # the site keeps a summary and credits
+        assert ("box",) in drawn and ("label", "Look from photos: 2 buildings · guessed: 0") in drawn
+        assert ("label", CREDIT) in drawn and ("label", "A second credit") in drawn
+    finally:
+        _restore_env(ls.TOKEN_ENV, prior)
+        ghosttown.unregister()
+
+
+def test_a_finished_look_goes_to_its_site_unless_the_site_has_gone():
+    from types import SimpleNamespace
+
+    ghosttown.register()
+    try:
+        root = _picked_site()
+        name, reports = root.name, []
+        op = SimpleNamespace(root_name=name, report=lambda *a: reports.append(a))
+        answer = {"ok": True, "look": LOOK}
+        assert ops.GHOSTTOWN_OT_street_look.finished(op, bpy.context, answer) == {"FINISHED"}
+        assert look_build.LOOK_PROP in root and ({"INFO"}, root[look_build.SUMMARY_PROP]) in reports
+
+        gone = [({"ERROR"}, "The site was removed while Street Look ran.")]
+        scene_build.remove(root, bpy.context.scene)   # the site is removed while the fetch runs
+        reports.clear()
+        assert ops.GHOSTTOWN_OT_street_look.finished(op, bpy.context, answer) == {"CANCELLED"} and reports == gone
+        other = bpy.data.collections.new(name)   # the name now belongs to a collection that isn't a Ghost Town site
+        reports.clear()
+        assert ops.GHOSTTOWN_OT_street_look.finished(op, bpy.context, answer) == {"CANCELLED"} and reports == gone
+        assert look_build.LOOK_PROP not in other
+    finally:
+        ghosttown.unregister()
+
+
+def test_street_look_does_not_start_on_a_failed_validation_or_without_buildings():
+    prior = os.environ.get(ls.TOKEN_ENV)
+    ghosttown.register()
+    os.environ[ls.TOKEN_ENV] = "MLY|abc"
+    try:
+        root = _picked_site()
+        settings, cache = bpy.context.scene.ghosttown, tempfile.mkdtemp()
+        settings.look_not_before = 1990   # the setting takes it; the request schema wants 2000 or later
+        problems = ls.validate_request(look_build.make_request(root, settings, cache))
+        assert problems and "not_before_year" in problems[0]
+        assert ops.look_launch(bpy.context, cache, online=True) == (None, problems[0])
+        assert os.listdir(cache) == []   # nothing was written, not even the run folder
+
+        settings.look_not_before = 0
+        for building in look_build.made_buildings(root):
+            bpy.data.objects.remove(building)
+        assert ops.look_launch(bpy.context, cache, online=True) == (None, ops.NO_BUILDINGS)
+        assert os.listdir(cache) == []
+    finally:
+        _restore_env(ls.TOKEN_ENV, prior)
         ghosttown.unregister()
