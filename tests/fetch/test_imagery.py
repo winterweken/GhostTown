@@ -28,9 +28,15 @@ def test_decode_gives_linear_light():
     assert np.allclose(imagery.srgb_to_linear([0.0, 1.0]), [0.0, 1.0])
 
 
+def test_decode_keeps_channel_order():
+    img = imagery.decode_linear(_jpeg((255, 0, 0)))
+    assert img[..., 0].mean() > 0.9 and img[..., 2].mean() < 0.1
+
+
 SKY = detection("nature--sky", [(0, 0), (1, 0), (1, 0.5), (0, 0.5)])
 ROAD = detection("construction--flat--road", [(0, 0.5), (1, 0.5), (1, 1), (0, 1)])
 HOUSE = detection("construction--structure--building", [(0.4, 0.3), (0.6, 0.3), (0.6, 0.7), (0.4, 0.7)])
+CAR = detection("object--vehicle--car", [(0.1, 0.55), (0.9, 0.55), (0.9, 0.95), (0.1, 0.95)])
 
 
 def test_labels_paint_small_regions_over_big_ones():
@@ -49,6 +55,16 @@ def test_road_luminance_needs_enough_road():
     assert abs(imagery.road_luminance(img, imagery.Labels([ROAD, HOUSE], aspect=0.75)) - 0.1) < 1e-6
     corner = detection("construction--flat--road", [(0, 0.99), (0.01, 0.99), (0.01, 1), (0, 1)])
     assert imagery.road_luminance(img, imagery.Labels([corner], aspect=0.75)) is None
+
+
+def test_road_luminance_is_the_road_without_what_stands_on_it():
+    # Sky 0.5, road 0.2, a car 0.8 over most of the road: the median of the whole photo is 0.5 and of the road
+    # plus the car 0.8, so only the road alone gives 0.2. The photo is 2048 px wide against the 512 px label map.
+    img = np.full((1536, 2048, 3), 0.5, dtype=np.float32)
+    img[768:] = 0.2
+    img[845:1459, 205:1843] = 0.8
+    labels = imagery.Labels([SKY, ROAD, CAR], aspect=0.75)
+    assert abs(imagery.road_luminance(img, labels) - 0.2) < 1e-6
 
 
 def test_sample_reads_colours_at_picture_fractions():
