@@ -225,6 +225,7 @@ def test_a_corrupt_stored_look_is_dropped():
         KeyError: damaged(lambda a: a["sources"][0].pop("credit")),
         TypeError: damaged(lambda a: a.update(sources=["Mapillary"])),
         ValueError: damaged(lambda a: a["buildings"]["osm:way:1"].update(confidence="high")),
+        IndexError: damaged(lambda a: a.update(years=[2019])),
         AttributeError: damaged(lambda a: a.update(buildings=[])),   # validating this raises too
     }
     for error, answer in unappliable.items():
@@ -245,6 +246,32 @@ def test_a_corrupt_stored_look_is_dropped():
         assert _look_props(root) == [], text
         root[look_build.LOOK_PROP] = text
         assert _look_props(_build()) == [], text   # nor does a rebuild that carries it over
+
+
+def test_a_dropped_look_leaves_the_plain_look_and_no_detail():
+    no_credit = load_fixture("mini_look.json")   # dresses the buildings, then fails on the source
+    del no_credit["sources"][0]["credit"]
+    one_year = load_fixture("mini_look.json")   # dresses them and makes the detail, then fails on the years
+    one_year["years"] = [2019]
+    for answer in (no_credit, one_year):
+        root = _build()
+        root[look_build.LOOK_PROP] = json.dumps(answer)
+        root = _build()   # the rebuild carries the look over, can't apply it, and drops it
+        buildings = look_build.made_buildings(root)
+        assert len(buildings) == 2 and all(ob.get("gt_look_on") == 0.0 for ob in buildings)
+        assert not [c for c in root.children if c.get("ctx_group") == "Detail"] and _details() == []
+        assert not any(name.startswith("Detail") for name in json.loads(root["ctx_objects"]))
+        assert _look_props(root) == []
+
+
+def test_the_renderer_sees_a_dropped_look_on_buildings_already_on_screen():
+    root = _build()
+    _apply(root)
+    tower = _building("osm:way:1")
+    assert tower.evaluated_get(bpy.context.evaluated_depsgraph_get())["gt_look_on"] == 1.0   # evaluated, as when shown
+    root[look_build.LOOK_PROP] = "not json"
+    look_build.reapply(bpy.context.scene, root)
+    assert tower.evaluated_get(bpy.context.evaluated_depsgraph_get())["gt_look_on"] == 0.0
 
 
 def _exported_material_names():

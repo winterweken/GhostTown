@@ -147,17 +147,18 @@ def apply(scene, root, answer, settings=None):
 
 def reapply(scene, root):
     """Dress a context collection again from its stored look, e.g. after a rebuild. A stored look that
-    can't be read, validated or applied is dropped."""
+    can't be read, validated or applied is dropped, and the buildings keep the plain look."""
     try:
         answer = json.loads(root.get(LOOK_PROP, ""))
         usable = answer is not None and not ls.validate_answer(answer)
         if usable:
             _dress(root, answer)
-    except (ValueError, TypeError, KeyError, AttributeError):   # a look that was damaged or edited by hand
+    except (ValueError, TypeError, KeyError, AttributeError, IndexError):   # a look damaged or edited by hand
         usable = False
     if not usable:
         for key in (LOOK_PROP, SUMMARY_PROP, CREDITS_PROP):
             root.pop(key, None)
+        _undress(root)   # a look that failed part-way may already have dressed buildings and made detail
         return
     settings = getattr(scene, "ghosttown", None)
     if settings is not None:
@@ -182,6 +183,13 @@ def _dress(root, answer):
     _rebuild_detail(root, entries)
     root[SUMMARY_PROP] = summary(answer, dressed)
     root[CREDITS_PROP] = "\n".join(dict.fromkeys(s["credit"] for s in answer["sources"]))
+
+
+def _undress(root):
+    """Leave a context collection with the plain look: no building shows a look, and there is no detail."""
+    for ob in made_buildings(root):
+        _set_props(ob, None)
+    _rebuild_detail(root, {})
 
 
 def _base_z(ob):
