@@ -95,3 +95,19 @@ def test_ensure_wheels_reports_failure_when_the_resync_does_not_help():
 
     assert runner.ensure_wheels(tempfile.mkdtemp(), lambda: None) is False
     assert runner.ensure_wheels(tempfile.mkdtemp(), boom) is False
+
+
+def test_environment_adds_extra_variables():
+    env = runner.environment(["/w"], base={"PATH": "/bin"}, extra={"GHOSTTOWN_MAPILLARY_TOKEN": "t"})
+    assert env["GHOSTTOWN_MAPILLARY_TOKEN"] == "t" and env["PATH"] == "/bin"
+
+
+def test_a_run_hands_extra_environment_to_the_child_only():
+    code = "import os, json; print(json.dumps({'ok': True, 'token': os.environ.get('GHOSTTOWN_MAPILLARY_TOKEN')}))"
+    run = runner.Run(["unused"], work_dir=tempfile.mkdtemp(), extra_paths=[], argv=[sys.executable, "-c", code],
+                     env_extra={"GHOSTTOWN_MAPILLARY_TOKEN": "abc"})
+    deadline = time.monotonic() + 30
+    while (res := run.poll()) is None and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert res == {"ok": True, "token": "abc"}
+    assert "GHOSTTOWN_MAPILLARY_TOKEN" not in os.environ

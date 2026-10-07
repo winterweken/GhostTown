@@ -44,24 +44,25 @@ def command(*args):
     return [sys.executable, "-s", "-P", "-m", "ghosttown_fetch", *(str(a) for a in args)]
 
 
-def environment(extra_paths, base=None):
+def environment(extra_paths, base=None, extra=None):
     env = dict(os.environ if base is None else base)
     for key in ("PYTHONHOME", "PYTHONSTARTUP", "PYTHONPATH"):
         env.pop(key, None)
     env["PYTHONPATH"] = os.pathsep.join([EXT_DIR, *extra_paths])
     env["PYTHONNOUSERSITE"] = "1"
     env["PYTHONUTF8"] = "1"
+    env.update(extra or {})   # e.g. the Mapillary token: the child's environment only, never a file
     return env
 
 
 class Run:
-    def __init__(self, args, *, work_dir, extra_paths, argv=None):
+    def __init__(self, args, *, work_dir, extra_paths, argv=None, env_extra=None):
         os.makedirs(work_dir, exist_ok=True)
         self.work_dir = work_dir
         self._stdout = open(os.path.join(work_dir, "stdout.txt"), "wb")
         self._stderr = open(os.path.join(work_dir, "stderr.txt"), "wb")
         self.proc = subprocess.Popen(
-            argv or command(*args), cwd=work_dir, env=environment(extra_paths),
+            argv or command(*args), cwd=work_dir, env=environment(extra_paths, extra=env_extra),
             stdin=subprocess.DEVNULL, stdout=self._stdout, stderr=self._stderr,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
@@ -115,8 +116,8 @@ def read_progress(work_dir):
         return None
 
 
-def run_blocking(args, *, work_dir, extra_paths, timeout=600):
-    run = Run(args, work_dir=work_dir, extra_paths=extra_paths)
+def run_blocking(args, *, work_dir, extra_paths, timeout=600, env_extra=None):
+    run = Run(args, work_dir=work_dir, extra_paths=extra_paths, env_extra=env_extra)
     deadline = time.monotonic() + timeout
     while (result := run.poll()) is None:
         if time.monotonic() > deadline:

@@ -426,3 +426,17 @@ def test_the_readme_explains_lidar_roofs_and_the_revit_budget():
         text = f.read()
     assert " ".join(ui.HEAVY) in text and "ws.geoservices.lrc.gov.on.ca" in text
     assert "Contains information licensed under the Open Government Licence – Ontario" in text
+
+
+def test_the_token_falls_back_to_the_environment():
+    from ghosttown import prefs
+
+    ghosttown.register()
+    os.environ["GHOSTTOWN_MAPILLARY_TOKEN"] = " MLY|abc "
+    try:
+        assert prefs.token(bpy.context) == "MLY|abc"
+        del os.environ["GHOSTTOWN_MAPILLARY_TOKEN"]
+        assert prefs.token(bpy.context) == ""
+    finally:
+        os.environ.pop("GHOSTTOWN_MAPILLARY_TOKEN", None)
+        ghosttown.unregister()
