@@ -428,9 +428,18 @@ def test_the_readme_explains_lidar_roofs_and_the_revit_budget():
     assert "Contains information licensed under the Open Government Licence – Ontario" in text
 
 
+def _restore_env(name, prior):
+    """Leave an environment variable as a test found it: set again if it was set, removed if it wasn't."""
+    if prior is None:
+        os.environ.pop(name, None)
+    else:
+        os.environ[name] = prior
+
+
 def test_the_token_falls_back_to_the_environment():
     from ghosttown import prefs
 
+    prior = os.environ.get("GHOSTTOWN_MAPILLARY_TOKEN")  # whatever the developer's shell exports, or None
     ghosttown.register()
     os.environ["GHOSTTOWN_MAPILLARY_TOKEN"] = " MLY|abc "
     try:
@@ -438,5 +447,32 @@ def test_the_token_falls_back_to_the_environment():
         del os.environ["GHOSTTOWN_MAPILLARY_TOKEN"]
         assert prefs.token(bpy.context) == ""
     finally:
-        os.environ.pop("GHOSTTOWN_MAPILLARY_TOKEN", None)
+        _restore_env("GHOSTTOWN_MAPILLARY_TOKEN", prior)
+        ghosttown.unregister()
+
+
+def test_the_token_in_preferences_wins_over_the_environment_and_is_masked():
+    from ghosttown import prefs
+
+    prior = os.environ.get("GHOSTTOWN_MAPILLARY_TOKEN")
+    ghosttown.register()
+    entry = None
+    try:
+        # register() adds only the classes; enabling the add-on is what gives Preferences an entry, so add one.
+        entry = bpy.context.preferences.addons.new()
+        entry.module = "ghosttown"
+        assert isinstance(prefs.get(bpy.context), prefs.GhostTownPreferences)
+        assert prefs.GhostTownPreferences.bl_rna.properties["mapillary_token"].subtype == "PASSWORD"
+        os.environ["GHOSTTOWN_MAPILLARY_TOKEN"] = "MLY|env"
+        assert prefs.token(bpy.context) == "MLY|env"  # the field starts blank, so the environment answers
+        prefs.get(bpy.context).mapillary_token = "  MLY|pref  "
+        assert prefs.token(bpy.context) == "MLY|pref"  # Preferences win over the environment, trimmed
+        prefs.get(bpy.context).mapillary_token = "   "
+        assert prefs.token(bpy.context) == "MLY|env"  # a blank field falls back to the environment again
+        del os.environ["GHOSTTOWN_MAPILLARY_TOKEN"]
+        assert prefs.token(bpy.context) == ""  # and with neither there is no token
+    finally:
+        _restore_env("GHOSTTOWN_MAPILLARY_TOKEN", prior)
+        if entry is not None:
+            bpy.context.preferences.addons.remove(entry)
         ghosttown.unregister()

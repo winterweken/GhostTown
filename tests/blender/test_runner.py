@@ -104,10 +104,11 @@ def test_environment_adds_extra_variables():
 
 def test_a_run_hands_extra_environment_to_the_child_only():
     code = "import os, json; print(json.dumps({'ok': True, 'token': os.environ.get('GHOSTTOWN_MAPILLARY_TOKEN')}))"
+    before = os.environ.get("GHOSTTOWN_MAPILLARY_TOKEN")  # whatever the developer's shell exports, or None
     run = runner.Run(["unused"], work_dir=tempfile.mkdtemp(), extra_paths=[], argv=[sys.executable, "-c", code],
                      env_extra={"GHOSTTOWN_MAPILLARY_TOKEN": "abc"})
     deadline = time.monotonic() + 30
     while (res := run.poll()) is None and time.monotonic() < deadline:
         time.sleep(0.05)
     assert res == {"ok": True, "token": "abc"}
-    assert "GHOSTTOWN_MAPILLARY_TOKEN" not in os.environ
+    assert os.environ.get("GHOSTTOWN_MAPILLARY_TOKEN") == before  # the parent is unchanged: the child alone got "abc"
