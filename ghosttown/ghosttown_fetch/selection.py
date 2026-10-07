@@ -147,8 +147,9 @@ def choose(cameras, seen, samples, *, budget, order):
     """{building index: [camera indices, in the order picked]}: each building in `order` gets up to PER_BUILDING.
 
     Pass one gives every building that has a usable photo its best one, whatever the budget: spec 6.4 never
-    drops a building's only usable photo for budget. look.run serves at most `budget` buildings, so these first
-    photos stay within the budget. Pass two, in `order` again, adds more photos to each building while the budget
+    drops a building's only usable photo for budget. look.run serves at most max(`budget`, the number of detail
+    buildings) buildings, so these first photos stay within that: detail buildings always come first, and up to
+    20 may be asked for. Pass two, in `order` again, adds more photos to each building while the budget
     lasts: a photo nobody has chosen yet costs one from it, a photo already chosen is free.
 
     Each pick is the photo adding the most wall area x sharpness (capped at PPM_CAP) x recency. Points already
