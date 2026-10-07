@@ -1,6 +1,7 @@
 # Street Look: building appearance from street photos
 
-Status: design approved in conversation, 2026-10-07. Not yet planned or built.
+Status: design approved in conversation, 2026-10-07; implementation plan in `design/street-look-plan.md`.
+Builds on Ghost Town 0.3.0 (City massing, aerial photos, LiDAR and fitted roofs, the Site panel).
 
 ## 1. Summary
 
@@ -50,8 +51,9 @@ Dr, with the user's token. The code is not kept; the numbers are.
 ## 4. User experience
 
 1. Build Context as today.
-2. In the Ghost Town tab, the new Street Look section shows the token status, the settings, and an
-   **Apply Street Look** button. Optionally select a few building objects and tick **Detail for selected**.
+2. In the Ghost Town tab, a Street Look section under the Site panel shows the token status, the settings,
+   and an **Apply Street Look** button; it acts on the site picked there. Optionally select a few building
+   objects and tick **Detail for selected**.
 3. Apply runs in the background with progress and Cancel, like Build. Afterwards the section shows, for example,
    "Look from photos: 41 buildings · guessed: 23 · 128 photos (2014–2025)" and the credit line
    "Street photos © Mapillary contributors, CC BY-SA 4.0".
@@ -88,7 +90,9 @@ Fetcher (`ghosttown/ghosttown_fetch/`, plain Python, never imports bpy):
   needs testing against wall segments (candidates from a shapely STRtree) plus a height check at the hit.
   Downward rays onto roofs are not handled; street cameras rarely look down.
 - `look.py`: the pipeline in section 6.
-- `net.py`: per-source request headers (for the token). Cache keys never include the token.
+- `net.py`: per-call request headers (for the token) and a cache-key override (Mapillary's photo links are
+  signed and change); 0.3.0's `keep=False` already covers answers that must not be stored. Cache keys never
+  include the token.
 - `__init__.py`: `mapillary` in `SOURCE_NAMES` and `CREDITS`.
 
 New dependency: **Pillow**, for JPEG decoding and polygon filling, bundled as per-platform wheels exactly like
@@ -100,6 +104,8 @@ Blender side (`ghosttown/`):
 - `props.py`: Street Look settings and the result summary.
 - `ui.py`: the Street Look section.
 - `ops.py`: `GHOSTTOWN_OT_street_look`, built on the same `_FetcherOperator` pattern as Build; one undo step.
+  It acts on the Site panel's picked site, and only on the site's own buildings (`site_use.made_objects`),
+  as the aerial photo on roofs does; the user's duplicates are left alone.
 - `runner.py`: passes the token in the child environment only.
 - `look_build.py` (new): applies `look.json` (section 7).
 - `materials.py`: the `Ghost Town · Street Look` node group and its insertion into the building materials; a new
@@ -130,6 +136,8 @@ timer (no new process, but a sluggish interface and against "Blender only draws"
 - `buildings` lists what is in the scene now, so deleted buildings are skipped and edited prisms are respected.
   Blender rebuilds each building's solids from its mesh: each connected part is a tier, its bottom outline is
   the ring set, and its lowest and highest points are z0 and z1, matching the `context.json` solid format.
+  A building that keeps 0.3.0 roof shapes is read from its flat mesh, the prism set the fetcher models,
+  whichever roof shape it shows.
 - Ground heights for cameras come from the fetcher's own terrain source and cache, fetched for the search area
   (site radius plus `search_margin_m`). Outside Canada the ground is flat, as in Build.
 - The token is never in this file.
@@ -169,6 +177,9 @@ Buildings without a usable photo have `"source": "guessed"` and the default zone
 - Fields: id, captured_at, camera_type, computed_geometry, computed_rotation, camera_parameters, width, height,
   sequence.
 - Photos missing computed geometry or rotation are skipped.
+- Near-duplicates are thinned: the newest photo per 5 m cell and 30° of heading (360° photos: per cell).
+  Mapillary shoots every few metres along a street; at 351 King St E this kept 5,937 of 9,048 photos for
+  about 1% less wall area seen well.
 - Recency weight: 2022 or later ×1.0, 2018–2021 ×0.8, earlier ×0.6. "Not before" excludes older years.
 - Poses: the computed position, the computed rotation (OpenSfM convention: world east-north-up to camera with x
   right, y down, z forward), camera height from the terrain plus 2.0 m (Mapillary altitudes are unreliable).
@@ -198,6 +209,9 @@ the wall lies inside or under another solid.
 - Up to 4 photos per building, until the budget is spent.
 - Priority: detail buildings first, then by distance from the address. A building's only usable photo is never
   dropped for budget.
+- Photos are read for at most as many buildings as the budget, in that order; the rest get the guessed look.
+  More could not all get photos anyway, and it keeps a 1,000 m site about as quick as a small one. The photo
+  search reaches 200 m past the farthest of those buildings, capped at 1,000 m.
 
 ### 6.5 Label check and masks
 
@@ -246,7 +260,9 @@ site's median road luminance, clamped to 0.5–2×. Photos with fewer than 500 r
   Inputs: the plain colour, Look on/off, Photo brightness.
 - Per-building values are custom properties on each building object (zone tops, kinds, colours; floor height;
   bay widths; lowest point; source; confidence), read through Attribute nodes of type Object. One material renders
-  every building differently.
+  every building differently, and switching between flat, fitted and LiDAR roofs keeps the look, since the
+  values sit on the object and every roof shape uses the same building materials. Roof faces keep the plain
+  colour (or 0.3.0's aerial photo on roofs, which takes them into its own material).
 - Material names, kinds and the plain colour (the BSDF default value) stay as today, so FBX and OBJ export and
   the Revit Object Styles mapping are unchanged. A Blender test confirms this (section 11).
 - Rejected: a separate `Context - Building (street look)` material, which would add a name to every export.
@@ -257,8 +273,9 @@ site's median road luminance, clamped to 0.5–2×. Photos with fewer than 500 r
 - From the building's zones and `detail_walls`: floor bands on every floor (heavier at zone boundaries), mullion
   fins at the glass bay width on glass zones, a band at the top of the storefront. Only on exposed walls and
   heights. About 4,000 faces for the 87 m test tower.
-- Material `Context - Facade detail`. The massing is untouched; untick or hide the collection to leave detail
-  out of an export.
+- Material `Context - Facade detail`. The massing is untouched; untick (exclude) the collection to leave detail
+  out of an export. Show detail only hides it from viewports and renders, which FBX export ignores. Detail
+  counts toward the site's Revit triangle figure.
 - At most 20 buildings per run; about 5 recommended.
 - Rejected for version 1: a Geometry Nodes modifier (hard to build and maintain from Python; exporters apply
   visible modifiers by default).
@@ -272,7 +289,8 @@ site's median road luminance, clamped to 0.5–2×. Photos with fewer than 500 r
 
 ### 7.4 Rebuild and undo
 
-- The look is stored on the context collection as JSON keyed by building id. When Build replaces a site,
+- The look is stored on the context collection as JSON keyed by building id, with the panel's summary and
+  credit line beside it, like 0.3.0's other per-site state. When Build replaces a site,
   `scene_build.build` copies it from the old collection before removing it, re-applies the properties to the new
   objects with matching ids, and regenerates detail for buildings still present.
 - Detail objects carry `ctx_id` and are listed in the collection's `ctx_objects`, so `remove()` handles them like
@@ -309,13 +327,15 @@ Each message is one plain sentence, as elsewhere in Ghost Town.
 
 ## 10. Performance
 
-To confirm during implementation:
+Measured with the plan's code at 351 King St E (300 m, 87 buildings, 9,048 photos listed), 2026-10-07:
 
+- The first version took 16 minutes, 11 of them choosing photos: each ray of up to 500 m was tested against
+  every wall its bounding box touched, with GEOS predicates. Rays now go out in 50 m pieces, nearest first,
+  with the crossing test in numpy, and near-duplicate photos are thinned: choosing takes 30 s and reading
+  the facades (including the 200 px per-pixel grid) 33 s.
+- Re-run with listings and photos cached: 66 s. A first run adds the listing (about 90 tiles, 3 MB) and
+  about 110 photos with their labels, roughly 1–2 minutes more.
 - Listing a 500 m radius with 8 parallel requests: about 30 s (3.5 min sequential in testing).
-- First run at a 300 m site: about 2–4 min including downloads; at most about 60–90 MB with the default budget.
-- Cached re-run: under a minute.
-- The numpy ray caster is the main unknown. If it is too slow, the per-pixel grid drops from 200 px to 100 px
-  first.
 
 ## 11. Testing
 
@@ -333,12 +353,11 @@ To confirm during implementation:
 
 ## 12. Later
 
-- Roofs and setbacks from LiDAR for detail buildings. NRCan's CanElevation point clouds cover Toronto (GTA 2023
-  at about 24.5 points/m², also 2019 and 2015) as 1 km COPC tiles on a public bucket that accepts range requests;
-  NRCan's tile-index map service turns a point or box into tile URLs. A cheaper path is the 1 m HRDEM surface and
-  ground models (Cloud-Optimized GeoTIFFs via the HRDEM STAC API): surface minus ground gives height above ground.
-  The existing `tiff.py` reads single-band 32-bit float GeoTIFFs whole; it would need range reads for these large
-  files. Whether the 2023 survey classifies building points is unconfirmed.
+- Setbacks and terraces from LiDAR for detail buildings. Ghost Town 0.3.0 already measures roofs from Geospatial
+  Ontario's LiDAR surface and terrain models (fitted and sampled roofs); the same surface could place floor
+  bands and fins only where a facade really rises, and catch setbacks the massing misses. Outside Ontario,
+  NRCan's CanElevation point clouds (GTA 2023 at about 24.5 points/m², as 1 km COPC tiles that accept range
+  requests) and the 1 m HRDEM surface and ground models are the national options.
 - Material classes (brick, concrete, stone, metal) from texture cues or a vision model.
 - Better lower-floor glass detection.
 - Measured window and mullion spacing.
@@ -353,6 +372,11 @@ To confirm during implementation:
 - Colour fidelity: calibration is relative to the site, not absolute; Photo brightness is the user's control.
 - Zone errors: lower-floor glass can read as an opaque podium; foreground buildings missing from the massing
   (or not yet built) can still be sampled.
-- Ray-casting speed in numpy is unmeasured.
+- Facade reading on real photos, from the live run at 351 King St E (61 of 87 buildings from photos): the
+  dark storefront and brick podiums came out right, but the 84 m tower's glass above 36 m read as opaque
+  (three photos, whose colours varied too little for the glass test), and one building got a sky-blue top
+  zone, likely sky at the roofline passing the building label. `tools/look_accuracy.py` should track both
+  before release; eroding the building label by a few pixels and refusing sky-coloured top zones are the
+  first things to try.
 - The token sits in plain text in Blender's user preferences.
 - Pillow adds about 3–5 MB to each platform package.
