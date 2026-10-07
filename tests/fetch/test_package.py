@@ -46,3 +46,9 @@ def test_messages_use_the_brand_name():
     from ghosttown_fetch import context as ctx
 
     assert "Ghost Town reads schema 1" in ctx.validate({"schema": 9})[0]
+
+
+def test_mapillary_is_named_and_credited():
+    assert cf.SOURCE_NAMES["mapillary"] == "Mapillary"
+    assert cf.CREDITS["mapillary"] == "Street photos © Mapillary contributors, CC BY-SA 4.0"
+    assert cf.LOOK_SCHEMA == 1

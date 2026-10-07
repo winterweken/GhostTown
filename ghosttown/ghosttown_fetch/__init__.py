@@ -1,8 +1,8 @@
-"""Ghost Town fetcher: request.json in, context.json out.
+"""Ghost Town fetcher: request.json in, context.json out; look_request.json in, look.json out.
 
 Runs as `python -m ghosttown_fetch` on Blender's own Python. It never imports bpy.
-This file, request.py and context.py use the standard library only, so the
-Blender add-on can import them without shapely or numpy.
+This file, request.py, context.py and look_schema.py use the standard library only, so the
+Blender add-on can import them without shapely, numpy or Pillow.
 """
 
 __version__ = "0.3.0"
@@ -21,10 +21,12 @@ RADIUS_RANGE_M = (50.0, 1000.0)
 SITE_LIMIT_M = 2000.0  # site outlines must sit within this distance of the centre
 
 SOURCE_NAMES = {"osm": "OpenStreetMap", "toronto": "City of Toronto", "nrcan": "Natural Resources Canada",
-                "ontario": "Geospatial Ontario"}
+                "ontario": "Geospatial Ontario", "mapillary": "Mapillary"}
 CREDITS = {
     "osm": "© OpenStreetMap contributors",
     "toronto": "Contains information licensed under the Open Government Licence – Toronto",
     "nrcan": "Contains information licensed under the Open Government Licence – Canada",
     "ontario": "Contains information licensed under the Open Government Licence – Ontario",
+    "mapillary": "Street photos © Mapillary contributors, CC BY-SA 4.0",
 }
+LOOK_SCHEMA = 1
