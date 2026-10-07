@@ -7,7 +7,7 @@ import numpy as np
 BAND_M = 3.0
 CELL_M = 6.0
 MIN_BAND_PX = 20
-MIN_PHOTOS_PER_BAND = 2
+MIN_PHOTOS_PER_BAND = 1
 MIN_ZONE_M = 6.0
 MAX_ZONES = 4
 LUM_STEP = 0.30
@@ -21,6 +21,9 @@ BLUE_RULE = 0.04
 FLOOR_RANGE_M = (2.8, 6.0)
 FLOOR_DEFAULT_M = 3.5
 FLOOR_AGREE_M = 0.25
+FLOOR_PEAK_MIN = 0.3
+FLOOR_PEAK_SIGMAS = 3.0
+FLOOR_EDGE_SPREAD = 1e-3
 DEFAULT_ZONES = (
     {"h0": 0.0, "h1": 4.5, "kind": "storefront", "colour": (0.32, 0.32, 0.31)},
     {"h0": 4.5, "h1": None, "kind": "opaque", "colour": (0.42, 0.42, 0.40)},
@@ -38,8 +41,8 @@ def _chroma(c):
 
 
 def band_profile(views):
-    """{band: colour} per 3 m band: the median colour in each photo, then the median across photos. Bands
-    seen by fewer than two photos are left out."""
+    """{band: colour} per 3 m band: the median colour in each photo, then the median across photos. A photo
+    counts for a band from 20 of its pixels; one photo is enough for a profile."""
     per = {}
     for colours, heights, _walls in views:
         bands = np.floor(heights / BAND_M).astype(int)
@@ -197,27 +200,33 @@ def zones(profile, glass):
 def floor_height(walls, ppm):
     """The dominant floor spacing in straightened walls [(grey rows top-down, mask)] at `ppm` pixels per
     metre: the strongest repeat of horizontal edges over 2.8-6 m, accepted when at least two walls agree
-    within 0.25 m. Otherwise 3.5 m."""
+    within 0.25 m. A wall's repeat counts only if it is a peak of the autocorrelation inside the range (not
+    at either end of it) and at least 0.3 and 3 / sqrt(rows) of its value at lag 0, the level a wall with no
+    repeat reaches by chance; a featureless or smoothly shaded wall has none. Otherwise 3.5 m."""
     lo, hi = FLOOR_RANGE_M
     found = []
     for grey, mask in walls:
         both = mask[1:] & mask[:-1]
         weight = both.sum(axis=1)
         rows = weight > 0
-        if rows.sum() < int(2 * hi * ppm):
+        used = int(rows.sum())
+        if used < int(2 * hi * ppm):   # a wall shorter than two of the longest spacings can't show a repeat
             continue
         edges = (np.abs(np.diff(grey, axis=0)) * both).sum(axis=1) / np.maximum(weight, 1)
         p = np.where(rows, edges - edges[rows].mean(), 0.0)
+        if p[rows].std() <= FLOOR_EDGE_SPREAD * edges[rows].mean():
+            continue   # the same edge strength on every row, to rounding (a plain gradient): nothing repeats
         ac = np.correlate(p, p, "full")[len(p) - 1:]
-        if ac[0] <= 0:
-            continue
         ac = ac / ac[0]
         lags = np.arange(len(ac)) / ppm
-        window = (lags >= lo) & (lags <= hi)
-        if not window.any():
+        window = np.flatnonzero((lags >= lo) & (lags <= hi))
+        if not len(window):
             continue
-        k = int(np.argmax(np.where(window, ac, -np.inf)))
-        if ac[k] > 0.1:
+        k = int(window[np.argmax(ac[window])])
+        # The strongest lag is a peak (above the lag before it, not below the lag after) unless it is the first
+        # or last lag of the range: there it is only the slope of something outside, the zero-lag peak of a
+        # smooth wall or a repeat beyond 6 m.
+        if window[0] < k < window[-1] and ac[k] >= max(FLOOR_PEAK_MIN, FLOOR_PEAK_SIGMAS / np.sqrt(used)):
             found.append(float(lags[k]))
     best = []
     for value in found:
