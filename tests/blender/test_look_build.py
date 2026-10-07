@@ -39,6 +39,10 @@ def _details():
     return [ob for ob in bpy.data.objects if ob.get("ctx_kind") == "facade_detail"]
 
 
+def _look_props(root):
+    return [key for key in (look_build.LOOK_PROP, look_build.SUMMARY_PROP, look_build.CREDITS_PROP) if key in root]
+
+
 def _area(ring):
     return 0.5 * sum(x1 * y2 - x2 * y1 for (x1, y1), (x2, y2) in zip(ring, ring[1:] + ring[:1]))
 
@@ -119,6 +123,39 @@ def test_apply_sets_properties_materials_credits_and_detail():
     assert site_use.count_triangles(root, bpy.context.evaluated_depsgraph_get()) == before + triangles
 
 
+def test_detail_sits_on_the_buildings_base():
+    root = _build()
+    _apply(root)
+    detail, = _details()
+    zs = [v.co.z for v in detail.data.vertices]
+    # base_z is -0.3: the lowest detail is the storefront band (3.0 - 0.15 above it), the highest a fin's top (60.3)
+    assert abs(min(zs) - (-0.3 + 2.85)) < 1e-6 and abs(max(zs) - (-0.3 + 60.3)) < 1e-6
+
+
+def test_a_moved_building_is_read_and_dressed_in_world_space():
+    root = _build()
+    tower = _building("osm:way:1")
+    tower.location = (100.0, 50.0, 7.0)
+    bpy.context.view_layer.update()
+    low = min(look_build.mesh_solids(tower), key=lambda s: s["z1"])
+    assert sorted(map(tuple, low["rings"][0])) == [(100.0, 60.0), (100.0, 80.0), (120.0, 60.0), (120.0, 80.0)]
+    assert (low["z0"], low["z1"]) == (6.7, 19.0)
+    _apply(root)
+    assert abs(tower["gt_look_base_z"] - 6.7) < 1e-6
+
+
+def test_summary_counts_and_wording():
+    answer = load_fixture("mini_look.json")
+    answer["buildings"]["osm:way:3"] = dict(answer["buildings"]["osm:way:1"])   # a second one from photos
+    assert look_build.summary(answer, {"osm:way:1", "osm:way:2", "osm:way:3"}) == \
+        "Look from photos: 2 buildings · guessed: 1 · 3 photos (2019–2025)"
+    answer["photos_used"], answer["years"] = 1, [2019, 2019]
+    assert look_build.summary(answer, {"osm:way:1", "osm:way:2"}) == \
+        "Look from photos: 1 building · guessed: 1 · 1 photo (2019)"
+    answer["photos_used"], answer["years"] = 0, None
+    assert look_build.summary(answer, {"osm:way:2"}) == "Look from photos: 0 buildings · guessed: 1"
+
+
 def test_the_renderer_sees_the_values_of_buildings_already_on_screen():
     root = _build()
     tower = _building("osm:way:1")
@@ -157,6 +194,17 @@ def test_a_rebuild_without_keep_drops_the_look():
     assert _details() == [] and all(me.users > 0 for me in bpy.data.meshes) and CREDIT not in root["credits"]
 
 
+def test_applying_twice_replaces_the_detail_and_keeps_one_of_everything():
+    root = _build()
+    _apply(root)
+    _apply(root)
+    assert len(_details()) == 1
+    assert len([c for c in root.children if c.get("ctx_group") == "Detail"]) == 1
+    assert sum(1 for name in json.loads(root["ctx_objects"]) if name.startswith("Detail")) == 1
+    assert all(me.users > 0 for me in bpy.data.meshes)   # the first detail mesh went with its object
+    assert root["credits"].splitlines() == ["© OpenStreetMap contributors", CREDIT]
+
+
 def test_reapply_skips_buildings_that_are_gone():
     root = _build()
     _apply(root)
@@ -165,6 +213,38 @@ def test_reapply_skips_buildings_that_are_gone():
     assert _details() == [] and not [c for c in root.children if c.get("ctx_group") == "Detail"]
     assert not any(name.startswith("Detail") for name in json.loads(root["ctx_objects"]))
     assert _building("osm:way:2")["gt_look_on"] == 1.0
+
+
+def test_a_corrupt_stored_look_is_dropped():
+    def damaged(change):
+        answer = load_fixture("mini_look.json")
+        change(answer)
+        return answer
+
+    unappliable = {   # all but the last pass the validation; applying them raises these
+        KeyError: damaged(lambda a: a["sources"][0].pop("credit")),
+        TypeError: damaged(lambda a: a.update(sources=["Mapillary"])),
+        ValueError: damaged(lambda a: a["buildings"]["osm:way:1"].update(confidence="high")),
+        AttributeError: damaged(lambda a: a.update(buildings=[])),   # validating this raises too
+    }
+    for error, answer in unappliable.items():
+        root = _build()
+        try:
+            look_build.apply(bpy.context.scene, root, answer, Settings())
+        except error:
+            pass
+        else:
+            raise AssertionError(f"apply should have raised {error.__name__}")
+        assert look_build.LOOK_PROP not in root   # so a rebuild has nothing broken to carry over
+    stored = ["", "not json", "[]", "null", '{"schema": 9}'] + [json.dumps(a) for a in unappliable.values()]
+    for text in stored:
+        root = _build()
+        root[look_build.LOOK_PROP] = text
+        root[look_build.SUMMARY_PROP] = root[look_build.CREDITS_PROP] = "old"
+        look_build.reapply(bpy.context.scene, root)   # nothing raises
+        assert _look_props(root) == [], text
+        root[look_build.LOOK_PROP] = text
+        assert _look_props(_build()) == [], text   # nor does a rebuild that carries it over
 
 
 def _exported_material_names():

@@ -135,9 +135,10 @@ def make_request(root, settings, cache_dir, *, selected=(), now=None):
 
 
 def apply(scene, root, answer, settings=None):
-    """Store a look.json answer on a context collection and dress its buildings; returns the summary."""
-    root[LOOK_PROP] = json.dumps(answer, ensure_ascii=False, separators=(",", ":"))
+    """Dress a context collection's buildings from a look.json answer and store it there; returns the
+    summary. An answer that can't be applied raises, and is not stored for a rebuild to carry over."""
     _dress(root, answer)
+    root[LOOK_PROP] = json.dumps(answer, ensure_ascii=False, separators=(",", ":"))
     if settings is not None:
         materials.set_street_look(look=settings.show_look, brightness=settings.look_brightness)
         set_show_detail(scene, settings.show_detail)
@@ -146,16 +147,18 @@ def apply(scene, root, answer, settings=None):
 
 def reapply(scene, root):
     """Dress a context collection again from its stored look, e.g. after a rebuild. A stored look that
-    can't be read is dropped."""
+    can't be read, validated or applied is dropped."""
     try:
         answer = json.loads(root.get(LOOK_PROP, ""))
-    except ValueError:
-        answer = None
-    if answer is None or ls.validate_answer(answer):
+        usable = answer is not None and not ls.validate_answer(answer)
+        if usable:
+            _dress(root, answer)
+    except (ValueError, TypeError, KeyError, AttributeError):   # a look that was damaged or edited by hand
+        usable = False
+    if not usable:
         for key in (LOOK_PROP, SUMMARY_PROP, CREDITS_PROP):
             root.pop(key, None)
         return
-    _dress(root, answer)
     settings = getattr(scene, "ghosttown", None)
     if settings is not None:
         materials.set_street_look(look=settings.show_look, brightness=settings.look_brightness)
