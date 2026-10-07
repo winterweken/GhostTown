@@ -808,3 +808,52 @@ def test_street_look_does_not_start_on_a_failed_validation_or_without_buildings(
     finally:
         _restore_env(ls.TOKEN_ENV, prior)
         ghosttown.unregister()
+
+
+def test_invoking_street_look_passes_the_token_environment_and_the_site_to_the_launch():
+    from types import SimpleNamespace
+
+    from ghosttown import prefs
+
+    prior = os.environ.get(ls.TOKEN_ENV)
+    ghosttown.register()
+    os.environ[ls.TOKEN_ENV] = "MLY|secret"
+    cache, calls = tempfile.mkdtemp(), []
+    real_refusal, real_cache_dir = ops.look_refusal, prefs.cache_dir
+    try:
+        root = _picked_site()
+        ops.look_refusal = lambda context, online=None: real_refusal(context, online=True)   # background says offline
+        prefs.cache_dir = lambda context: cache   # extension_path_user only works inside an installed extension
+        op = SimpleNamespace(report=lambda *a: None,
+                             _launch=lambda *a, **kw: calls.append((a, kw)) or {"RUNNING_MODAL"})
+        assert ops.GHOSTTOWN_OT_street_look.invoke(op, bpy.context, None) == {"RUNNING_MODAL"}
+        (args, kwargs), = calls
+        assert op.root_name == root.name == "Context · 320 Bay St"   # finished() finds the site again by this name
+        assert kwargs == {"env_extra": {ls.TOKEN_ENV: "MLY|secret"}}   # the token goes to the child's environment...
+        _context, fetcher_args, work_dir = args
+        assert fetcher_args[0] == "look" and os.path.dirname(fetcher_args[1]) == work_dir and work_dir.startswith(cache)
+        assert "secret" not in repr(fetcher_args)   # ...and nowhere in its arguments
+    finally:
+        ops.look_refusal, prefs.cache_dir = real_refusal, real_cache_dir
+        _restore_env(ls.TOKEN_ENV, prior)
+        ghosttown.unregister()
+
+
+def test_a_finished_look_that_cannot_be_applied_cancels_and_changes_nothing():
+    from types import SimpleNamespace
+
+    ghosttown.register()
+    try:
+        root = _picked_site()
+        folder, reports = tempfile.mkdtemp(), []
+        op = SimpleNamespace(root_name=root.name, report=lambda *a: reports.append(a))
+        for text, said in (("{not json", "Couldn't read look.json"), (json.dumps({"schema": 9}), "schema")):
+            path = os.path.join(folder, "look.json")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+            reports.clear()
+            assert ops.GHOSTTOWN_OT_street_look.finished(op, bpy.context, {"ok": True, "look": path}) == {"CANCELLED"}
+            assert len(reports) == 1 and reports[0][0] == {"ERROR"} and said in reports[0][1], text
+            assert look_build.LOOK_PROP not in root and look_build.SUMMARY_PROP not in root
+    finally:
+        ghosttown.unregister()
