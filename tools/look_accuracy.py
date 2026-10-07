@@ -31,7 +31,8 @@ RADIUS_M = 300.0
 
 
 def _buildings(lat, lon, cache, work):
-    req = rq.build(centre={"lat": lat, "lon": lon}, radius_m=RADIUS_M, layers=["buildings"], cache_dir=cache,
+    # With terrain, as the add-on fetches it: the buildings then stand on the same ground as the cameras in look.run.
+    req = rq.build(centre={"lat": lat, "lon": lon}, radius_m=RADIUS_M, layers=["buildings", "terrain"], cache_dir=cache,
                    out_dir=os.path.join(work, "run"))
     os.makedirs(req["out_dir"])
     path = os.path.join(req["out_dir"], "request.json")
@@ -78,6 +79,10 @@ def main():
     token = os.environ.get(ls.TOKEN_ENV, "").strip()
     if not token:
         sys.exit(f"Set {ls.TOKEN_ENV} first.")
+    if not (token.isascii() and token.isprintable() and not any(c.isspace() for c in token)):
+        # As in cli.py: a newline or control character in the header makes http.client raise a ValueError that quotes
+        # the whole header, and the traceback would print the token.
+        sys.exit(f"{ls.TOKEN_ENV} has characters a token can't have; check it.")
     cache = sys.argv[1] if len(sys.argv) > 1 else os.path.join(tempfile.mkdtemp(prefix="ghosttown-accuracy-"), "cache")
     names = sys.argv[2:] or list(SITES)
     print("| Site | Buildings | From photos | Photos | Building at the address | Choosing s | Reading s | Total s |")

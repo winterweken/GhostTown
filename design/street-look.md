@@ -338,21 +338,22 @@ Measured with the plan's code at 351 King St E (300 m, 87 buildings, 9,048 photo
 - Listing a 500 m radius with 8 parallel requests: about 30 s (3.5 min sequential in testing).
 
 Five sites with `tools/look_accuracy.py` on the finished code, 2026-10-07 (300 m radius, 150-photo budget, one pass
-each). The cache already held the City's massing model and most of 351 King St E's listings and photos; the other four
-sites each wrote 18–83 MB of new Mapillary cache during the run, which is in their totals. Choosing and reading are CPU
-work: 320 Bay St took 236 s instead of 305 s when run again with everything cached, with the same choosing and reading
-times. The building at the address is the one with a footprint corner nearest it; its zones are heights in metres
-above its lowest point, the last running to the roof.
+each), measured with the add-on's own buildings-plus-terrain fetch, so the buildings stand on the same ground as the
+cameras. The cache already held the City's massing model and the Mapillary listings and photos from earlier passes over
+the same sites, and each run wrote 1–11 MB of new Mapillary cache, so the totals are warm-cache totals; a first run at
+a new site adds the downloads, as above. Choosing and reading are CPU work, and 320 Bay St, the densest site, is the
+slow one: 167 s choosing photos, 239 s in all. The building at the address is the one with a footprint corner nearest
+it; its zones are heights in metres above its lowest point, the last running to the roof.
 
 | Site | Buildings | From photos | Photos | Building at the address | Choosing s | Reading s | Total s |
 |---|---|---|---|---|---|---|---|
-| 351 King St E | 87 | 76 | 115 | photos, 0.30: storefront 0–3 · opaque 3–66 · glass 66–75 · opaque 75– | 37 | 48 | 89 |
-| 320 Bay St | 56 | 55 | 133 | photos, 0.13: storefront 0–6 · opaque 6–186 · opaque 186–213 · opaque 213– | 168 | 65 | 305 |
-| 235 Queens Quay W | 29 | 24 | 42 | photos, 0.04: opaque 0–12 · cap 12– | 29 | 21 | 83 |
-| 2300 Yonge St | 204 | 54 | 81 | photos, 0.09: storefront 0–6 · opaque 6–45 · glass 45–60 · opaque 60– | 9 | 35 | 74 |
-| 300 Borough Dr | 13 | 9 | 14 | photos, 0.02: opaque 0–6 · opaque 6–15 · cap 15– | 3 | 7 | 33 |
+| 351 King St E | 87 | 78 | 113 | photos, 0.19: opaque 0–30 · opaque 30–42 · opaque 42–60 · opaque 60– | 37 | 46 | 86 |
+| 320 Bay St | 56 | 55 | 134 | photos, 0.14: opaque 0–18 · glass 18–156 · opaque 156–186 · opaque 186– | 167 | 66 | 239 |
+| 235 Queens Quay W | 29 | 24 | 47 | photos, 0.04: opaque 0–9 · opaque 9–15 · cap 15– | 29 | 22 | 55 |
+| 2300 Yonge St | 204 | 61 | 90 | photos, 0.09: glass 0–36 · opaque 36–51 · opaque 51–126 · cap 126– | 9 | 36 | 50 |
+| 300 Borough Dr | 13 | 9 | 16 | photos, 0.02: opaque 0–12 · opaque 12– | 3 | 7 | 12 |
 
-Peak memory (maximum resident set size) over the five runs: 1,831 MB, at 320 Bay St.
+Peak memory (maximum resident set size) over the five runs: 1,801 MB, at 320 Bay St.
 
 ## 11. Testing
 
