@@ -4,6 +4,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from ghosttown_fetch import cli
 from ghosttown_fetch import request as rq
 from ghosttown_fetch.net import SourceError
@@ -43,7 +45,7 @@ def _one_line(capsys):
 def test_selftest_reports_versions(capsys):
     assert cli.main(["selftest"]) == 0
     res = _one_line(capsys)
-    assert res["ok"] and res["shapely"].startswith("2.1") and res["geos"] and res["numpy"]
+    assert res["ok"] and res["shapely"].startswith("2.1") and res["geos"] and res["numpy"] and res["pillow"]
 
 
 def test_fetch_writes_context_progress_and_one_line(tmp_path, capsys):
@@ -103,3 +105,75 @@ def test_module_entry_point_prints_one_json_line():
                          env=env, capture_output=True, text=True, timeout=60)
     assert out.returncode == 0 and out.stderr == ""
     assert json.loads(out.stdout.strip())["ok"] is True
+
+
+def _look_req(tmp_path, data, **changes):
+    from look_samples import request
+
+    path = tmp_path / "look_request.json"
+    path.write_text(json.dumps(request(tmp_path, data, **changes)), encoding="utf-8")
+    return path
+
+
+def test_look_writes_look_json_and_one_line(tmp_path, capsys, monkeypatch):
+    from look_samples import fake_net, street
+
+    data = street()
+    monkeypatch.setenv("GHOSTTOWN_MAPILLARY_TOKEN", "MLY|secret")
+    code = cli.main(["look", str(_look_req(tmp_path, data))], net_factory=lambda cache_dir, fresh=False: fake_net(data))
+    res = _one_line(capsys)
+    assert code == 0 and res["ok"] and res["from_photos"] == 1 and res["guessed"] == 1 and res["years"] == [2024, 2024]
+    with open(res["look"], encoding="utf-8") as f:
+        assert json.load(f)["buildings"]["test:1"]["source"] == "photos"
+    assert (tmp_path / "run" / "progress.jsonl").is_file()
+
+
+def test_look_without_a_token_says_where_to_add_it(tmp_path, capsys, monkeypatch):
+    from look_samples import street
+
+    monkeypatch.delenv("GHOSTTOWN_MAPILLARY_TOKEN", raising=False)
+    assert cli.main(["look", str(_look_req(tmp_path, street()))]) == 1
+    assert "Mapillary token" in _one_line(capsys)["error"]
+
+
+def test_a_rejected_token_is_one_plain_sentence(tmp_path, capsys, monkeypatch):
+    from look_samples import fake_net, street
+
+    data = street()
+    monkeypatch.setenv("GHOSTTOWN_MAPILLARY_TOKEN", "MLY|secret")
+    code = cli.main(["look", str(_look_req(tmp_path, data))],
+                    net_factory=lambda cache_dir, fresh=False: fake_net(data, token_ok=False))
+    assert code == 1 and _one_line(capsys)["error"] == "Mapillary refused the token; check it in Preferences."
+    assert (tmp_path / "run" / "error.txt").is_file()
+
+
+def test_an_invalid_look_request_fails_with_an_error_file(tmp_path, capsys, monkeypatch):
+    from look_samples import street
+
+    monkeypatch.setenv("GHOSTTOWN_MAPILLARY_TOKEN", "MLY|secret")
+    path = _look_req(tmp_path, street(), budget_photos=1)
+    assert cli.main(["look", str(path)]) == 1
+    assert "budget_photos" in _one_line(capsys)["error"] and (tmp_path / "run" / "error.txt").is_file()
+
+
+@pytest.mark.parametrize("token", [
+    pytest.param("MLY|12\n34|ab", id="newline"),
+    pytest.param("MLY|12 34|ab", id="space"),
+    pytest.param("MLY|12\x7f34|ab", id="control"),
+    pytest.param("MLY|12\N{RIGHT SINGLE QUOTATION MARK}34|ab", id="non-ascii"),
+])
+def test_a_token_that_cannot_go_in_a_header_is_refused_and_never_echoed(tmp_path, capsys, monkeypatch, token):
+    from look_samples import street
+
+    # Left alone, a newline makes http.client raise a ValueError that quotes the header, and the answer copies it.
+    monkeypatch.setenv("GHOSTTOWN_MAPILLARY_TOKEN", token)
+    assert cli.main(["look", str(_look_req(tmp_path, street()))]) == 1
+    res = _one_line(capsys)
+    assert res["error"] == "The Mapillary token isn't valid; check it in Preferences."
+    run = tmp_path / "run"
+    assert (run / "error.txt").is_file()
+    written = [json.dumps(res)] + [p.read_text(encoding="utf-8") for p in run.rglob("*") if p.is_file()]
+    # The quoted newline comes out as \n or \\n, never raw, so the halves either side of it are what catch a leak.
+    for text in written:
+        for piece in ("MLY|12", "34|ab", "12\n34", "12\\n34"):
+            assert piece not in text

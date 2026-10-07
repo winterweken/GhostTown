@@ -1,4 +1,4 @@
-"""python -m ghosttown_fetch <selftest | fetch request.json>
+"""python -m ghosttown_fetch <selftest | fetch request.json | geocode cache_dir text | look look_request.json>
 
 stdout carries exactly one line of ASCII JSON and stderr stays empty, whatever happens.
 On failure the run folder (when the request names one) gets error.txt with the details.
@@ -13,7 +13,8 @@ import traceback
 
 from . import TOOL
 
-USAGE = "Usage: python -m ghosttown_fetch selftest | fetch <request.json> | geocode <cache_dir> <text>"
+USAGE = ("Usage: python -m ghosttown_fetch selftest | fetch <request.json> | geocode <cache_dir> <text> | "
+         "look <look_request.json>")
 
 
 def main(argv=None, *, net_factory=None):
@@ -34,12 +35,15 @@ def _dispatch(argv, net_factory):
         return fetch(argv[1], net_factory)
     if len(argv) == 3 and argv[0] == "geocode":
         return geocode(argv[1], argv[2], net_factory)
+    if len(argv) == 2 and argv[0] == "look":
+        return look(argv[1], net_factory)
     return {"ok": False, "error": USAGE}
 
 
 def selftest():
     try:
         import numpy
+        import PIL
         import shapely
     except ImportError as e:
         return {"ok": False, "error": f"A required library is missing ({e.name}); reinstall Ghost Town."}
@@ -47,7 +51,7 @@ def selftest():
     if (major, minor) < (2, 1):
         return {"ok": False, "error": f"shapely {shapely.__version__} is too old; Ghost Town needs 2.1 or later."}
     return {"ok": True, "tool": TOOL, "python": platform.python_version(), "numpy": numpy.__version__,
-            "shapely": shapely.__version__, "geos": shapely.geos_version_string}
+            "shapely": shapely.__version__, "geos": shapely.geos_version_string, "pillow": PIL.__version__}
 
 
 def fetch(path, net_factory):
@@ -114,3 +118,45 @@ def geocode(cache_dir, text, net_factory):
         return {"ok": True, "results": address.search(net, text)}
     except SourceError as e:
         return {"ok": False, "error": str(e)}
+
+
+def look(path, net_factory):
+    from . import look_schema as ls
+
+    doc, problems = ls.read_request(path)
+    out_dir = doc.get("out_dir") if isinstance(doc, dict) else None
+    if problems:
+        return _fail(out_dir, "The street look request isn't valid: " + problems[0], "\n".join(problems))
+    token = os.environ.get(ls.TOKEN_ENV, "").strip()
+    if not token:
+        return _fail(out_dir, "Add your Mapillary token in Ghost Town's preferences.", "No token in the environment.")
+    if not (token.isascii() and token.isprintable() and not any(c.isspace() for c in token)):
+        # A token is visible ASCII. A newline or control character in the header makes http.client raise a ValueError
+        # quoting the whole header, and the catch-all below would copy the token into the panel and error.txt.
+        return _fail(out_dir, "The Mapillary token isn't valid; check it in Preferences.",
+                     "The token has characters a token can't have.")
+    try:
+        from . import look as look_mod
+        from .cache import atomic_write
+        from .net import Net
+        from .sources.mapillary import TokenRejected
+    except ImportError as e:
+        return _fail(out_dir, f"A required library is missing ({e.name}); reinstall Ghost Town.", traceback.format_exc())
+
+    os.makedirs(out_dir, exist_ok=True)
+    net = (net_factory or Net)(doc["cache_dir"], fresh=doc["fetch_fresh"])
+    try:
+        answer = look_mod.run(doc, net, token, progress=_progress_writer(out_dir))
+    except (TokenRejected, look_mod.NothingListed) as e:
+        return _fail(out_dir, str(e), traceback.format_exc())
+    except Exception as e:
+        return _fail(out_dir, f"Street Look failed ({type(e).__name__}: {e}).", traceback.format_exc())
+    problems = ls.validate_answer(answer)
+    if problems:
+        return _fail(out_dir, "Street Look built an invalid answer: " + problems[0], "\n".join(problems))
+    target = os.path.join(out_dir, "look.json")
+    atomic_write(target, json.dumps(answer, ensure_ascii=True, separators=(",", ":")).encode("ascii"))
+    photos = sum(1 for e in answer["buildings"].values() if e["source"] == "photos")
+    return {"ok": True, "look": os.path.abspath(target), "from_photos": photos,
+            "guessed": len(answer["buildings"]) - photos, "photos_used": answer["photos_used"],
+            "years": answer["years"]}
