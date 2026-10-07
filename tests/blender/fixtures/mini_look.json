@@ -1,0 +1,30 @@
+{
+  "schema": 1, "tool": "ghosttown 0.3.0", "photos_used": 3, "years": [2019, 2025],
+  "buildings": {
+    "osm:way:1": {
+      "source": "photos", "photos": 3, "confidence": 0.7, "floor_h": 3.5,
+      "zones": [
+        {"h0": 0, "h1": 3, "kind": "storefront", "colour": [0.05, 0.05, 0.05]},
+        {"h0": 3, "h1": 12, "kind": "opaque", "colour": [0.3, 0.12, 0.08]},
+        {"h0": 12, "h1": null, "kind": "glass", "colour": [0.25, 0.4, 0.55]}
+      ],
+      "detail_walls": [
+        {"a": [0, 10], "b": [20, 10], "n": [0, -1], "z0": 0.0, "z1": 12.3},
+        {"a": [5, 15], "b": [15, 15], "n": [0, -1], "z0": 12.3, "z1": 60.3}
+      ]
+    },
+    "osm:way:2": {
+      "source": "guessed", "photos": 0, "confidence": 0.0, "floor_h": 3.5,
+      "zones": [
+        {"h0": 0, "h1": 4.5, "kind": "storefront", "colour": [0.32, 0.32, 0.31]},
+        {"h0": 4.5, "h1": null, "kind": "opaque", "colour": [0.42, 0.42, 0.40]}
+      ]
+    },
+    "osm:way:999": {
+      "source": "guessed", "photos": 0, "confidence": 0.0, "floor_h": 3.5,
+      "zones": [{"h0": 0, "h1": null, "kind": "opaque", "colour": [0.42, 0.42, 0.40]}]
+    }
+  },
+  "sources": [{"key": "mapillary", "name": "Mapillary", "credit": "Street photos © Mapillary contributors, CC BY-SA 4.0"}],
+  "notes": [{"level": "warn", "code": "mapillary_tiles", "text": "Some areas couldn't be searched."}]
+}
