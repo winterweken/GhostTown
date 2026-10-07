@@ -1,8 +1,9 @@
 import os
+import textwrap
 
 import bpy
 
-from . import georef, prefs, runner, site_use
+from . import georef, look_build, ops, prefs, runner, site_use
 
 ICON_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons", "ghosttown.png")
 _previews = None
@@ -164,3 +165,46 @@ class GHOSTTOWN_PT_site(bpy.types.Panel):
                 if heavy:
                     for line in HEAVY:
                         box.label(text=line)
+
+
+class GHOSTTOWN_PT_street_look(bpy.types.Panel):
+    bl_idname = "GHOSTTOWN_PT_street_look"
+    bl_label = "Street Look"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "Ghost Town"
+    bl_parent_id = "GHOSTTOWN_PT_site"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    def draw(self, context):
+        settings = context.scene.ghosttown
+        layout = self.layout
+        refusal = ops.look_refusal(context)
+        if refusal and refusal != ops.OFFLINE:   # the main panel already says when online access is off
+            col = layout.box().column(align=True)
+            for line in textwrap.wrap(refusal, max(20, context.region.width // 7)):
+                col.label(text=line)
+        col = layout.column()
+        col.prop(settings, "look_budget")
+        col.prop(settings, "look_not_before")
+        col.prop(settings, "look_detail")
+        col.prop(settings, "look_keep")
+        if "look" in runner.ACTIVE:
+            layout.label(text=runner.STATUS.get("look", "Working…"), icon="TIME")
+            layout.operator("ghosttown.cancel", icon="CANCEL")
+        else:
+            row = layout.row()
+            row.enabled = refusal is None
+            row.operator("ghosttown.street_look", icon="IMAGE_DATA")
+        if look_build.can_add_sky(context.scene):
+            layout.operator("ghosttown.add_sky", icon="WORLD")
+        col = layout.column()
+        col.prop(settings, "show_look")
+        col.prop(settings, "show_detail")
+        col.prop(settings, "look_brightness")
+        root = site_use.picked(context)
+        if root is not None and root.get(look_build.SUMMARY_PROP):
+            box = layout.box()
+            box.label(text=root[look_build.SUMMARY_PROP], icon="CHECKMARK")
+            for line in str(root.get(look_build.CREDITS_PROP, "")).splitlines():
+                box.label(text=line)

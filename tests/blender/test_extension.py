@@ -6,9 +6,10 @@ import tempfile
 import bpy
 
 import ghosttown
-from ghosttown import ops, runner
+from ghosttown import look_build, materials, ops, runner, scene_build
+from ghosttown.ghosttown_fetch import look_schema as ls
 from ghosttown.ghosttown_fetch import request as rq
-from helpers import FIXTURES, photo_doc
+from helpers import FIXTURES, load_fixture, photo_doc
 
 SLEEPER = [sys.executable, "-c", "import time; time.sleep(30)"]
 
@@ -475,4 +476,162 @@ def test_the_token_in_preferences_wins_over_the_environment_and_is_masked():
         _restore_env("GHOSTTOWN_MAPILLARY_TOKEN", prior)
         if entry is not None:
             bpy.context.preferences.addons.remove(entry)
+        ghosttown.unregister()
+
+
+LOOK = os.path.join(FIXTURES, "mini_look.json")
+CREDIT = "Street photos © Mapillary contributors, CC BY-SA 4.0"
+
+
+def _picked_site():
+    root = scene_build.build(bpy.context.scene, load_fixture("mini_context.json"))
+    bpy.context.scene.ghosttown.site = root
+    return root
+
+
+def test_street_look_registers_with_its_defaults():
+    from ghosttown import ui
+
+    ghosttown.register()
+    try:
+        assert hasattr(bpy.ops.ghosttown, "street_look") and hasattr(bpy.ops.ghosttown, "add_sky")
+        assert ui.GHOSTTOWN_PT_street_look.is_registered and ui.GHOSTTOWN_PT_street_look.bl_parent_id == "GHOSTTOWN_PT_site"
+        s = bpy.context.scene.ghosttown
+        assert (s.look_budget, s.look_not_before, s.look_detail, s.look_keep) == (150, 0, False, True)
+        assert (s.show_look, s.show_detail) == (True, True) and abs(s.look_brightness - 1.15) < 1e-6
+    finally:
+        ghosttown.unregister()
+
+
+def test_street_look_says_why_it_cannot_start():
+    prior = os.environ.get(ls.TOKEN_ENV)   # whatever the developer's shell exports, or None
+    ghosttown.register()
+    os.environ.pop(ls.TOKEN_ENV, None)
+    try:
+        assert ops.look_refusal(bpy.context, online=False) == ops.OFFLINE
+        assert ops.look_refusal(bpy.context, online=True) == ops.NO_TOKEN
+        os.environ[ls.TOKEN_ENV] = "MLY|abc"
+        assert ops.look_refusal(bpy.context, online=True) == ops.NO_SITE
+        _picked_site()
+        assert ops.look_refusal(bpy.context, online=True) is None
+    finally:
+        _restore_env(ls.TOKEN_ENV, prior)
+        ghosttown.unregister()
+
+
+def test_street_look_hands_the_token_over_in_the_environment_only():
+    prior = os.environ.get(ls.TOKEN_ENV)
+    ghosttown.register()
+    os.environ[ls.TOKEN_ENV] = "MLY|secret"
+    try:
+        _picked_site()
+        launch, problem = ops.look_launch(bpy.context, tempfile.mkdtemp(), online=True)
+        assert problem is None and launch["env"] == {ls.TOKEN_ENV: "MLY|secret"}
+        assert launch["args"][0] == "look" and launch["root"] == "Context · 320 Bay St"
+        with open(launch["args"][1], encoding="utf-8") as f:
+            req = json.load(f)
+        assert ls.validate_request(req) == [] and "secret" not in json.dumps(req)
+        assert not any("secret" in arg for arg in launch["args"])
+    finally:
+        _restore_env(ls.TOKEN_ENV, prior)
+        ghosttown.unregister()
+
+
+def test_street_look_needs_pillow_and_names_it_when_missing():
+    from types import SimpleNamespace
+
+    reports = []
+    op = SimpleNamespace(key="look", needs=ops.GHOSTTOWN_OT_street_look.needs, report=lambda *a: reports.append(a))
+    real = runner.ensure_wheels
+    runner.ensure_wheels = lambda wheels, refresh, package="shapely": package != "PIL"
+    try:
+        assert ops._FetcherOperator._launch(op, bpy.context, ["look", "x"], tempfile.mkdtemp()) == {"CANCELLED"}
+        assert reports == [({"ERROR"}, ops.MISSING_PILLOW)] and "look" not in runner.ACTIVE
+        assert ops.GHOSTTOWN_OT_build.needs == (("shapely", ops.MISSING_SHAPELY),)
+    finally:
+        runner.ensure_wheels = real
+
+
+def test_a_finished_look_is_reported_and_kept_on_the_site():
+    ghosttown.register()
+    try:
+        root = _picked_site()
+        reports = []
+        text = ops.apply_look(bpy.context, root, LOOK, lambda *a: reports.append(a))
+        assert text == root[look_build.SUMMARY_PROP] == "Look from photos: 1 building · guessed: 1 · 3 photos (2019–2025)"
+        assert root[look_build.CREDITS_PROP] == CREDIT and CREDIT in root["credits"]
+        assert ({"WARNING"}, "Some areas couldn't be searched.") in reports and ({"INFO"}, text) in reports
+    finally:
+        ghosttown.unregister()
+
+
+def test_a_broken_look_answer_changes_nothing():
+    ghosttown.register()
+    path = os.path.join(tempfile.mkdtemp(), "look.json")
+    with open(path, "w") as f:
+        json.dump({"schema": 9}, f)
+    try:
+        root = _picked_site()
+        reports = []
+        assert ops.apply_look(bpy.context, root, path, lambda *a: reports.append(a)) is None
+        assert "schema" in reports[0][1] and look_build.LOOK_PROP not in root and look_build.SUMMARY_PROP not in root
+    finally:
+        ghosttown.unregister()
+
+
+def test_the_switches_reach_the_materials_and_the_detail():
+    ghosttown.register()
+    try:
+        root = _picked_site()
+        ops.apply_look(bpy.context, root, LOOK, lambda *a: None)
+        s = bpy.context.scene.ghosttown
+        s.show_look, s.look_brightness, s.show_detail = False, 0.7, False
+        node = bpy.data.materials["Context - Building"].node_tree.nodes[materials.LOOK_NODE]
+        assert node.inputs["Look"].default_value == 0.0 and abs(node.inputs["Brightness"].default_value - 0.7) < 1e-6
+        detail = next(c for c in root.children if c.get("ctx_group") == "Detail")
+        assert detail.hide_viewport and detail.hide_render
+    finally:
+        ghosttown.unregister()
+
+
+def test_a_rebuild_keeps_or_drops_the_look_as_set():
+    ghosttown.register()
+    path = os.path.join(FIXTURES, "mini_context.json")
+    try:
+        bpy.ops.ghosttown.import_context(filepath=path)
+        ops.apply_look(bpy.context, bpy.data.collections["Context · 320 Bay St"], LOOK, lambda *a: None)
+        bpy.ops.ghosttown.import_context(filepath=path)
+        assert look_build.LOOK_PROP in bpy.data.collections["Context · 320 Bay St"]
+        bpy.context.scene.ghosttown.look_keep = False
+        bpy.ops.ghosttown.import_context(filepath=path)
+        assert look_build.LOOK_PROP not in bpy.data.collections["Context · 320 Bay St"]
+    finally:
+        ghosttown.unregister()
+
+
+def test_a_rebuild_dresses_a_fresh_material_with_the_switches_as_set():
+    ghosttown.register()
+    path = os.path.join(FIXTURES, "mini_context.json")
+    try:
+        bpy.ops.ghosttown.import_context(filepath=path)
+        ops.apply_look(bpy.context, bpy.data.collections["Context · 320 Bay St"], LOOK, lambda *a: None)
+        s = bpy.context.scene.ghosttown
+        s.show_look, s.look_brightness = False, 0.8
+        bpy.data.materials.remove(bpy.data.materials["Context - Building"])   # the rebuild makes it again, plain
+        bpy.ops.ghosttown.import_context(filepath=path)
+        node = bpy.data.materials["Context - Building"].node_tree.nodes[materials.LOOK_NODE]
+        assert node.inputs["Look"].default_value == 0.0 and abs(node.inputs["Brightness"].default_value - 0.8) < 1e-6
+    finally:
+        ghosttown.unregister()
+
+
+def test_cancel_stops_a_running_street_look_too():
+    ghosttown.register()
+    try:
+        run = runner.Run(["unused"], work_dir=tempfile.mkdtemp(), extra_paths=[], argv=SLEEPER)
+        runner.ACTIVE["look"] = run
+        assert bpy.ops.ghosttown.cancel() == {"FINISHED"}
+        assert run.proc.poll() is not None and "look" not in runner.ACTIVE
+    finally:
+        runner.cancel_all()
         ghosttown.unregister()
