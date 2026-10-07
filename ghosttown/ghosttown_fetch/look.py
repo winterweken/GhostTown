@@ -4,6 +4,8 @@ For each building: choose the photos that see its walls (selection), drop photos
 pose is wrong or the view is blocked, keep only pixels that are labelled building and that the model
 says show this building, calibrate each photo's exposure against its road, and read colour by height,
 glass and floor height (appearance). Buildings without a usable photo get the guessed look."""
+import functools
+
 import numpy as np
 
 from . import CREDITS, appearance, imagery, raycast, selection
@@ -21,10 +23,18 @@ GAIN_RANGE = (0.5, 2.0)
 DETAIL_PAD_M = 2.0
 MAX_SEARCH_M = 1000.0
 MIN_PIXELS = 30
+DECODED_PHOTOS = 8   # photos kept decoded at once; each is 36 MiB at 2048 x 1536, so never all of a site's photos
 
 
 class NothingListed(Exception):
     """No part of the site could be searched for photos."""
+
+
+def _decoder(jpegs):
+    """decoded(image id): a photo's pixels, held only while it is one of the DECODED_PHOTOS most recently used.
+    One cache per run, so nothing stays in memory once the run is over. Every building that uses a photo gets
+    the same array, so readers must not change it."""
+    return functools.lru_cache(maxsize=DECODED_PHOTOS)(lambda image_id: imagery.decode_linear(jpegs[image_id]))
 
 
 def run(request, net, token, *, progress=None):
@@ -67,6 +77,9 @@ def run(request, net, token, *, progress=None):
 
     progress("Reading facades", 65)
     by_id = {c.id: c for c in cameras}
+    decoded = _decoder(photos)
+    # {image id: (loader of its pixels, labels, road luminance)} for the photos that can be read. A photo is decoded
+    # here once, for its road, and dropped; the buildings that use it decode it again through the small cache.
     pictures = {}
     for i in wanted:
         if isinstance(photos[i], Exception) or isinstance(labels[i], Exception):
@@ -76,10 +89,14 @@ def run(request, net, token, *, progress=None):
         except (OSError, ValueError):
             continue
         lab = imagery.Labels(labels[i], by_id[i].height / by_id[i].width)
-        pictures[i] = (image, lab, imagery.road_luminance(image, lab))
-    if len(pictures) < len(wanted):
-        answer["notes"].append({"level": "info", "code": "mapillary_photos",
-                                "text": f"{len(wanted) - len(pictures)} photos couldn't be read and were skipped."})
+        road = imagery.road_luminance(image, lab)
+        del image
+        pictures[i] = (functools.partial(decoded, i), lab, road)
+    skipped = len(wanted) - len(pictures)
+    if skipped:
+        text = (f"{skipped} photo couldn't be read and was skipped." if skipped == 1
+                else f"{skipped} photos couldn't be read and were skipped.")
+        answer["notes"].append({"level": "info", "code": "mapillary_photos", "text": text})
     roads = [p[2] for p in pictures.values() if p[2]]
     reference = float(np.median(roads)) if roads else None
 
@@ -90,8 +107,9 @@ def run(request, net, token, *, progress=None):
         if bid in detail:
             entry["detail_walls"] = _detail_walls(b, samples, scene)
         answer["buildings"][bid] = entry
-    for b in request["buildings"]:   # buildings whose solids couldn't be read still get a look
-        answer["buildings"].setdefault(b["id"], appearance.default_look())
+    if not used:
+        answer["notes"].append({"level": "warn", "code": "mapillary_none",
+                                "text": "No usable street photos were found, so every building has the guessed look."})
 
     progress("Writing", 95)
     years = [by_id[i].year for i in used]
@@ -109,17 +127,19 @@ def _building(b, chosen, cameras, seen, samples, scene, pictures, reference, gri
         cam = cameras[ci]
         if cam.id not in pictures:
             continue
-        image, lab, road = pictures[cam.id]
+        load, lab, road = pictures[cam.id]
         idx, _ppm = seen[ci]
         mine = idx[samples.building[idx] == b]
         u, v, _ok = cam.project(samples.P[mine])
         kinds = lab.at(u, v)
-        if (np.isin(kinds, (imagery.SKY, imagery.GROUND)).mean() > DROP_SKY_GROUND
+        kinds = kinds[kinds != imagery.THIN]   # wires, poles and signs are masked below but not held against the photo
+        if (not len(kinds) or np.isin(kinds, (imagery.SKY, imagery.GROUND)).mean() > DROP_SKY_GROUND
                 or (kinds == imagery.BUILDING).mean() < MIN_BUILDING):
-            continue   # the pose is off (sky or ground where the wall should be) or the view is blocked
+            continue   # the pose is off (sky or ground on the wall), the view is blocked, or only wires are in view
         gain = float(np.clip(reference / road, *GAIN_RANGE)) if reference and road else 1.0
         if cam.id not in grids:
             grids[cam.id] = _owner_grid(cam, scene)
+        image = load()
         colours, heights, wall_ids = [], [], []
         for w in np.unique(samples.wall[mine]):
             got = _straighten(cam, int(w), b, scene, image, lab, grids[cam.id])

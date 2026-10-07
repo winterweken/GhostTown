@@ -1,12 +1,14 @@
 """A synthetic street for Street Look tests: one 30 m building, four cameras south of it, and the photos
 and labels Mapillary would send for them. The building has a dark storefront to 3 m, brick to 12 m and
-glass above that shows a different colour from each camera; dark floor lines run every 4 m."""
+glass above that shows a different colour from each camera; dark floor lines run every 4 m.
+street(occluded=True) puts a green block between the cameras and the building; over_wall() lays a label, and
+optionally paint, over the building's wall in some of the photos."""
 import functools
 import io
 import json
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from ghosttown_fetch import look_schema as ls
 from ghosttown_fetch import raycast
@@ -19,6 +21,10 @@ from mvt_samples import detection
 LAT0, LON0 = 51.5074, -0.1278   # outside Canada: flat ground and no terrain download
 TARGET = {"id": "test:1", "solids": [{"rings": [[[-10, -10], [10, -10], [10, 10], [-10, 10]]], "z0": 0.0, "z1": 30.0}]}
 FAR = {"id": "test:2", "solids": [{"rings": [[[300, 300], [310, 300], [310, 310], [300, 310]]], "z0": 0.0, "z1": 10.0}]}
+# street(occluded=True) adds a green 12 m block between the cameras and TARGET: it hides TARGET's lower floors
+OCCLUDER = {"id": "test:3", "solids": [{"rings": [[[-16, -22], [16, -22], [16, -16], [-16, -16]]],
+                                        "z0": 0.0, "z1": 12.0}]}
+GREEN = (0.05, 0.60, 0.05)   # the occluder's colour, and the only green in the street
 STOREFRONT, BRICK, GLASS = (0.03, 0.03, 0.035), (0.30, 0.12, 0.08), (0.25, 0.40, 0.55)
 SKY, ROAD = (0.55, 0.70, 0.90), (0.12, 0.12, 0.12)
 FLOOR_M = 4.0
@@ -63,25 +69,35 @@ def _render(cam, scene, exposure, factor):
     line = (h >= 3) & ((h / FLOOR_M) % 1.0 < 0.12)
     col[line] *= 0.35
     img[on] = col
+    img[owner == 1] = GREEN   # the occluder, in a scene that has one
     pixels = (_srgb(img * exposure).reshape(rows, PIXELS, 3) * 255).round().astype(np.uint8)
     buf = io.BytesIO()
     Image.fromarray(pixels).save(buf, "JPEG", quality=95)
     return buf.getvalue()
 
 
-def _labels(cam):
-    corners = np.array([[x, y, z] for x in (-10, 10) for y in (-10, 10) for z in (0.0, 30.0)])
+def _house(cam, building):
+    """The label Mapillary draws for a one-box building: the hull of its corners as `cam` sees them."""
+    solid = building["solids"][0]
+    xs, ys = zip(*solid["rings"][0])
+    corners = np.array([[x, y, z] for x in (min(xs), max(xs)) for y in (min(ys), max(ys))
+                        for z in (solid["z0"], solid["z1"])])
     u, v, ok = cam.project(corners)
-    house = _hull(np.column_stack([np.clip(u[ok], 0, 1), np.clip(v[ok], 0, 1)]))
-    return [detection("nature--sky", [(0, 0), (1, 0), (1, 0.5), (0, 0.5)]),
-            detection("construction--flat--road", [(0, 0.5), (1, 0.5), (1, 1), (0, 1)]),
-            detection("construction--structure--building", house)]
+    return detection("construction--structure--building",
+                     _hull(np.column_stack([np.clip(u[ok], 0, 1), np.clip(v[ok], 0, 1)])))
+
+
+def _labels(cam, blocks):
+    return ([detection("nature--sky", [(0, 0), (1, 0), (1, 0.5), (0, 0.5)]),
+             detection("construction--flat--road", [(0, 0.5), (1, 0.5), (1, 1), (0, 1)])]
+            + [_house(cam, b) for b in blocks])
 
 
 @functools.lru_cache(maxsize=None)
-def _street():
+def _street(occluded):
     frame = Frame(LAT0, LON0)
-    scene = raycast.Scene([TARGET])
+    blocks = [TARGET, OCCLUDER] if occluded else [TARGET]
+    scene = raycast.Scene(blocks)
     cams, records, labels, photos = [], [], {}, {}
     for i, ((x, y), exposure, factor) in enumerate(zip(SPOTS, EXPOSURES, GLASS_FACTORS)):
         heading = float(np.degrees(np.arctan2(-x, -y)))   # towards the building's centre
@@ -91,16 +107,39 @@ def _street():
                         "computed_geometry": {"type": "Point", "coordinates": [lon, lat]},
                         "computed_rotation": rotation_vector(cam.R), "camera_parameters": [cam.focal, 0.0, 0.0],
                         "width": cam.width, "height": cam.height, "sequence": "seq1"})
-        labels[cam.id] = _labels(cam)
+        labels[cam.id] = _labels(cam, blocks)
         photos[cam.id] = _render(cam, scene, exposure, np.array(factor, dtype=float))
         cams.append(cam)
     return cams, records, labels, photos
 
 
-def street(detail=False):
-    cams, records, labels, photos = _street()
-    return {"buildings": [dict(TARGET, detail=detail), dict(FAR)], "cameras": cams, "records": records,
-            "labels": labels, "photos": photos}
+def street(detail=False, occluded=False):
+    cams, records, labels, photos = _street(occluded)
+    buildings = [dict(TARGET, detail=detail), dict(FAR)] + ([dict(OCCLUDER)] if occluded else [])
+    return {"buildings": buildings, "cameras": cams, "records": records, "labels": labels, "photos": photos}
+
+
+def _painted(jpeg, polygon, rgb):
+    im = Image.open(io.BytesIO(jpeg)).convert("RGB")
+    fill = tuple(int(c) for c in (_srgb(np.array(rgb)) * 255).round())
+    ImageDraw.Draw(im).polygon([(u * im.width, v * im.height) for u, v in polygon], fill=fill)
+    buf = io.BytesIO()
+    im.save(buf, "JPEG", quality=95)
+    return buf.getvalue()
+
+
+def over_wall(data, ids, value, z0=0.0, z1=30.0, paint=None):
+    """`data` with a label `value` laid over TARGET's street-facing wall between heights z0 and z1, in the photos
+    `ids` (a car, a pole, a patch of sky). With `paint` (linear RGB) the patch is also drawn into those photos."""
+    labels, photos = dict(data["labels"]), dict(data["photos"])
+    for cam in data["cameras"]:
+        if cam.id in ids:
+            u, v, _ok = cam.project(np.array([[x, -10.0, z] for z in (z0, z1) for x in (-10.0, 10.0)]))
+            patch = _hull(np.column_stack([np.clip(u, 0, 1), np.clip(v, 0, 1)]))
+            labels[cam.id] = labels[cam.id] + [detection(value, patch)]
+            if paint is not None:
+                photos[cam.id] = _painted(photos[cam.id], patch, paint)
+    return dict(data, labels=labels, photos=photos)
 
 
 def fake_net(data, token_ok=True):
