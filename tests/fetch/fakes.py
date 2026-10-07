@@ -11,11 +11,13 @@ class FakeNet:
         self.calls = []
         self.keeps = []
         self.timeouts = []
+        self.headers = []
 
-    def get(self, url, *, source, data=None, check=None, timeout=120, keep=True):
+    def get(self, url, *, source, data=None, check=None, timeout=120, keep=True, headers=None, key=None):
         self.calls.append((url, source, data))
         self.keeps.append(keep)
         self.timeouts.append(timeout)
+        self.headers.append(dict(headers or {}))
         answer = self.answers[source]
         if callable(answer):
             answer = answer(url, data)
@@ -24,6 +26,9 @@ class FakeNet:
         if check is not None:
             check(answer)
         return answer
+
+    def cached(self, source, key, check=None):
+        return None
 
 
 class Transport:

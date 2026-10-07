@@ -129,3 +129,39 @@ def test_an_answer_cut_off_twice_says_so_in_plain_words(tmp_path):
     with pytest.raises(SourceError) as e:
         Net(str(tmp_path), transport=Transport(cut, cut), sleep=lambda s: None).get(URL, source="nrcan")
     assert str(e.value) == "Natural Resources Canada sent an answer that was cut off; try again in a minute."
+
+
+def test_headers_are_sent_but_not_part_of_the_cache_key(tmp_path):
+    t = Transport((200, b"ok"))
+    net = Net(str(tmp_path), transport=t)
+    assert net.get(URL, source="osm", headers={"Authorization": "OAuth secret"}) == b"ok"
+    assert t.calls[0][2]["Authorization"] == "OAuth secret" and t.calls[0][2]["User-Agent"] == USER_AGENT
+    assert net.get(URL, source="osm", headers={"Authorization": "OAuth other"}) == b"ok"
+    assert len(t.calls) == 1
+    for entry in (tmp_path / "osm").iterdir():
+        assert "secret" not in entry.name and b"secret" not in entry.read_bytes()
+
+
+def test_a_key_replaces_the_url_as_cache_key(tmp_path):
+    t = Transport((200, b"img"))
+    net = Net(str(tmp_path), transport=t)
+    assert net.get("https://cdn.example/a?sig=1", source="osm", key="photo:7") == b"img"
+    assert net.get("https://cdn.example/a?sig=2", source="osm", key="photo:7") == b"img"
+    assert len(t.calls) == 1
+
+
+def test_cached_reads_a_stored_answer_by_key(tmp_path):
+    net = Net(str(tmp_path), transport=Transport((200, b"img")))
+    assert net.cached("osm", "photo:7") is None
+    net.get("https://cdn.example/a?sig=1", source="osm", key="photo:7")
+    assert net.cached("osm", "photo:7") == b"img"
+    assert Net(str(tmp_path), fresh=True, transport=Transport()).cached("osm", "photo:7") is None
+
+
+def test_source_errors_carry_the_http_status(tmp_path):
+    with pytest.raises(SourceError) as e:
+        Net(str(tmp_path), transport=Transport((401, b"")), sleep=lambda s: None).get(URL, source="osm")
+    assert e.value.status == 401
+    with pytest.raises(SourceError) as e:
+        Net(str(tmp_path), transport=Transport(OSError("x"), OSError("x")), sleep=lambda s: None).get(URL, source="osm")
+    assert e.value.status is None

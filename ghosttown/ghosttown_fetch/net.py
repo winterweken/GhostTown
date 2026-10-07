@@ -16,7 +16,12 @@ RETRY_WAIT_S = 30
 
 
 class SourceError(Exception):
-    """A source couldn't be fetched or read. The message is one plain sentence."""
+    """A source couldn't be fetched or read. The message is one plain sentence; `status` is the last HTTP
+    status when a server answered, else None."""
+
+    def __init__(self, message, status=None):
+        super().__init__(message)
+        self.status = status
 
 
 class Unreadable(SourceError):
@@ -51,26 +56,30 @@ class Net:
         self.transport = transport or urllib_transport
         self.sleep = sleep
 
-    def get(self, url, *, source, data=None, check=None, timeout=120, keep=True):
+    def get(self, url, *, source, data=None, check=None, timeout=120, keep=True, headers=None, key=None):
         """The answer's bytes. keep=False is for one-off downloads, like the City's 81 MB massing model,
-        that skip the response cache because their caller keeps its own copy."""
-        key = url if data is None else url + "\n" + data.decode("utf-8", "replace")
+        that skip the response cache because their caller keeps its own copy, and for answers that go
+        stale, like signed links. `headers` are sent but never part of the cache key. `key` replaces the
+        URL as the cache key, for answers whose URL changes (signed links)."""
+        if key is None:
+            key = url if data is None else url + "\n" + data.decode("utf-8", "replace")
         if keep and not self.fresh:
             body = self.cache.read(source, key)
             if body is not None and _still_good(body, check):
                 return body
         name = SOURCE_NAMES.get(source, source)
-        problem = f"{name} couldn't be reached"
+        problem, status = f"{name} couldn't be reached", None
+        send = {"User-Agent": USER_AGENT, **(headers or {})}
         for attempt in range(RETRIES + 1):
             if attempt:
                 self.sleep(RETRY_WAIT_S)
             try:
-                status, body = self.transport(url, data, {"User-Agent": USER_AGENT}, timeout)
+                status, body = self.transport(url, data, send, timeout)
             except http.client.IncompleteRead:
-                problem = f"{name} sent an answer that was cut off"
+                problem, status = f"{name} sent an answer that was cut off", None
                 continue
             except (OSError, http.client.HTTPException) as e:
-                problem = f"{name} couldn't be reached ({e})"
+                problem, status = f"{name} couldn't be reached ({e})", None
                 continue
             if status == 200:
                 if check is not None:
@@ -86,4 +95,11 @@ class Net:
             problem = f"{name} answered HTTP {status}"
             if status != 429 and status < 500:
                 break
-        raise SourceError(problem + "; try again in a minute.")
+        raise SourceError(problem + "; try again in a minute.", status=status)
+
+    def cached(self, source, key, check=None):
+        """A stored answer by cache key, or None (also when fresh, expired or failing its check)."""
+        if self.fresh:
+            return None
+        body = self.cache.read(source, key)
+        return body if body is not None and _still_good(body, check) else None
