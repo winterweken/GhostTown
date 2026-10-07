@@ -1,9 +1,12 @@
-"""Street Look on a recorded street: 351 King St E, its buildings within 60 m and six Mapillary photos with
-their labels (tools/record_look_fixture.py). Real photos catch what the synthetic street can't."""
+"""Street Look on a recorded street: 351 King St E, the buildings with a corner within 60 m of it and six Mapillary
+photos with their labels (tools/record_look_fixture.py). Real photos catch what the synthetic street can't.
+The tower has no measured floor height (its floor_h is the 3.5 m fallback) and no glass zone (it has two views), so a
+re-recording that gains them is not a regression."""
 import base64
 import gzip
 import json
 import os
+import urllib.parse
 
 import pytest
 
@@ -21,9 +24,18 @@ def _lum(zone):
 
 
 def _net(data):
+    # Listings are answered by position, not by tile URL, so retuning the search margin or the tile size still finds
+    # the recorded photos.
+    images = list({str(im["id"]): im for listing in data["listings"].values() for im in listing}.values())
+
     def answer(url, _data):
         if "/images?" in url:
-            return json.dumps({"data": data["listings"].get(url, [])}).encode()
+            query = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+            west, south, east, north = (float(v) for v in query["bbox"][0].split(","))
+            inside = [im for im in images
+                      if west <= im["computed_geometry"]["coordinates"][0] <= east
+                      and south <= im["computed_geometry"]["coordinates"][1] <= north]
+            return json.dumps({"data": inside}).encode()
         if "?fields=thumb_2048_url" in url:
             image_id = url.split("/")[-1].split("?")[0]
             return json.dumps({"id": image_id, "thumb_2048_url": f"https://photos.test/{image_id}.jpg"}).encode()
@@ -46,6 +58,7 @@ def recorded():
 
 def test_the_recorded_street_gives_the_tower_its_dark_shopfronts(recorded, monkeypatch, tmp_path):
     req, data = recorded
+    assert ls.validate_request(req) == []
     monkeypatch.setattr(terrain, "load", lambda net, frame, radius_m: (terrain.FlatTerrain(), None))
     answer = look.run(dict(req, cache_dir=str(tmp_path), out_dir=str(tmp_path / "run")), _net(data), "MLY|test")
     assert ls.validate_answer(answer) == []

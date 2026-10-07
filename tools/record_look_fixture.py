@@ -2,9 +2,12 @@
 
     GHOSTTOWN_MAPILLARY_TOKEN=... uv run python tools/record_look_fixture.py [cache folder]
 
-Builds the City's massing around 351 King St E, keeps the buildings within 60 m, runs Street Look on them with a
-budget of 6 photos on flat ground, and writes tests/fetch/fixtures/kingst/: look_request.json, and
-mapillary.json.gz with the listings cut down to the photos used, those photos at 512 px and their labels.
+Builds the City's massing around 351 King St E, keeps the buildings that have a corner within 60 m (whole buildings,
+so some reach farther), runs Street Look on them with a budget of 6 photos on flat ground, and writes
+tests/fetch/fixtures/kingst/: look_request.json, and mapillary.json.gz with the listings cut down to the photos
+downloaded, those photos at 512 px and their labels. The saved request carries the smallest valid budget, because
+the validator rejects less, while the recording downloads only BUDGET photos; the replay can only choose among the
+recorded ones.
 Pass a cache folder to reuse one that already holds the massing model (an 81 MB download).
 Street photos © Mapillary contributors, CC BY-SA 4.0.
 """
@@ -79,10 +82,10 @@ def main():
     buildings = [{"id": el["id"], "solids": [{k: s[k] for k in ("rings", "z0", "z1")} for s in el["solids"]]}
                  for el in doc["elements"] if el["solids"] and _near(el)]
     look_req = ls.build_request(centre=CENTRE, radius_m=KEEP_M, buildings=buildings, cache_dir="unused",
-                                out_dir="unused", budget_photos=BUDGET)
+                                out_dir="unused", budget_photos=max(BUDGET, ls.BUDGET_RANGE[0]))
     terrain.load = lambda net, frame, radius_m: (terrain.FlatTerrain(), None)   # as in the test
     net = Recorder(Net(cache))
-    answer = look.run(look_req, net, token)
+    answer = look.run(dict(look_req, budget_photos=BUDGET), net, token)
 
     photos = {key.split(":")[1]: body for key, body in net.answers.items() if key.startswith("photo:")}
     labels = {url.split("/")[-2]: json.loads(body)["data"] for url, body in net.answers.items() if "/detections" in url}

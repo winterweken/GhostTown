@@ -16,7 +16,7 @@ Recorded with `uv run python tools/record_fixtures.py`. Answers are gzipped exac
   (`ws.geoservices.lrc.gov.on.ca`, ImageServer `exportImage`, a ±40 m box at 0.5 m around 320 Bay St),
   recorded by `tools/record_lidar_fixture.py`; `lake_none.tif` is the service's empty answer out in Lake
   Ontario. Contains information licensed under the Open Government Licence – Ontario.
-- `kingst/look_request.json`, `kingst/mapillary.json.gz`: the City of Toronto's massing within 60 m of 351 King
-  St E and six Mapillary street photos (512 px) with their labels, recorded by `tools/record_look_fixture.py`.
-  Contains information licensed under the Open Government Licence – Toronto. Street photos © Mapillary
-  contributors, CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/
+- `kingst/look_request.json`, `kingst/mapillary.json.gz`: the City of Toronto's massing of every building with a
+  corner within 60 m of 351 King St E, and six Mapillary street photos (512 px) with their labels, recorded by
+  `tools/record_look_fixture.py`. Contains information licensed under the Open Government Licence – Toronto.
+  Street photos © Mapillary contributors, CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/
