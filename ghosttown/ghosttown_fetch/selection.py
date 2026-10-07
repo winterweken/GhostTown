@@ -136,43 +136,55 @@ def priority(scene, detail_ids):
     return sorted(dist, key=lambda b: (scene.ids[b] not in detail_ids, dist[b]))
 
 
+def _usable(samples, idx, ppm, building=None):
+    """Mask over one photo's seen points (sample indices idx, sharpness ppm): sharp enough to use, and on
+    `building` when one is named."""
+    ok = ppm >= USABLE_PPM
+    return ok if building is None else ok & (samples.building[idx] == building)
+
+
 def choose(cameras, seen, samples, *, budget, order):
-    """{building index: [camera indices]}: up to PER_BUILDING photos per building, buildings in `order`,
-    each pick the photo adding the most wall area x sharpness x recency (points already covered count
-    half as much each time). A new photo costs one from the budget; photos already chosen are free, so
-    once the budget is spent later buildings can still use them."""
+    """{building index: [camera indices, in the order picked]}: each building in `order` gets up to PER_BUILDING.
+
+    Pass one gives every building that has a usable photo its best one, whatever the budget: spec 6.4 never
+    drops a building's only usable photo for budget. look.run serves at most `budget` buildings, so these first
+    photos stay within the budget. Pass two, in `order` again, adds more photos to each building while the budget
+    lasts: a photo nobody has chosen yet costs one from it, a photo already chosen is free.
+
+    Each pick is the photo adding the most wall area x sharpness (capped at PPM_CAP) x recency. Points already
+    covered count half as much each time, and a photo already chosen counts FREE_BONUS times as much."""
     by_building = {}
     for ci, (idx, ppm) in seen.items():
-        usable = idx[ppm >= USABLE_PPM]
-        for b in np.unique(samples.building[usable]):
+        for b in np.unique(samples.building[idx[_usable(samples, idx, ppm)]]):
             by_building.setdefault(int(b), []).append(ci)
     chosen, picks = set(), {}
+    times = np.zeros(len(samples))   # how many picked photos cover each point; a point has one owner building
+
+    def pick(b, may_add_new):
+        """Add building b's best photo not yet picked for it (a new photo only if may_add_new); False if none."""
+        best, best_gain = None, 0.0
+        for ci in by_building.get(b, ()):
+            if ci in picks.get(b, ()) or not (may_add_new or ci in chosen):
+                continue
+            idx, ppm = seen[ci]
+            mine = _usable(samples, idx, ppm, b)
+            k = idx[mine]
+            gain = float((samples.area[k] * np.minimum(ppm[mine], PPM_CAP) / PPM_CAP * 0.5 ** times[k]).sum())
+            gain *= recency(cameras[ci].year) * (FREE_BONUS if ci in chosen else 1.0)
+            if gain > best_gain:
+                best, best_gain = ci, gain
+        if best is None:
+            return False
+        idx, ppm = seen[best]
+        times[idx[_usable(samples, idx, ppm, b)]] += 1
+        chosen.add(best)
+        picks.setdefault(b, []).append(best)
+        return True
+
     for b in order:
-        candidates = by_building.get(b)
-        if not candidates:
-            continue
-        times = np.zeros(len(samples))
-        picked = []
-        for _ in range(PER_BUILDING):
-            best, best_gain = None, 0.0
-            for ci in candidates:
-                if ci in picked or (ci not in chosen and len(chosen) >= budget):
-                    continue
-                idx, ppm = seen[ci]
-                mine = (samples.building[idx] == b) & (ppm >= USABLE_PPM)
-                if not mine.any():
-                    continue
-                k = idx[mine]
-                gain = float((samples.area[k] * np.minimum(ppm[mine], PPM_CAP) / PPM_CAP * 0.5 ** times[k]).sum())
-                gain *= recency(cameras[ci].year) * (FREE_BONUS if ci in chosen else 1.0)
-                if gain > best_gain:
-                    best, best_gain = ci, gain
-            if best is None:
+        pick(b, True)
+    for b in order:
+        while len(picks.get(b, ())) < PER_BUILDING:
+            if not pick(b, len(chosen) < budget):
                 break
-            picked.append(best)
-            chosen.add(best)
-            idx, ppm = seen[best]
-            times[idx[(samples.building[idx] == b) & (ppm >= USABLE_PPM)]] += 1
-        if picked:
-            picks[b] = picked
     return picks
