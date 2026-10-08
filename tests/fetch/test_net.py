@@ -143,8 +143,8 @@ def test_headers_are_sent_but_not_part_of_the_cache_key(tmp_path):
     assert t.calls[0][2]["Authorization"] == "OAuth secret" and t.calls[0][2]["User-Agent"] == USER_AGENT
     assert net.get(URL, source="osm", headers={"Authorization": "OAuth other"}) == b"ok"
     assert len(t.calls) == 1
-    for entry in (tmp_path / "osm").iterdir():
-        assert "secret" not in entry.name and b"secret" not in entry.read_bytes()
+    for entry in (tmp_path / "osm").iterdir():   # names are hashes of the key; the body is what could leak
+        assert b"secret" not in entry.read_bytes()
 
 
 def test_a_key_replaces_the_url_as_cache_key(tmp_path):

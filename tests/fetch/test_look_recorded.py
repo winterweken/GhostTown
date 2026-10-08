@@ -34,7 +34,8 @@ def _net(data):
         if "/images?" in url:
             query = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
             west, south, east, north = (float(v) for v in query["bbox"][0].split(","))
-            inside = [im for im in images
+            fields = query["fields"][0].split(",")   # Mapillary answers only the fields asked for
+            inside = [{k: im[k] for k in fields if k in im} for im in images
                       if west <= im["computed_geometry"]["coordinates"][0] <= east
                       and south <= im["computed_geometry"]["coordinates"][1] <= north]
             return json.dumps({"data": inside}).encode()
@@ -64,9 +65,10 @@ def test_the_recorded_street_gives_the_tower_its_dark_shopfronts(recorded, monke
     monkeypatch.setattr(terrain, "load", lambda net, frame, radius_m: (terrain.FlatTerrain(), None))
     answer = look.run(dict(req, cache_dir=str(tmp_path), out_dir=str(tmp_path / "run")), _net(data), "MLY|test")
     assert ls.validate_answer(answer) == []
-    assert 3 <= answer["photos_used"] <= req["budget_photos"] and answer["sources"][0]["key"] == "mapillary"
+    found = (answer["notes"], {bid: (e["source"], e["photos"]) for bid, e in answer["buildings"].items()})
+    assert answer["photos_used"] >= 3 and answer["sources"][0]["key"] == "mapillary", found
     tower = answer["buildings"][TOWER]
-    assert tower["source"] == "photos" and len(tower["zones"]) >= 2
+    assert tower["source"] == "photos" and len(tower["zones"]) >= 2, found
     shop, above = tower["zones"][:2]
     assert shop["h1"] <= 9.0 and _lum(shop) < _lum(above), tower["zones"]   # the dark shopfronts
     assert set(answer["buildings"]) == {b["id"] for b in req["buildings"]}

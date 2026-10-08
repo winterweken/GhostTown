@@ -126,6 +126,13 @@ def test_photos_are_cached_by_image_id_and_signed_links_are_not_stored(tmp_path)
     assert net.cached("mapillary", "photo:77:2048") == JPEG  # cache key does not include token
 
 
+def test_a_damaged_stored_photo_is_not_served(tmp_path):
+    net = Net(str(tmp_path), transport=Transport({}))
+    net.cache.write("mapillary", "photo:7:2048", b"<html>" + b"x" * 200)   # not a JPEG
+    assert net.cached("mapillary", "photo:7:2048") is not None
+    assert net.cached("mapillary", "photo:7:2048", check=m.check_jpeg) is None
+
+
 def test_detections_keep_only_usable_entries():
     body = json.dumps({"data": [{"value": "nature--sky", "geometry": "AAAA"}, {"value": "x"}]}).encode()
     net = FakeNet({"mapillary": router({"/detections": body})})

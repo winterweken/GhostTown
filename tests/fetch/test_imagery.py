@@ -50,6 +50,11 @@ def test_broken_label_geometry_is_skipped():
     assert lab.at(np.array([0.5]), np.array([0.5]))[0] == imagery.BUILDING
 
 
+def test_a_label_without_a_text_value_is_skipped():
+    lab = imagery.Labels([dict(SKY, value=None), HOUSE], aspect=0.75)
+    assert lab.at(np.array([0.5, 0.1]), np.array([0.5, 0.1])).tolist() == [imagery.BUILDING, imagery.UNKNOWN]
+
+
 def test_road_luminance_needs_enough_road():
     img = np.full((384, 512, 3), 0.1, dtype=np.float32)
     assert abs(imagery.road_luminance(img, imagery.Labels([ROAD, HOUSE], aspect=0.75)) - 0.1) < 1e-6

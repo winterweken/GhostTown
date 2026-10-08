@@ -1,3 +1,4 @@
+import copy
 import gc
 import json
 import warnings
@@ -6,6 +7,7 @@ import weakref
 import numpy as np
 import pytest
 
+from ghosttown_fetch import camera as camera_mod
 from ghosttown_fetch import imagery, look, raycast, terrain
 from ghosttown_fetch import look_schema as ls
 from ghosttown_fetch.net import SourceError
@@ -69,7 +71,7 @@ def test_credits_years_and_the_token_stays_in_headers(tmp_path):
     assert answer["photos_used"] >= 3 and answer["years"] == [2024, 2024]
     assert answer["sources"] == [{"key": "mapillary", "name": "Mapillary",
                                   "credit": "Street photos © Mapillary contributors, CC BY-SA 4.0"}]
-    assert all(TOKEN not in url for url, _source, _data in net.calls)
+    assert all(TOKEN not in url and "MLY%7C" not in url for url, _source, _data in net.calls)   # nor URL-encoded
     # every call to Mapillary's API carries the token as a header, and nothing else does (the photo links are signed)
     api = [url for url, _source, _data in net.calls if url.startswith("https://graph.mapillary.com/")]
     assert api and net.headers.count({"Authorization": "OAuth " + TOKEN}) == len(api)
@@ -503,3 +505,40 @@ def test_a_throttled_label_request_is_asked_again_then_skipped_without_its_text(
     assert _label_requests(net).count("93") == 2
     assert _note(answer, "mapillary_photos") == "1 photo couldn't be read and was skipped."
     assert "request limit" not in json.dumps(answer)
+
+
+def test_a_street_on_higher_ground_reads_the_same(tmp_path, monkeypatch):
+    # The whole street 5 m higher, buildings and cameras alike: heights are measured from each building's lowest point,
+    # so neither the zones nor the detail spans move.
+    data = street(detail=True)
+    flat = look.run(request(tmp_path / "a", data), fake_net(data), TOKEN)
+    raised = copy.deepcopy(data["buildings"])
+    for b in raised:
+        for solid in b["solids"]:
+            solid["z0"] += 5.0
+            solid["z1"] += 5.0
+    monkeypatch.setattr(camera_mod, "MOUNT_M", camera_mod.MOUNT_M + 5.0)
+    up = look.run(request(tmp_path / "b", data, buildings=raised), fake_net(data), TOKEN)
+    for bid, entry in flat["buildings"].items():
+        assert _zones(up, bid) == _zones(flat, bid), bid
+        assert up["buildings"][bid].get("detail_walls") == entry.get("detail_walls"), bid
+
+
+def _opaque(answer):
+    return np.array(next(z["colour"] for z in answer["buildings"]["test:1"]["zones"] if z["kind"] == "opaque"))
+
+
+def test_gain_is_against_the_median_road_and_clamped(tmp_path, monkeypatch):
+    # Photos 92 and 93 read their road at a fifth: the median road falls to 0.6, their gains of 3 and 5 are held to 2,
+    # so the brick comes out at 0.9 of the plain run's (1.1 against the brightest road, 1.8 without the clamp).
+    data = street()
+    plain = _opaque(look.run(request(tmp_path / "a", data), fake_net(data), TOKEN))
+    real, calls = imagery.road_luminance, []
+
+    def dim(image, lab):
+        calls.append(None)
+        return real(image, lab) * (0.2 if len(calls) in (3, 4) else 1.0)   # the roads are read in id order
+
+    monkeypatch.setattr(look.imagery, "road_luminance", dim)
+    dimmed = _opaque(look.run(request(tmp_path / "b", data), fake_net(data), TOKEN))
+    assert np.allclose(dimmed, 0.9 * plain, rtol=0.05), dimmed / plain

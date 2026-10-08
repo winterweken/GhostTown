@@ -5,9 +5,11 @@ street(occluded=True) puts a green block between the cameras and the building; s
 photos that choose leaves out, for a building to replace a lost photo with; street(slope=k) stands the street on
 ground rising k metres per metre north; over_wall() lays a label, and optionally paint, over the building's wall
 in some of the photos."""
+import copy
 import functools
 import io
 import json
+import urllib.parse
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -142,8 +144,8 @@ def _shot(i, occluded, slope):
 
 def street(detail=False, occluded=False, extra=0, slope=0.0):
     shots = [_shot(i, occluded, slope) for i in range(len(SPOTS) + extra)]
-    cams, records = [s[0] for s in shots], [s[1] for s in shots]
-    labels, photos = {s[0].id: s[2] for s in shots}, {s[0].id: s[3] for s in shots}
+    cams, records = [s[0] for s in shots], copy.deepcopy([s[1] for s in shots])   # a test may change its own copy
+    labels, photos = copy.deepcopy({s[0].id: s[2] for s in shots}), {s[0].id: s[3] for s in shots}
     buildings = [dict(_raised(TARGET, slope), detail=detail), _raised(FAR, slope)]
     buildings += [dict(OCCLUDER)] if occluded else []
     return {"buildings": buildings, "cameras": cams, "records": records, "labels": labels, "photos": photos}
@@ -177,8 +179,9 @@ def fake_net(data, token_ok=True):
     def answer(url, _data):
         if not token_ok:
             return SourceError("Mapillary answered HTTP 401; try again in a minute.", status=401)
-        if "/images?" in url:
-            return json.dumps({"data": data["records"]}).encode()
+        if "/images?" in url:   # Mapillary answers only the fields asked for
+            fields = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)["fields"][0].split(",")
+            return json.dumps({"data": [{k: r[k] for k in fields if k in r} for r in data["records"]]}).encode()
         if url.startswith("https://cdn.example/"):
             return data["photos"][url.rsplit("/", 1)[1].split(".")[0]]
         image_id = url.split("graph.mapillary.com/", 1)[1].split("?")[0].split("/")[0]

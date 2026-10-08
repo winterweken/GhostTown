@@ -64,7 +64,8 @@ def test_from_mapillary_places_the_camera_on_the_ground():
 
 
 @pytest.mark.parametrize("change", [{"camera_parameters": None}, {"camera_type": "panorama"},
-                                    {"computed_rotation": None}, {"width": 0}, {"computed_geometry": None}])
+                                    {"computed_rotation": None}, {"width": 0}, {"computed_geometry": None},
+                                    {"computed_geometry": {"coordinates": ["x", 43.65]}}])
 def test_from_mapillary_skips_records_it_cannot_use(change):
     record = dict(RECORD)
     record.update(change)
@@ -101,45 +102,6 @@ def test_from_mapillary_handles_fisheye_camera():
 
 def test_perspective_point_with_large_r2_projects_with_ok_false():
     """Points with normalized r² > MAX_R2 (1.2) project with ok=False (outside trustworthy lens region)."""
-    cam = camera((0, 0, 2), focal=0.6)
-    # A point 10 pixels right and 10 down from center at distance 1, with r² ≈ 2.0/0.6 = 3.3 > 1.2
-    side = max(cam.width, cam.height)
-    # Normalize: pixel offset in normalized coords (0.5, 0.5) to full (-side/2, side/2) in focal coords
-    # We want r² = (xn² + yn²) > 1.2. With focal=0.6 and normalized r² measure:
-    # For a point that projects 10 pixels off center at distance 1:
-    # xn = (10 - 0.5*2048) / (0.6 * 2048) ≈ negative, but let's compute it properly
-    # Let's use a different approach: place a point that creates r² > 1.2 in camera frame
-    # If camera is at (0, 0, 2) looking north (forward = [0, 1, 0])
-    # Point at (2, 1, 2) is 2m to the right (east) in world frame
-    # In camera frame: X = [2, 1, 2] - [0, 0, 2] = [2, 1, 0]
-    # After R transform (north-looking): X @ R.T = [2, 1, 0] @ R.T
-    # For north-looking: R[0]=[1, 0, 0], R[1]=[0, 0, -1], R[2]=[0, 1, 0]
-    # So X @ R.T = [2*1 + 1*0 + 0*0, 2*0 + 1*0 + 0*1, 2*0 + 1*(-1) + 0*0] = [2, 0, -1]
-    # Hmm, that's behind the camera (z < 0). Let me place it ahead.
-    # Point at (5, 1, 2) is 5m north, 0m right:
-    # X = [5, 1, 2] - [0, 0, 2] = [5, 1, 0]
-    # In camera frame: [5, 1, 0] @ R.T where R[0]=[1,0,0], R[1]=[0,0,-1], R[2]=[0,1,0]
-    # = [5, 0, -1] (still behind). Let's use a point that's actually ahead.
-    # Forward is [0, 1, 0] (north). Point at (0, 10, 2) is 10m north, 0m right.
-    # X = [0, 10, 2] - [0, 0, 2] = [0, 10, 0]
-    # In camera frame with north-looking R: [0, 10, 0] @ R.T = [0, 0, 10]
-    # So X = [0, 0, 10], xn = 0, yn = 0, r² = 0 (center, ok=True)
-    # For r² > 1.2, we need a large sideways offset. Let's try (3, 10, 2):
-    # X = [3, 10, 2] - [0, 0, 2] = [3, 10, 0]
-    # In camera frame: [3, 10, 0] @ R.T where R = [[1,0,0], [0,0,-1], [0,1,0]]
-    # = [3, 0, 10]
-    # z = 10, xn = 3/10 = 0.3, yn = 0, r² = 0.09 (not > 1.2)
-    # Need bigger offset: (10, 10, 2)
-    # X = [10, 10, 0] in world, [10, 0, 10] in camera, xn = 1, yn = 0, r² = 1.0 (still not > 1.2)
-    # Need x offset > sqrt(1.2): (1.15, 10, 2)
-    # X = [1.15, 10, 0] in world, [1.15, 0, 10] in camera, xn = 0.115, yn = 0, r² = 0.013
-    # Hmm, I think the r² is in the normalized image plane, not camera frame.
-    # r² = xn² + yn² where xn, yn are normalized to focal length
-    # In project(): xn = X[:, 0] / z, yn = X[:, 1] / z
-    # So r² = (X[0]/z)² + (X[1]/z)²
-    # For r² > 1.2 with z = 10: need X[0]² + X[1]² > 1.2 * 100 = 120
-    # So |X[0]| > sqrt(120) ≈ 11 or |X[1]| > 11
-    # World point (11, 10, 2) maps to camera X = [11, 0, 10], r² = (11/10)² = 1.21 > 1.2
-    point = np.array([[11, 10, 2]])
-    u, v, ok = cam.project(point)
-    assert ok[0] == False
+    cam = camera((0, 0, 2), focal=0.6)   # looking north, so camera x is east and z is north
+    _u, _v, ok = cam.project(np.array([[11, 10, 2]]))   # 10 m ahead, 11 m right: xn = 1.1, r² = 1.21
+    assert not ok[0]

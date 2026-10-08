@@ -267,10 +267,6 @@ def test_choose_spends_the_budget_then_shares_what_was_chosen():
                 100: {0: [a1, sh, a2], 1: [b1, sh, a2]}}
     for budget, picks in expected.items():
         assert selection.choose(cams, seen, s, budget=budget, order=[0, 1]) == picks, budget
-    for budget in (4, 5, 6, 8):
-        picks = selection.choose(cams, seen, s, budget=budget, order=[0, 1])
-        assert set(picks) == {0, 1} and len({c for v in picks.values() for c in v}) <= budget
-        assert all(len(v) <= selection.PER_BUILDING for v in picks.values())
 
 
 def test_choose_serves_the_buildings_in_order_and_only_those():

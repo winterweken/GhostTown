@@ -12,6 +12,7 @@ class FakeNet:
         self.keeps = []
         self.timeouts = []
         self.headers = []
+        self.requests = []   # (url, headers) of each call, kept together: the pool's threads may interleave
         self.pruned = []
         self.slept = []
 
@@ -20,6 +21,7 @@ class FakeNet:
         self.keeps.append(keep)
         self.timeouts.append(timeout)
         self.headers.append(dict(headers or {}))
+        self.requests.append((url, dict(headers or {})))
         answer = self.answers[source]
         if callable(answer):
             answer = answer(url, data)

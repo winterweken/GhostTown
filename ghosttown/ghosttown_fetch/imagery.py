@@ -58,6 +58,8 @@ class Labels:
         self.h = max(1, round(LABEL_WIDTH * aspect))
         shapes = []
         for det in detections:
+            if not isinstance(det.get("value"), str):
+                continue   # a label with no text value names nothing Street Look can use
             try:
                 polygons = mvt.decode_polygons(base64.b64decode(det["geometry"]))
             except (binascii.Error, ValueError, KeyError, TypeError):

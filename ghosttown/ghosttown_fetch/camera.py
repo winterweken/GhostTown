@@ -42,7 +42,7 @@ class Camera:
     def from_mapillary(cls, image, frame, terrain):
         """A Camera from one of Mapillary's image records, or None when it lacks what Street Look needs."""
         try:
-            lon, lat = image["computed_geometry"]["coordinates"][:2]
+            lon, lat = (float(c) for c in image["computed_geometry"]["coordinates"][:2])
             rotation = [float(c) for c in image["computed_rotation"]]
             kind = image["camera_type"]
             width, height = int(image["width"]), int(image["height"])
@@ -54,7 +54,7 @@ class Camera:
             return None
         if kind != "spherical" and not (params and params[0] > 0):
             return None
-        x, y = frame.to_local(float(lon), float(lat))
+        x, y = frame.to_local(lon, lat)
         z = float(terrain.z(np.array([x]), np.array([y]))[0]) + MOUNT_M
         return cls(image["id"], kind, (x, y, z), rotvec_to_matrix(rotation),
                    focal=params[0] if params else 0.0, k1=params[1] if len(params) > 1 else 0.0,

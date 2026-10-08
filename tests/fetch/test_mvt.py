@@ -37,7 +37,7 @@ def test_a_cut_short_tile_is_an_error():
         mvt.decode_polygons(data[:-5])
 
 
-def test_detection_helper_orients_and_encodes():
-    det = detection("nature--sky", [(0, 0), (0, 0.5), (1, 0.5), (1, 0)])   # counter-clockwise on screen
+def test_detection_helper_encodes_one_ring():
+    det = detection("nature--sky", [(0, 0), (0, 0.5), (1, 0.5), (1, 0)])
     (_, rings), = mvt.decode_polygons(base64.b64decode(det["geometry"]))
     assert det["value"] == "nature--sky" and len(rings) == 1 and len(rings[0]) == 4
