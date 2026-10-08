@@ -162,7 +162,8 @@ timer (no new process, but a sluggish interface and against "Blender only draws"
       "detail_walls": [{"a": [-21.4, -62.0], "b": [71.4, -60.3], "n": [0.018, -1.0], "z0": 9.0, "z1": 84.0}]
     }
   },
-  "sources": [{"key": "mapillary", "name": "Mapillary", "credit": "Street photos © Mapillary contributors, CC BY-SA 4.0"}],
+  "sources": [{"key": "mapillary", "name": "Mapillary", "credit": "Street photos © Mapillary contributors, CC BY-SA 4.0"},
+              {"key": "mapillary_labels", "name": "Mapillary", "credit": "Labels from Mapillary · https://www.mapillary.com"}],
   "notes": []
 }
 ```
@@ -384,7 +385,7 @@ Each message is one plain sentence, as elsewhere in Ghost Town.
 |---|---|
 | No token | Apply disabled; the section points to Preferences. |
 | Token rejected (HTTP 401, or 403 other than the request limit) | "Mapillary refused the token; check it in Preferences." Nothing applied. |
-| Mapillary's request limit reached (HTTP 403, code 4, subcode 1349210) | Asked once more after a pause; still turned away, it counts as a failed tile or photo, and when the requests keep being turned away the run stops: "Mapillary's request limit was reached; try again in a minute." Nothing applied. |
+| Mapillary's request limit reached (HTTP 403, code 4, subcode 1349210) | Asked once more after a pause; still turned away, it counts as a failed tile or photo, and when the requests keep being turned away the run stops: "Mapillary's request limit was reached; try again in a minute." for photos and labels, or "Mapillary couldn't be searched; try again in a minute." when the listing itself is turned away. Nothing applied. |
 | No coverage, or no usable photos | Every building gets the guessed look; a note says so. |
 | Some listing tiles fail (429, 5xx) | Retry with backoff, continue with the rest, note "Some areas couldn't be searched." |
 | A photo's labels fail to download or fail the check | The building's next candidate is tried, labels only, up to 6 per building, within the photo budget; candidates from the sequence of a photo dropped for sky or ground come last. A chosen photo whose labels fail to download counts in the note below. |
@@ -473,9 +474,10 @@ Peak memory (maximum resident set size) over the five runs: 1,259 MB, at 320 Bay
   storefront and brick podiums came out right, but the 84 m tower's glass above 36 m read as opaque (three photos,
   whose colours varied too little for the glass test), and one building got a sky-blue top zone, likely sky at the
   roofline passing the building label. The five-site run of 2026-10-07 read the tower at the address as four
-  opaque zones (0–30 · 30–42 · 42–60 · 60– m), and none of the five address buildings with a storefront, because
-  photos the label check dropped were never replaced: at 351 King St E 125 of 330 picks were dropped, the tower kept
-  only photos that see nothing below 12 m, and its lowest seen band was stretched down to 0. With replacement and the
+  opaque zones (0–30 · 30–42 · 42–60 · 60– m), and none of the five address buildings with a storefront. At 351
+  King St E the cause was photos the label check dropped and never replaced: 125 of 330 picks were dropped, the
+  tower kept only photos that see nothing below 12 m, and its lowest seen band was stretched down to 0; the other
+  address buildings turned on which one to four photos were picked (320 Bay St lost no pick). With replacement and the
   depth check (section 10, 2026-10-08) the run reads 82 of 87 buildings there from photos and the tower as storefront
   0–6 · opaque 6–42 · opaque 42–78 · opaque 78– (confidence 0.39), against section 3's reference profile (storefront
   0–9, podium 9–36, glass 36–84): the storefront is back, 3 m short, and the glass above 36 m is still not found, so
