@@ -156,7 +156,7 @@ other setting; the field only hides it on screen.
 1. Build Context, then open **Street Look** under the Site panel. It works on the site picked there.
 2. Optionally select up to 20 buildings (about 5 is plenty) and tick **Detail for selected** to model floor
    bands, a storefront band and mullion fins on them, in a `Detail · <site>` collection.
-3. Press **Apply Street Look**. A 300 m site in Toronto takes from about 10 seconds to 4 minutes (the densest
+3. Press **Apply Street Look**. A 300 m site in Toronto takes from about 10 seconds to 2 minutes (the densest
    downtown blocks are the slow end), and up to 2 minutes more the first time, while the photos download.
    Cancel or Esc stops it; Ctrl+Z undoes it.
 4. **Show street look**, **Show detail** and **Photo brightness** change the result without fetching again.

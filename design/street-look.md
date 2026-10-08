@@ -385,23 +385,28 @@ Measured with the plan's code at 351 King St E (300 m, 87 buildings, 9,048 photo
   about 110 photos with their labels, roughly 1–2 minutes more.
 - Listing a 500 m radius with 8 parallel requests: about 30 s (3.5 min sequential in testing).
 
-Five sites with `tools/look_accuracy.py` on the finished code, 2026-10-07 (300 m radius, 150-photo budget, one pass
-each), measured with the add-on's own buildings-plus-terrain fetch, so the buildings stand on the same ground as the
-cameras. The cache already held the City's massing model and the Mapillary listings and photos from earlier passes over
-the same sites, and each run wrote 1–11 MB of new Mapillary cache, so the totals are warm-cache totals; a first run at
-a new site adds the downloads, as above. Choosing and reading are CPU work, and 320 Bay St, the densest site, is the
-slow one: 167 s choosing photos, 239 s in all. The building at the address is the one with a footprint corner nearest
-it; its zones are heights in metres above its lowest point, the last running to the roof.
+Five sites with `tools/look_accuracy.py` after the final fix wave, 2026-10-08 (300 m radius, 150-photo budget),
+measured with the add-on's own buildings-plus-terrain fetch, so the buildings stand on the same ground as the cameras.
+The code now replaces a photo the label check drops, or whose labels or photo fail, with the building's next candidate
+(6.5), reads only the pixels that show a building's nearest surface, sight-tests only points sharp enough to choose by,
+and stops testing rays that fall below every wall. Each site ran twice; the table is the second pass. The cache already
+held the City's massing model and the Mapillary listings and photos from earlier passes over the same sites; the first
+pass wrote 32–121 new Mapillary files (6–24 MB, mostly the replacements' labels and photos) and took 3–9 s longer, and
+the second wrote none, so the totals are warm-cache totals; a first run at a new site adds the downloads, as above.
+Choosing and reading are CPU work, and 320 Bay St, the densest site, is the slow one: 47 s choosing photos, 103 s in
+all. Photos is the number of photos read; at two sites it is the whole budget. The building at the address is the one
+with a footprint corner nearest it; its zones are heights in metres above its lowest point, the last running to the
+roof.
 
 | Site | Buildings | From photos | Photos | Building at the address | Choosing s | Reading s | Total s |
 |---|---|---|---|---|---|---|---|
-| 351 King St E | 87 | 78 | 113 | photos, 0.19: opaque 0–30 · opaque 30–42 · opaque 42–60 · opaque 60– | 37 | 46 | 86 |
-| 320 Bay St | 56 | 55 | 134 | photos, 0.14: opaque 0–18 · glass 18–156 · opaque 156–186 · opaque 186– | 167 | 66 | 239 |
-| 235 Queens Quay W | 29 | 24 | 47 | photos, 0.04: opaque 0–9 · opaque 9–15 · cap 15– | 29 | 22 | 55 |
-| 2300 Yonge St | 204 | 61 | 90 | photos, 0.09: glass 0–36 · opaque 36–51 · opaque 51–126 · cap 126– | 9 | 36 | 50 |
-| 300 Borough Dr | 13 | 9 | 16 | photos, 0.02: opaque 0–12 · opaque 12– | 3 | 7 | 12 |
+| 351 King St E | 87 | 82 | 150 | photos, 0.39: storefront 0–6 · opaque 6–42 · opaque 42–78 · opaque 78– | 8 | 30 | 58 |
+| 320 Bay St | 56 | 55 | 150 | photos, 0.14: storefront 0–9 · glass 9–150 · opaque 150–180 · opaque 180– | 47 | 34 | 103 |
+| 235 Queens Quay W | 29 | 28 | 82 | photos, 0.33: storefront 0–9 · opaque 9– | 8 | 15 | 35 |
+| 2300 Yonge St | 204 | 67 | 123 | photos, 0.12: storefront 0–3 · opaque 3–51 · opaque 51–126 · cap 126– | 2 | 24 | 42 |
+| 300 Borough Dr | 13 | 11 | 26 | photos, 0.02: storefront 0–9 · opaque 9– | 1 | 4 | 9 |
 
-Peak memory (maximum resident set size) over the five runs: 1,801 MB, at 320 Bay St.
+Peak memory (maximum resident set size) over the five runs: 1,259 MB, at 320 Bay St.
 
 ## 11. Testing
 
@@ -442,12 +447,16 @@ Peak memory (maximum resident set size) over the five runs: 1,801 MB, at 320 Bay
 - Facade reading on real photos. In the first live run at 351 King St E (2026-10-07, the plan's code) the dark
   storefront and brick podiums came out right, but the 84 m tower's glass above 36 m read as opaque (three photos,
   whose colours varied too little for the glass test), and one building got a sky-blue top zone, likely sky at the
-  roofline passing the building label. The five-site run on the finished code (section 10) read 78 of 87 buildings
-  there from photos, but the tower at the address as four opaque zones (0–30 · 30–42 · 42–60 · 60– m), with no
-  storefront and no glass, so the glass weak spot stands. None of the five address buildings in that run has a
-  storefront zone; why is not yet known. `tools/look_accuracy.py` prints only the zone kinds and heights of the
-  building at the address, never colours: it shows whether the glass is found, not a sky-blue top, which takes a
-  look in Blender. Eroding the building label by a few pixels and refusing sky-coloured top zones are the first
-  things to try.
+  roofline passing the building label. The five-site run of 2026-10-07 read the tower at the address as four
+  opaque zones (0–30 · 30–42 · 42–60 · 60– m), and none of the five address buildings with a storefront, because
+  photos the label check dropped were never replaced: at 351 King St E 125 of 330 picks were dropped, the tower kept
+  only photos that see nothing below 12 m, and its lowest seen band was stretched down to 0. With replacement and the
+  depth check (section 10, 2026-10-08) the run reads 82 of 87 buildings there from photos and the tower as storefront
+  0–6 · opaque 6–42 · opaque 42–78 · opaque 78– (confidence 0.39), against section 3's reference profile (storefront
+  0–9, podium 9–36, glass 36–84): the storefront is back, 3 m short, and the glass above 36 m is still not found, so
+  the glass weak spot stands. All five address buildings now have a storefront zone. `tools/look_accuracy.py` prints
+  only the zone kinds and heights of the building at the address, never colours: it shows whether the glass is
+  found, not a sky-blue top, which takes a look in Blender. For the sky-blue top, eroding the building label by a few
+  pixels and refusing sky-coloured top zones are the first things to try.
 - The token sits in plain text in Blender's user preferences.
 - Pillow's wheels are 4.7–7.6 MB, so each platform package grows by that much.
