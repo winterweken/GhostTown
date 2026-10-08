@@ -43,8 +43,9 @@ def _fin_spans(verts, faces):
 
 def test_floors_storefront_band_and_fins():
     verts, faces = look_detail.boxes(ENTRY, base_z=-0.3)
-    # floors at 3 + 4k (7, 11, 15, 19, 23, 27), one storefront band, fins every 1.5 m on 10 m of glass
-    assert len(faces) == 6 * (6 + 1 + 5) and len(verts) == 8 * 12
+    # floors at 4k above the base (4 … 28), one storefront band, fins on the mullions the shader paints every 1.5 m
+    # from the model's origin: the corner mullion at 0 gets no fin, the one at 9 does
+    assert len(faces) == 6 * (7 + 1 + 6) and len(verts) == 8 * 14
     assert min(v[2] for v in verts) >= -0.3 and max(v[2] for v in verts) <= 30 - 0.3
 
 
@@ -57,14 +58,28 @@ def test_every_box_is_closed_and_faces_out():
 
 
 def test_a_band_near_a_zone_boundary_is_heavier():
+    # the floor band nearest the opaque-to-glass boundary at 12 is heavy; the storefront's top (3) has its own band,
+    # so the floor band at 4 beside it stays light
     verts, faces = look_detail.boxes(ENTRY, base_z=0.0)
     heights = {}
     for box in _boxes(verts, faces):
         zs = sorted({verts[i][2] for f in box for i in f})
         xs = {verts[i][0] for f in box for i in f}
         if max(xs) - min(xs) > 5:   # a band, not a fin
-            heights[round((zs[0] + zs[-1]) / 2, 2)] = zs[-1] - zs[0]
-    assert heights[11.0] > heights[7.0]
+            heights[round((zs[0] + zs[-1]) / 2, 2)] = round(zs[-1] - zs[0], 6)
+    assert heights[12.0] > heights[8.0] == heights[4.0]
+
+
+def test_the_heavy_band_is_the_floor_band_nearest_the_boundary():
+    # 3.5 m floors: the boundary at 12 has no floor line on it; the nearest, 10.5, is heavy and 14 is not
+    verts, faces = look_detail.boxes(dict(ENTRY, floor_h=3.5), base_z=0.0)
+    heights = {}
+    for box in _boxes(verts, faces):
+        zs = sorted({verts[i][2] for f in box for i in f})
+        xs = {verts[i][0] for f in box for i in f}
+        if max(xs) - min(xs) > 5:
+            heights[round((zs[0] + zs[-1]) / 2, 2)] = round(zs[-1] - zs[0], 6)
+    assert heights[10.5] > heights[14.0] == heights[7.0]
 
 
 def test_no_detail_walls_means_nothing():
@@ -96,18 +111,19 @@ def test_base_z_shifts_everything():
 
 
 def test_only_exposed_heights_get_detail():
-    """Detail must respect z0 and z1 bounds exactly."""
+    """Detail must respect z0 and z1 bounds exactly; the floor lines stay at 4k above the base, not above z0."""
     entry = dict(ENTRY, detail_walls=[{"a": [0, 0], "b": [10, 0], "n": [0, -1],
                                         "z0": 9.0, "z1": 30.0}])
     verts, faces = look_detail.boxes(entry, base_z=0.0)
-    assert _band_centres(verts, faces) == [11.0, 15.0, 19.0, 23.0, 27.0]
+    assert _band_centres(verts, faces) == [12.0, 16.0, 20.0, 24.0, 28.0]
     # Every fin's z extent lies within [max(z0, glass_h0), z1]
     for z0, z1 in _fin_spans(verts, faces):
         assert z0 >= max(9.0, 12.0) and z1 <= 30.0
 
 
 def test_rotated_wall():
-    """Wall at arbitrary angle and position must place fins and bands correctly."""
+    """Wall at arbitrary angle must place fins and bands correctly. With a at the origin, the shader's distance
+    along the wall is the distance from a, so every fin sits a multiple of 1.5 m from a."""
     entry = dict(ENTRY, detail_walls=[{"a": [0, 0], "b": [6, 8], "n": [0.8, -0.6],
                                         "z0": 0, "z1": 30}])
     verts, faces = look_detail.boxes(entry, base_z=0.0)
@@ -132,7 +148,7 @@ def test_rotated_wall():
             bay_multiple = t / look_detail.GLASS_BAY_M
             remainder = bay_multiple - round(bay_multiple)
             assert abs(remainder) < 1e-9, f"Fin at t={t} not multiple of GLASS_BAY_M"
-            # Fin distance along n should be half the fin depth
+            # The fin stands out of the wall on the n side, no deeper than the deepest box
             n = (0.8, -0.6)
             for f in box:
                 for i in f:
@@ -143,7 +159,7 @@ def test_rotated_wall():
             # Bands must span from a to b along wall direction
             ts = [v[0] * 0.6 + v[1] * 0.8 for fc in box for i in fc for v in [verts[i]]]
             assert abs(min(ts)) < 1e-9 and abs(max(ts) - 10.0) < 1e-9
-    assert fin_count == 5
+    assert fin_count == 6   # at 1.5 … 9 m from a; the corner at 0 gets none
 
 
 def test_guards():
@@ -156,39 +172,44 @@ def test_guards():
     short_wall = dict(ENTRY, detail_walls=[{"a": [0, 0], "b": [0.3, 0], "n": [0, -1], "z0": 0, "z1": 30}])
     assert look_detail.boxes(short_wall, base_z=0.0) == ([], [])
 
-    # floor_h: None defaults to 3.5 m spacing; check exact centre list
+    # floor_h: None defaults to 3.5 m spacing: floors at 3.5k above the base, beside the storefront band at 3
     entry_no_floor = dict(ENTRY, floor_h=None)
     verts, faces = look_detail.boxes(entry_no_floor, base_z=0.0)
-    assert _band_centres(verts, faces) == [3.0, 6.5, 10.0, 13.5, 17.0, 20.5, 24.0, 27.5]
+    assert _band_centres(verts, faces) == [3.0, 3.5, 7.0, 10.5, 14.0, 17.5, 21.0, 24.5, 28.0]
 
 
-def test_S1_fins_start_at_wall_z0_when_it_is_above_the_glass():
+def test_fins_start_at_wall_z0_when_it_is_above_the_glass():
     """Fins must respect z0 lower bound even when above glass start."""
     v, f = look_detail.boxes(dict(ENTRY, detail_walls=[dict(ENTRY["detail_walls"][0], z0=15.0)]), 0.0)
     spans = _fin_spans(v, f)
-    assert len(spans) == 5 and all(lo == 15.0 and hi == 30.0 for lo, hi in spans)
+    assert len(spans) == 6 and all(lo == 15.0 and hi == 30.0 for lo, hi in spans)
 
 
-def test_S2_floor_bands_stop_below_the_wall_top():
-    """Floor bands must not exceed wall z1."""
+def test_fins_stay_inside_a_glass_zone_with_a_wall_above_it():
+    # opaque 0–12 · glass 12–24 · opaque 24–: every fin spans exactly the glass, six of them on the 10 m wall
+    zones = [{"h0": 0, "h1": 12, "kind": "opaque", "colour": [0, 0, 0]},
+             {"h0": 12, "h1": 24, "kind": "glass", "colour": [0, 0, 0]},
+             {"h0": 24, "h1": None, "kind": "opaque", "colour": [0, 0, 0]}]
+    v, f = look_detail.boxes(dict(ENTRY, zones=zones), 0.0)
+    assert _fin_spans(v, f) == [(12.0, 24.0)] * 6
+
+
+def test_floor_bands_stop_below_the_wall_top():
+    """Floor bands must not exceed wall z1: floors at 4, 8, 12 and 16 under a 20 m top, and the storefront band."""
     v, f = look_detail.boxes(dict(ENTRY, detail_walls=[dict(ENTRY["detail_walls"][0], z1=20.0)]), 0.0)
-    assert _band_centres(v, f) == [3.0, 7.0, 11.0, 15.0, 19.0]
+    assert _band_centres(v, f) == [3.0, 4.0, 8.0, 12.0, 16.0]
 
 
-def test_S3_no_floor_band_within_the_top_clearance():
-    """No band within 0.2 m of wall top."""
-    v, f = look_detail.boxes(dict(ENTRY, detail_walls=[dict(ENTRY["detail_walls"][0], z1=27.1)]), 0.0)
-    assert 27.0 not in _band_centres(v, f)
+def test_no_floor_band_within_the_top_clearance():
+    """No band within 0.2 m of the wall top: the floor line at 28 gets a band under a 28.3 m top, not under 28.1."""
+    v, f = look_detail.boxes(dict(ENTRY, detail_walls=[dict(ENTRY["detail_walls"][0], z1=28.1)]), 0.0)
+    assert 28.0 not in _band_centres(v, f) and 24.0 in _band_centres(v, f)
+    v, f = look_detail.boxes(dict(ENTRY, detail_walls=[dict(ENTRY["detail_walls"][0], z1=28.3)]), 0.0)
+    assert 28.0 in _band_centres(v, f)
 
 
-def test_S4_default_floor_height_is_3_5():
-    """floor_h: None must default to exactly 3.5 m."""
-    v, f = look_detail.boxes(dict(ENTRY, floor_h=None), 0.0)
-    assert _band_centres(v, f) == [3.0, 6.5, 10.0, 13.5, 17.0, 20.5, 24.0, 27.5]
-
-
-def test_S5_rotated_wall_bands_span_a_to_b():
-    """Rotated wall bands must span endpoint to endpoint."""
+def test_rotated_wall_bands_span_a_to_b():
+    """Rotated wall bands must span endpoint to endpoint: seven floors and the storefront band."""
     wall = {"a": [0, 0], "b": [6, 8], "n": [0.8, -0.6], "z0": 0, "z1": 30}
     v, f = look_detail.boxes(dict(ENTRY, detail_walls=[wall]), 0.0)
     seen = 0
@@ -197,10 +218,35 @@ def test_S5_rotated_wall_bands_span_a_to_b():
         if max(ts) - min(ts) > 5:
             seen += 1
             assert abs(min(ts)) < 1e-9 and abs(max(ts) - 10.0) < 1e-9
-    assert seen == 7
+    assert seen == 8
 
 
-def test_S6_exposed_wall_has_exactly_its_floor_bands():
-    """Bands must lie entirely within exposed wall range."""
-    v, f = look_detail.boxes(dict(ENTRY, detail_walls=[dict(ENTRY["detail_walls"][0], z0=9.0, z1=30.0)]), 0.0)
-    assert _band_centres(v, f) == [11.0, 15.0, 19.0, 23.0, 27.0]
+def _centre(verts, box):
+    pts = {verts[i] for face in box for i in face}
+    return [sum(p[k] for p in pts) / len(pts) for k in range(3)]
+
+
+def test_bands_and_fins_sit_on_the_lines_the_shader_paints():
+    """On a wall away from the origin, every fin centre is on a painted mullion (the shader's distance along the
+    wall, from the origin, a multiple of 1.5 m) and every floor band on a painted floor line (a whole number of
+    floors above the base). Here that puts the fins at 1.0, 2.5 … 8.5 m from a, not at multiples of 1.5 from a."""
+    wall = {"a": [2.2, -7.0], "b": [2.2, 3.0], "n": [1.0, 0.0], "z0": 0, "z1": 30}
+    entry = dict(ENTRY, floor_h=3.7, detail_walls=[wall])
+    verts, faces = look_detail.boxes(entry, base_z=5.0)
+    fins = []
+    for box in _boxes(verts, faces):
+        x, y, z = _centre(verts, box)
+        ys = {verts[i][1] for face in box for i in face}
+        if max(ys) - min(ys) < 1:   # a fin
+            along = y * 1.0 - x * 0.0
+            assert abs(along / 1.5 - round(along / 1.5)) < 1e-9, along
+            fins.append(round(y - wall["a"][1], 6))
+        elif abs(z - 5.0 - 3.0) > 1e-9:   # a floor band (the storefront band sits at the storefront's top)
+            h = z - 5.0
+            assert abs(h / 3.7 - round(h / 3.7)) < 1e-9, h
+    assert fins == [1.0, 2.5, 4.0, 5.5, 7.0, 8.5]
+
+
+def test_a_tiny_floor_height_gives_the_shaders_1_m_grid_not_a_hang():
+    verts, faces = look_detail.boxes(dict(ENTRY, floor_h=0.001), base_z=0.0)
+    assert _band_centres(verts, faces) == [3.0] + [float(h) for h in range(4, 30)]

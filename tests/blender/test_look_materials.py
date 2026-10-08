@@ -168,14 +168,14 @@ def _scene():
     return scene
 
 
-def _shot(look_at_z=15.0, top=False):
+def _shot(look_at_z=15.0, top=False, scale=40.0, x=0.0):
     scene = bpy.context.scene
     cam = bpy.data.objects.new("cam", bpy.data.cameras.new("cam"))
-    cam.data.type, cam.data.ortho_scale = "ORTHO", 40.0
+    cam.data.type, cam.data.ortho_scale = "ORTHO", scale
     if top:
         cam.location, cam.rotation_euler = (0, 5, 80), (0, 0, 0)
     else:
-        cam.location, cam.rotation_euler = (0, -50, look_at_z), (math.pi / 2, 0, 0)
+        cam.location, cam.rotation_euler = (x, -50, look_at_z), (math.pi / 2, 0, 0)
     scene.collection.objects.link(cam)
     scene.camera = cam
     path = os.path.join(tempfile.mkdtemp(), "probe.exr")
@@ -281,6 +281,70 @@ def test_one_material_gives_each_building_its_own_look():
     px = _shot()
     row = _row(px, 8.0)
     assert abs(row[:190, 0].max() - BRICK[0] * B) < 1e-3 and abs(row[210:, 1].max() - 0.40 * B) < 1e-3
+
+
+def _runs_of(flags):
+    """(first, last) index of each run of True."""
+    out, start = [], None
+    for i, f in enumerate(list(flags) + [False]):
+        if f and start is None:
+            start = i
+        elif not f and start is not None:
+            out.append((start, i - 1))
+            start = None
+    return out
+
+
+def test_detail_bands_and_fins_sit_on_the_lines_the_shader_paints():
+    """A close-up of a floor line in a glass zone (Cycles with a box filter, so an edge falls on one pixel; EEVEE
+    would need a GPU and softens it over about 4 rows): the 3D floor band is centred on the row where the painted
+    pane steps to the spandrel, and each fin covers the first column of a painted mullion."""
+    from ghosttown import look_detail
+
+    _scene()
+    base, line = 5.0, 17.5                     # glass from 12 to 24 m above the base, 3.5 m floors
+    ob = _building(base_z=base)                # its south wall runs x -10 to 10 at y 0, facing the camera
+    _probe(ob, "Color")
+    zones = [{"h0": 0, "h1": 3, "kind": "storefront", "colour": list(SHOP)},
+             {"h0": 3, "h1": 12, "kind": "opaque", "colour": list(BRICK)},
+             {"h0": 12, "h1": 24, "kind": "glass", "colour": list(GLASS)},
+             {"h0": 24, "h1": None, "kind": "cap", "colour": list(CAP)}]
+    walls = [{"a": [-10, 0], "b": [10, 0], "n": [0, -1], "z0": 0.0, "z1": 30.0}]
+    verts, faces = look_detail.boxes({"floor_h": 3.5, "zones": zones, "detail_walls": walls}, base)
+    me = bpy.data.meshes.new("detail")
+    me.from_pydata(verts, [], faces)
+    mat = bpy.data.materials.new("sentinel")
+    tree = mat.node_tree
+    tree.nodes.clear()
+    emit, out = tree.nodes.new("ShaderNodeEmission"), tree.nodes.new("ShaderNodeOutputMaterial")
+    emit.inputs["Color"].default_value = (1.0, 0.0, 1.0, 1.0)
+    tree.links.new(emit.outputs[0], out.inputs["Surface"])
+    me.materials.append(mat)
+    detail = bpy.data.objects.new("detail", me)
+    bpy.context.scene.collection.objects.link(detail)
+
+    def close_up():   # 4 m square, 800 px: 5 mm a pixel, x from -2 to 2 and the floor line in the middle row
+        return _shot(look_at_z=base + line, scale=4.0)
+
+    detail.hide_render = True
+    painted = close_up()
+    detail.hide_render = False
+    modelled = close_up()
+    sentinel = lambda px: (px[..., 0] > 0.9) & (px[..., 1] < 0.05)
+
+    column = 550                               # x 0.75, half way between two mullions
+    pane = painted[:, column, 2] > 0.5 * GLASS[2] * B * (1 + 0.45)
+    step, = [r for r in range(1, 800) if pane[r - 1] and not pane[r]]   # going up: pane, then the spandrel
+    assert abs(painted[step, column, 2] - GLASS[2] * B * 0.45) < 1e-3
+    (low, high), = _runs_of(sentinel(modelled[:, column]))
+    assert abs((low + high) / 2 - step) <= 1, (low, high, step)
+
+    row = 700                                  # 1.5 m above the floor line, mid-floor
+    mullions = _runs_of(painted[row, :, 2] < 0.5 * DARK[2] * B + 0.5 * GLASS[2] * B * 0.45)
+    fins = _runs_of(sentinel(modelled[row]))
+    assert len(mullions) == len(fins) == 3, (mullions, fins)   # at x -1.5, 0 and 1.5
+    for (first, _last), (f0, f1) in zip(mullions, fins):
+        assert f0 - 1 <= first <= f1 + 1, (first, f0, f1)
 
 
 def test_the_interface_defaults():

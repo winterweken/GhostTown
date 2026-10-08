@@ -284,7 +284,11 @@ site's median road luminance, clamped to 0.5–2×. Photos with fewer than 500 r
 - One mesh per selected building, `Detail · <building>`, in a `Detail · <site>` collection under the context.
 - From the building's zones and `detail_walls`: floor bands on every floor (heavier at zone boundaries), mullion
   fins at the glass bay width on glass zones, a band at the top of the storefront. Only on exposed walls and
-  heights. About 4,000 faces for the 87 m test tower.
+  heights. About 4,000 faces for the 87 m test tower. The bands sit on the floor lines the shader paints, k × floor
+  height above the building's lowest point, skipping those at or below the storefront top; the fins sit on its
+  mullions, multiples of 1.5 m along the wall measured from the model origin, so the 3D detail and the painted
+  facade coincide. The heavy band is the floor band nearest a zone boundary, up to half a floor from the painted
+  colour change.
 - Material `Context - Facade detail`. The massing is untouched; untick (exclude) the collection to leave detail
   out of an export. Show detail only hides it from viewports and renders, which FBX export ignores. Detail
   counts toward the site's Revit triangle figure.
