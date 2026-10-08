@@ -1,7 +1,8 @@
 """Street Look on five Toronto sites, to catch changes for the worse in choosing photos or reading facades.
-Not part of CI: it needs the network and a Mapillary token, and takes a few minutes a site.
+Not part of CI: it needs the network and a Mapillary token, and takes a few minutes a site. Run it with
+GHOSTTOWN_MAPILLARY_TOKEN set in the environment (never typed on the command line, where the shell's history keeps it):
 
-    GHOSTTOWN_MAPILLARY_TOKEN=... uv run python tools/look_accuracy.py [cache folder] [site name ...]
+    uv run python tools/look_accuracy.py [cache folder] [site name ...]
 
 For each site it prints how many buildings got their look from photos, what the building at the address got,
 and how long each stage took. Compare with the numbers in design/street-look.md (sections 3 and 10)."""
@@ -43,6 +44,8 @@ def _buildings(lat, lon, cache, work):
         raise SystemExit(result["error"])
     with open(result["context"], encoding="utf-8") as f:
         doc = json.load(f)
+    if doc.get("ground_at_centre_m") is None:   # flat buildings would be measured, not the add-on's on their ground
+        raise SystemExit("NRCan's ground heights couldn't be fetched, so the buildings are flat; run it again.")
     return [{"id": el["id"], "solids": [{k: s[k] for k in ("rings", "z0", "z1")} for s in el["solids"]]}
             for el in doc["elements"] if el["solids"]], doc.get("ground_at_centre_m")
 

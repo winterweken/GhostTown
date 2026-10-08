@@ -1,6 +1,7 @@
-"""Record a small Mapillary street for the offline Street Look test.
+"""Record a small Mapillary street for the offline Street Look test. Run it with GHOSTTOWN_MAPILLARY_TOKEN set in the
+environment (never typed on the command line, where the shell's history keeps it):
 
-    GHOSTTOWN_MAPILLARY_TOKEN=... uv run python tools/record_look_fixture.py [cache folder]
+    uv run python tools/record_look_fixture.py [cache folder]
 
 Builds the City's massing around 351 King St E, keeps the buildings that have a corner within 60 m (whole buildings,
 so some reach farther), runs Street Look on them with a budget of 6 photos on flat ground, and writes
@@ -66,6 +67,10 @@ def main():
     token = os.environ.get(ls.TOKEN_ENV, "").strip()
     if not token:
         sys.exit(f"Set {ls.TOKEN_ENV} first.")
+    if not (token.isascii() and token.isprintable() and not any(c.isspace() for c in token)):
+        # As in cli.py: a newline or control character in the header makes http.client raise a ValueError that quotes
+        # the whole header, and the traceback would print the token.
+        sys.exit(f"{ls.TOKEN_ENV} has characters a token can't have; check it.")
     work = tempfile.mkdtemp(prefix="ghosttown-look-fixture-")
     cache = sys.argv[1] if len(sys.argv) > 1 else os.path.join(work, "cache")
     req = rq.build(centre=CENTRE, radius_m=150, layers=["buildings"], cache_dir=cache,
