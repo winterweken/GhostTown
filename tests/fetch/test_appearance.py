@@ -258,6 +258,21 @@ def test_floor_height_needs_two_walls_to_agree():
     assert ap.floor_height([], ppm) == ap.FLOOR_DEFAULT_M
 
 
+def test_one_wall_seen_in_two_photos_is_one_vote():
+    # a facade photographed from two spots (its repeating awnings or signs, say) can't agree with itself
+    wall = _banded_wall(4.0)
+    assert ap.floor_height([wall, wall], 6.0, ids=[7, 7]) == ap.FLOOR_DEFAULT_M
+    assert ap.floor_height([wall, wall], 6.0, ids=[7, 9]) == pytest.approx(4.0, abs=0.01)
+
+
+def test_a_wall_votes_with_the_median_of_its_photos():
+    # wall 1 in three photos (4.0, 4.0, 4.4) votes 4.0 and wall 2 in one votes 4.2: the floor height is the mean
+    # of two walls (4.1), not of four photos (4.15), and wall 1's stray 4.4 is outvoted by its other photos
+    ppm = 20.0
+    walls = [_banded_wall(4.0, ppm), _banded_wall(4.0, ppm), _banded_wall(4.4, ppm), _banded_wall(4.2, ppm)]
+    assert ap.floor_height(walls, ppm, ids=[1, 1, 1, 2]) == pytest.approx(4.1, abs=0.01)
+
+
 def test_a_featureless_wall_has_no_floor_height():
     flat = np.full((181, 60), 0.5)
     # texture with no repeat: its highest lag in the range is 4.0 m, at 0.18 of lag 0 (the old level was 0.1)

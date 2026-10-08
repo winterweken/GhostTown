@@ -197,15 +197,17 @@ def zones(profile, glass):
     return out
 
 
-def floor_height(walls, ppm):
+def floor_height(walls, ppm, ids=None):
     """The dominant floor spacing in straightened walls [(grey rows top-down, mask)] at `ppm` pixels per
     metre: the strongest repeat of horizontal edges over 2.8-6 m, accepted when at least two walls agree
-    within 0.25 m. A wall's repeat counts only if it is a peak of the autocorrelation inside the range (not
-    at either end of it) and at least 0.3 and 3 / sqrt(rows) of its value at lag 0, the level a wall with no
-    repeat reaches by chance; a featureless or smoothly shaded wall has none. Otherwise 3.5 m."""
+    within 0.25 m. `ids` names the wall each one shows (by default each is a wall of its own): a wall
+    straightened from several photos votes once, with the median of their spacings, so one facade seen
+    twice can't agree with itself. A repeat counts only if it is a peak of the autocorrelation inside the
+    range (not at either end of it) and at least 0.3 and 3 / sqrt(rows) of its value at lag 0, the level a
+    wall with no repeat reaches by chance; a featureless or smoothly shaded wall has none. Otherwise 3.5 m."""
     lo, hi = FLOOR_RANGE_M
-    found = []
-    for grey, mask in walls:
+    found = {}   # wall -> the spacings its photos show
+    for wall, (grey, mask) in zip(range(len(walls)) if ids is None else ids, walls, strict=True):
         both = mask[1:] & mask[:-1]
         weight = both.sum(axis=1)
         rows = weight > 0
@@ -227,10 +229,11 @@ def floor_height(walls, ppm):
         # or last lag of the range: there it is only the slope of something outside, the zero-lag peak of a
         # smooth wall or a repeat beyond 6 m.
         if window[0] < k < window[-1] and ac[k] >= max(FLOOR_PEAK_MIN, FLOOR_PEAK_SIGMAS / np.sqrt(used)):
-            found.append(float(lags[k]))
+            found.setdefault(wall, []).append(float(lags[k]))
+    votes = [float(np.median(spacings)) for spacings in found.values()]
     best = []
-    for value in found:
-        close = [f for f in found if abs(f - value) <= FLOOR_AGREE_M]
+    for value in votes:
+        close = [f for f in votes if abs(f - value) <= FLOOR_AGREE_M]
         if len(close) > len(best):
             best = close
     return round(float(np.mean(best)), 2) if len(best) >= 2 else FLOOR_DEFAULT_M

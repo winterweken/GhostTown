@@ -334,7 +334,7 @@ class _Reading:
 def _building(b, chosen, reading):
     """(look entry, ids of the photos it used) for building index b."""
     cameras, samples, scene = reading.cameras, reading.samples, reading.scene
-    views, walls_grey, kept = [], [], []
+    views, walls_grey, grey_ids, kept = [], [], [], []
     for ci in chosen:
         cam = cameras[ci]
         if cam.id not in reading.pictures:
@@ -357,6 +357,7 @@ def _building(b, chosen, reading):
             heights.append(hts)
             wall_ids.append(np.full(len(hts), int(w)))
             walls_grey.append((grey, mask))
+            grey_ids.append(int(w))   # a wall several photos see is one floor-height vote
         if colours:
             views.append((np.concatenate(colours), np.concatenate(heights), np.concatenate(wall_ids)))
             kept.append(ci)
@@ -371,7 +372,7 @@ def _building(b, chosen, reading):
         seen_mask[idx[(samples.building[idx] == b) & (ppm >= selection.USABLE_PPM)]] = True
     share = float(samples.area[seen_mask & mine].sum() / max(samples.area[mine].sum(), 1e-9))
     entry = {"source": "photos", "photos": len(kept), "confidence": appearance.confidence(len(kept), share),
-             "floor_h": appearance.floor_height(walls_grey, STRAIGHTEN_PPM), "zones": zones}
+             "floor_h": appearance.floor_height(walls_grey, STRAIGHTEN_PPM, grey_ids), "zones": zones}
     return entry, [cameras[ci].id for ci in kept]
 
 

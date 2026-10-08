@@ -264,7 +264,8 @@ site's median road luminance, clamped to 0.5–2×. Photos with fewer than 500 r
   window, which are only the slope of something outside it), above the lag before it and not below the next, and at
   least the noise level, max(0.3, 3 / √rows) of the value at lag 0, rows being the rows with data. A wall with less
   than 12 m of rows with data, a plain gradient (the same edge strength on every row) or no such peak (a featureless
-  or smoothly shaded wall) counts for nothing. The floor height is the mean of the walls that agree, accepted only
+  or smoothly shaded wall) counts for nothing. A wall seen in several photos is one vote, the median of their
+  spacings, so a facade can't agree with itself. The floor height is the mean of the walls that agree, accepted only
   when at least 2 walls agree within 0.25 m; otherwise 3.5 m.
 - Window and mullion spacing are not measured in version 1: 1.5 m on glass, 3.0 m on opaque walls.
 

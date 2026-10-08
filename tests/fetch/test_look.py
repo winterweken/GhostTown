@@ -45,7 +45,8 @@ def test_a_street_gives_storefront_brick_and_glass_zones(tmp_path):
     assert e["source"] == "photos" and e["photos"] >= 3
     assert [(z["kind"], z["h0"]) for z in e["zones"]] == [("storefront", 0.0), ("opaque", 3.0), ("glass", 12.0)]
     assert np.allclose(e["zones"][1]["colour"], BRICK, rtol=0.15, atol=0.02)
-    assert abs(e["floor_h"] - 4.0) <= 0.4 and 0 < e["confidence"] <= 1
+    # every photo sees only the south wall, and one wall in four photos is one vote, not the two walls that must agree
+    assert e["floor_h"] == 3.5 and 0 < e["confidence"] <= 1
     assert stages[0] == "Terrain" and stages[-1] == "Writing"
 
 
