@@ -1,8 +1,10 @@
 """A synthetic street for Street Look tests: one 30 m building, four cameras south of it, and the photos
 and labels Mapillary would send for them. The building has a dark storefront to 3 m, brick to 12 m and
 glass above that shows a different colour from each camera; dark floor lines run every 4 m.
-street(occluded=True) puts a green block between the cameras and the building; over_wall() lays a label, and
-optionally paint, over the building's wall in some of the photos."""
+street(occluded=True) puts a green block between the cameras and the building; street(extra=n) adds n farther
+photos that choose leaves out, for a building to replace a lost photo with; street(slope=k) stands the street on
+ground rising k metres per metre north; over_wall() lays a label, and optionally paint, over the building's wall
+in some of the photos."""
 import functools
 import io
 import json
@@ -31,6 +33,8 @@ FLOOR_M = 4.0
 SPOTS = [(-15, -60), (0, -70), (15, -55), (5, -80)]
 EXPOSURES = [1.0, 1.0, 0.6, 1.0]
 GLASS_FACTORS = [(1, 1, 1), (3.52, 2.2, 1.32), (0.5, 0.8, 1.6), (0.15, 0.15, 0.15)]
+# Farther back than the four, so blurrier: usable, but each one worse than all of them. Ids 80, 81 ..., sequence seq2.
+EXTRA_SPOTS = [(-5, -95), (10, -100), (-10, -105), (0, -110), (5, -115), (-15, -120), (15, -125)]
 PIXELS = 512
 
 
@@ -59,12 +63,12 @@ def _hull(points):
     return lower[:-1] + upper[:-1]
 
 
-def _render(cam, scene, exposure, factor):
+def _render(cam, scene, exposure, factor, base=0.0):
     dirs, rows = cam.rays(PIXELS)
     owner, dist = scene.first_hit(cam.position[None], dirs, 1000.0)
     img = np.where((dirs[:, 2] > 0)[:, None], SKY, ROAD).astype(float)
     on = owner == 0
-    h = cam.position[2] + dirs[on, 2] * dist[on]
+    h = cam.position[2] + dirs[on, 2] * dist[on] - base   # above the building's lowest point
     col = np.where((h < 3)[:, None], STOREFRONT, np.where((h < 12)[:, None], BRICK, np.array(GLASS) * factor))
     line = (h >= 3) & ((h / FLOOR_M) % 1.0 < 0.12)
     col[line] *= 0.35
@@ -93,29 +97,55 @@ def _labels(cam, blocks):
             + [_house(cam, b) for b in blocks])
 
 
+class Slope:
+    """Ground rising k metres per metre north (z = k y), as NRCan's heights would stand a sloped street."""
+    source, cell_m, ground_at_centre_m = "nrcan-dtm", 2.0, 100.0
+
+    def __init__(self, k):
+        self.k = k
+
+    def z(self, xs, ys):
+        return self.k * np.asarray(ys, dtype=float)
+
+
+def _raised(building, k):
+    """`building` standing on Slope(k): every solid from the lowest ground under the footprint, as tall as before."""
+    if not k:
+        return dict(building)
+    out = dict(building, solids=[])
+    for solid in building["solids"]:
+        z0 = k * min(y for ring in solid["rings"] for _x, y in ring)
+        out["solids"].append(dict(solid, z0=z0, z1=z0 + solid["z1"] - solid["z0"]))
+    return out
+
+
 @functools.lru_cache(maxsize=None)
-def _street(occluded):
+def _shot(i, occluded, slope):
+    """(camera, listing record, labels, photo) for the i-th camera: SPOTS first, then EXTRA_SPOTS."""
     frame = Frame(LAT0, LON0)
-    blocks = [TARGET, OCCLUDER] if occluded else [TARGET]
-    scene = raycast.Scene(blocks)
-    cams, records, labels, photos = [], [], {}, {}
-    for i, ((x, y), exposure, factor) in enumerate(zip(SPOTS, EXPOSURES, GLASS_FACTORS)):
-        heading = float(np.degrees(np.arctan2(-x, -y)))   # towards the building's centre
-        cam = camera((x, y, 2.0), heading_deg=heading, image_id=f"9{i}", year=2024)
-        lon, lat = frame.to_lonlat(x, y)
-        records.append({"id": cam.id, "captured_at": 1717200000000, "camera_type": "perspective",
-                        "computed_geometry": {"type": "Point", "coordinates": [lon, lat]},
-                        "computed_rotation": rotation_vector(cam.R), "camera_parameters": [cam.focal, 0.0, 0.0],
-                        "width": cam.width, "height": cam.height, "sequence": "seq1"})
-        labels[cam.id] = _labels(cam, blocks)
-        photos[cam.id] = _render(cam, scene, exposure, np.array(factor, dtype=float))
-        cams.append(cam)
-    return cams, records, labels, photos
+    target = _raised(TARGET, slope)
+    blocks = [target, OCCLUDER] if occluded else [target]
+    extra = i >= len(SPOTS)
+    x, y = EXTRA_SPOTS[i - len(SPOTS)] if extra else SPOTS[i]
+    exposure, factor = (1.0, (1, 1, 1)) if extra else (EXPOSURES[i], GLASS_FACTORS[i])
+    heading = float(np.degrees(np.arctan2(-x, -y)))   # towards the building's centre
+    image_id = f"8{i - len(SPOTS)}" if extra else f"9{i}"
+    cam = camera((x, y, slope * y + 2.0), heading_deg=heading, image_id=image_id, year=2024)
+    lon, lat = frame.to_lonlat(x, y)
+    record = {"id": cam.id, "captured_at": 1717200000000, "camera_type": "perspective",
+              "computed_geometry": {"type": "Point", "coordinates": [lon, lat]},
+              "computed_rotation": rotation_vector(cam.R), "camera_parameters": [cam.focal, 0.0, 0.0],
+              "width": cam.width, "height": cam.height, "sequence": "seq2" if extra else "seq1"}
+    photo = _render(cam, raycast.Scene(blocks), exposure, np.array(factor, dtype=float), target["solids"][0]["z0"])
+    return cam, record, _labels(cam, blocks), photo
 
 
-def street(detail=False, occluded=False):
-    cams, records, labels, photos = _street(occluded)
-    buildings = [dict(TARGET, detail=detail), dict(FAR)] + ([dict(OCCLUDER)] if occluded else [])
+def street(detail=False, occluded=False, extra=0, slope=0.0):
+    shots = [_shot(i, occluded, slope) for i in range(len(SPOTS) + extra)]
+    cams, records = [s[0] for s in shots], [s[1] for s in shots]
+    labels, photos = {s[0].id: s[2] for s in shots}, {s[0].id: s[3] for s in shots}
+    buildings = [dict(_raised(TARGET, slope), detail=detail), _raised(FAR, slope)]
+    buildings += [dict(OCCLUDER)] if occluded else []
     return {"buildings": buildings, "cameras": cams, "records": records, "labels": labels, "photos": photos}
 
 

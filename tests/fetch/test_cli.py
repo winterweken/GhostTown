@@ -147,6 +147,37 @@ def test_a_rejected_token_is_one_plain_sentence(tmp_path, capsys, monkeypatch):
     assert (tmp_path / "run" / "error.txt").is_file()
 
 
+def test_ground_heights_that_cant_be_had_are_one_plain_sentence(tmp_path, capsys, monkeypatch):
+    from look_samples import fake_net, street
+    from ghosttown_fetch import look
+
+    data = street()
+    monkeypatch.setenv("GHOSTTOWN_MAPILLARY_TOKEN", "made-up-token")
+    monkeypatch.setattr(look.terrain_mod, "load", lambda net, frame, r: (look.terrain_mod.FlatTerrain(), None))
+    code = cli.main(["look", str(_look_req(tmp_path, data, ground_at_centre_m=100.0))],
+                    net_factory=lambda cache_dir, fresh=False: fake_net(data))
+    assert code == 1
+    assert _one_line(capsys)["error"] == "Ground heights couldn't be fetched for the photos; try again in a minute."
+    assert (tmp_path / "run" / "error.txt").is_file()
+
+
+def test_mapillary_stopping_partway_is_one_plain_sentence(tmp_path, capsys, monkeypatch):
+    from look_samples import fake_net, street
+    from ghosttown_fetch.net import SourceError
+    from ghosttown_fetch.sources import mapillary
+
+    data = street()
+    monkeypatch.setenv("GHOSTTOWN_MAPILLARY_TOKEN", "made-up-token")
+    monkeypatch.setattr(mapillary, "OUTAGE_FAILURES", 3)
+    net = fake_net(data)
+    normal = net.answers["mapillary"]
+    away = SourceError("Mapillary couldn't be reached (timed out); try again in a minute.")
+    net.answers["mapillary"] = lambda url, body: away if "cdn.example/" in url else normal(url, body)
+    code = cli.main(["look", str(_look_req(tmp_path, data))], net_factory=lambda cache_dir, fresh=False: net)
+    assert code == 1 and _one_line(capsys)["error"] == "Mapillary couldn't be reached; try again in a minute."
+    assert (tmp_path / "run" / "error.txt").is_file()
+
+
 def test_an_invalid_look_request_fails_with_an_error_file(tmp_path, capsys, monkeypatch):
     from look_samples import street
 

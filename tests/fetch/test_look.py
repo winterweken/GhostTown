@@ -1,16 +1,20 @@
 import gc
+import json
 import warnings
 import weakref
 
 import numpy as np
 import pytest
 
-from ghosttown_fetch import imagery, look
+from ghosttown_fetch import imagery, look, raycast, terrain
 from ghosttown_fetch import look_schema as ls
 from ghosttown_fetch.net import SourceError
+from ghosttown_fetch.sources import mapillary
 from ghosttown_fetch.sources.mapillary import TokenRejected
+from camera_samples import camera
 from fakes import FakeNet
-from look_samples import BRICK, EXPOSURES, GLASS, GLASS_FACTORS, GREEN, fake_net, over_wall, request, street
+from look_samples import (BRICK, EXPOSURES, GLASS, GLASS_FACTORS, GREEN, Slope, fake_net, over_wall, request,
+                          street)
 
 TOKEN = "MLY|secret"
 NONE_FOUND = {"level": "warn", "code": "mapillary_none",
@@ -165,6 +169,18 @@ def test_listing_that_fails_everywhere_raises_nothing_listed(tmp_path):
         look.run(request(tmp_path, data), FakeNet({"mapillary": DOWN}), TOKEN)
 
 
+def test_an_outage_stops_the_run_instead_of_guessing_every_building(tmp_path, monkeypatch):
+    # The listing and the labels are answered, then every photo download finds nobody there. Three failures in a row
+    # (eight in a real run) leave the rest unsent, and the run stops with a sentence rather than handing back a look
+    # in which every building is guessed.
+    monkeypatch.setattr(look.mapillary, "OUTAGE_FAILURES", 3)
+    data = street()
+    net = _reply(fake_net(data), "cdn.example/", SourceError("Mapillary couldn't be reached (timed out); try again "
+                                                             "in a minute."))
+    with pytest.raises(look.NotReached, match="^Mapillary couldn't be reached; try again in a minute.$"):
+        look.run(request(tmp_path, data), net, TOKEN)
+
+
 def test_one_failed_listing_tile_is_noted_and_the_rest_are_used(tmp_path):
     data = street()
     net = fake_net(data)
@@ -198,7 +214,8 @@ def test_confidence_is_the_share_of_the_wall_seen(tmp_path):
     assert entry["confidence"] == pytest.approx(0.25, abs=0.01)
 
 
-# TARGET's street-facing wall has 8 rows of sample points, an eighth of its points each, 1.9, 5.6 ... 28.1 m up.
+# TARGET's street-facing wall has 8 rows of sample points, an eighth of its points each, 1.9, 5.6 ... 28.1 m up. The
+# street has only these four photos, so a dropped one leaves three: no other photo can take its place.
 @pytest.mark.parametrize("value, z0, z1, photos", [
     ("nature--sky", 22.5, 30.0, 4),                       # sky over the top 2 rows: 25%, kept
     ("nature--sky", 18.75, 30.0, 3),                      # over the top 3 rows: 37.5%, dropped
@@ -225,11 +242,12 @@ def test_wires_over_the_wall_are_not_held_against_the_photo(tmp_path):
     assert answer["buildings"]["test:1"]["photos"] == 4
 
 
-def test_sky_is_counted_among_the_points_the_wires_leave(tmp_path):
-    # Wires over the bottom quarter and sky over the top quarter: sky is a third of the points that are not wires
+def test_sky_is_counted_among_all_the_points_wires_and_all(tmp_path):
+    # Wires over the bottom quarter and sky over the top quarter. Sky is a quarter of the points, so the photo stays;
+    # counted among the points the wires leave it would be a third, and the wires would have cost the photo.
     data = over_wall(over_wall(street(), {"93"}, "object--wire-group", 0.0, 7.5), {"93"}, "nature--sky", 22.5, 30.0)
     answer = look.run(request(tmp_path, data), fake_net(data), TOKEN)
-    assert answer["buildings"]["test:1"]["photos"] == 3
+    assert answer["buildings"]["test:1"]["photos"] == 4
 
 
 def test_a_photo_with_wires_over_all_of_the_wall_is_skipped_quietly(tmp_path):
@@ -307,3 +325,181 @@ def test_the_answer_does_not_depend_on_how_many_photos_are_kept_decoded(tmp_path
     wide = look.run(request(tmp_path, data), fake_net(data), TOKEN)
     monkeypatch.setattr(look, "DECODED_PHOTOS", 1)
     assert look.run(request(tmp_path, data), fake_net(data), TOKEN) == wide
+
+
+def _zones(answer, bid="test:1"):
+    return [(z["kind"], z["h0"], z["h1"]) for z in answer["buildings"][bid]["zones"]]
+
+
+def _downloads(net):
+    """Photo ids whose download was asked for, in order."""
+    return [url.rsplit("/", 1)[1].split(".")[0] for url, _source, _data in net.calls if "cdn.example/" in url]
+
+
+def _label_requests(net):
+    return [url.split("graph.mapillary.com/", 1)[1].split("/")[0] for url, _s, _d in net.calls if "/detections" in url]
+
+
+def test_a_photo_the_label_check_drops_is_replaced_by_the_next_best_one(tmp_path):
+    # Sky over the top three rows of photo 93 drops it; photo 80, farther back and left out by choose, takes its place.
+    # Labels come before photos, so 93 is never downloaded: with a budget of four, four photos are asked for.
+    data = over_wall(street(extra=1), {"93"}, "nature--sky", 18.75, 30.0)
+    net = fake_net(data)
+    answer = look.run(request(tmp_path, data, budget_photos=4), net, TOKEN)
+    assert answer["buildings"]["test:1"]["photos"] == 4 and answer["photos_used"] == 4
+    assert sorted(_downloads(net)) == ["80", "90", "91", "92"]
+    assert _note(answer, "mapillary_photos") is None   # a dropped photo is not one that couldn't be read
+
+
+def test_without_a_drop_the_extra_photos_are_not_asked_for(tmp_path):
+    data = street(extra=1)
+    net = fake_net(data)
+    answer = look.run(request(tmp_path, data), net, TOKEN)
+    assert answer["buildings"]["test:1"]["photos"] == 4
+    assert "80" not in _label_requests(net) and "80" not in _downloads(net)
+
+
+@pytest.mark.parametrize("how", ["labels", "photo", "jpeg"])
+def test_a_photo_whose_labels_or_photo_fail_is_replaced_and_noted(tmp_path, how):
+    data = street(extra=1)
+    net = fake_net(data)
+    if how == "labels":
+        _reply(net, "/93/detections", DOWN)
+    else:   # the photo's download fails, or it arrives as a JPEG that can't be decoded
+        _reply(net, "cdn.example/93.jpg", DOWN if how == "photo" else b"\xff\xd8\xff" + bytes(200))
+    answer = look.run(request(tmp_path, data), net, TOKEN)
+    assert answer["buildings"]["test:1"]["photos"] == 4 and answer["photos_used"] == 4
+    assert "80" in _downloads(net)
+    assert _note(answer, "mapillary_photos") == "1 photo couldn't be read and was skipped."
+    if how == "labels":
+        assert "93" not in _downloads(net)   # no labels, no point downloading it
+
+
+def test_a_failed_download_gives_its_place_in_the_budget_back(tmp_path):
+    # Budget four: 93's download fails, so 80 is downloaded in its place. Four photos arrive, no more.
+    data = street(extra=1)
+    net = _reply(fake_net(data), "cdn.example/93.jpg", DOWN)
+    answer = look.run(request(tmp_path, data, budget_photos=4), net, TOKEN)
+    assert answer["buildings"]["test:1"]["photos"] == 4
+    assert sorted(i for i in _downloads(net) if i != "93") == ["80", "90", "91", "92"]
+
+
+def _in_sequence(data, image_id, sequence):
+    return dict(data, records=[dict(r, sequence=sequence) if r["id"] == image_id else r for r in data["records"]])
+
+
+@pytest.mark.parametrize("value, z0, z1, first", [
+    ("nature--sky", 18.75, 30.0, "81"),              # dropped for sky: its sequence's poses are suspect, 80 waits
+    ("object--vehicle--truck", 0.0, 22.5, "80"),     # dropped for a truck in front: nothing against its sequence
+], ids=["sky", "blocked"])
+def test_after_a_sky_or_ground_drop_that_sequence_is_tried_last(tmp_path, value, z0, z1, first):
+    # Photo 80, the better of the two extra photos, belongs to the sequence of photo 93, which the label check drops.
+    data = _in_sequence(over_wall(street(extra=2), {"93"}, value, z0, z1), "80", "seq1")
+    net = fake_net(data)
+    answer = look.run(request(tmp_path, data), net, TOKEN)
+    assert answer["buildings"]["test:1"]["photos"] == 4
+    assert [i for i in _label_requests(net) if i.startswith("8")] == [first]
+
+
+def test_a_building_tries_at_most_six_candidates(tmp_path):
+    # 93 is dropped, and none of the seven extra photos has labels to be had: six are tried, one after another.
+    data = over_wall(street(extra=7), {"93"}, "nature--sky", 18.75, 30.0)
+    net = fake_net(data)
+    gone = SourceError("Mapillary answered HTTP 404; try again in a minute.", status=404)
+    for i in range(7):
+        _reply(net, f"/8{i}/detections", gone)
+    answer = look.run(request(tmp_path, data), net, TOKEN)
+    assert answer["buildings"]["test:1"]["photos"] == 3
+    assert len([i for i in _label_requests(net) if i.startswith("8")]) == look.REPLACE_TRIES == 6
+
+
+def test_a_rejected_token_while_replacing_a_photo_is_raised(tmp_path):
+    data = over_wall(street(extra=1), {"93"}, "nature--sky", 18.75, 30.0)
+    net = _reply(fake_net(data), "/80/detections", SourceError("Mapillary answered HTTP 401.", status=401))
+    with pytest.raises(TokenRejected):
+        look.run(request(tmp_path, data), net, TOKEN)
+
+
+def test_a_wing_in_front_of_a_wall_is_not_read_as_that_wall():
+    # A 15 m podium (y -10 to 0) in front of a 60 m tower part (y 0 to 10) of one building, seen from 50 m south. Below
+    # the line of sight over the podium's top, at 18.25 m, the tower's front wall is hidden: the pixels there show the
+    # podium's front, 10 m nearer. Each pixel of this photo is as bright as the height of the surface it shows.
+    part = {"id": "b", "solids": [{"rings": [[[-20, -10], [20, -10], [20, 0], [-20, 0]]], "z0": 0.0, "z1": 15.0},
+                                  {"rings": [[[-20, 0], [20, 0], [20, 10], [-20, 10]]], "z0": 0.0, "z1": 60.0}]}
+    scene = raycast.Scene([part])
+    cam = camera((0.0, -50.0, 2.0), image_id="1")
+    dirs, rows = cam.rays(512)
+    owner, dist = scene.first_hit(cam.position[None], dirs, 1000.0)
+    height = np.clip(cam.position[2] + dirs[:, 2] * dist, 0, 100) / 100.0
+    image = np.where((owner == 0)[:, None], height[:, None] * np.ones(3), 0.0).reshape(rows, 512, 3)
+
+    class AllBuilding:
+        def at(self, u, v):
+            return np.full(np.shape(u), imagery.BUILDING, dtype=np.uint8)
+
+    front = next(w for w in range(len(scene.A)) if np.allclose(scene.A[w][1], 0) and np.allclose(scene.B[w][1], 0)
+                 and scene.N[w][1] < 0)   # the tower part's south wall, at y = 0
+    colours, heights, _grey, _mask = look._straighten(cam, front, 0, scene, image, AllBuilding(),
+                                                      look._owner_grid(cam, scene))
+    assert heights.min() > 18.25 - 0.5   # nothing from the hidden band; the grid's cells are about 0.35 m there
+    off = np.abs(imagery.luminance(colours) * 100 - heights) > 1.0
+    assert off.mean() < 0.02   # the wall itself, but for the row at the shadow line that straddles the podium's edge
+
+
+def test_a_street_built_on_flat_ground_keeps_its_cameras_on_flat_ground(tmp_path, monkeypatch):
+    # The scene was built without ground heights (ground_at_centre_m is None): its buildings stand on flat ground, so
+    # its cameras must too, even where NRCan has heights. None are asked for.
+    data = street()
+    plain = look.run(request(tmp_path / "a", data), fake_net(data), TOKEN)
+    asked = []
+    monkeypatch.setattr(look.terrain_mod, "load", lambda net, frame, r: (asked.append(r), (Slope(0.05), None))[1])
+    answer = look.run(request(tmp_path / "b", data), fake_net(data), TOKEN)
+    assert asked == [] and _zones(answer) == _zones(plain) == [("storefront", 0.0, 3.0), ("opaque", 3.0, 12.0),
+                                                             ("glass", 12.0, None)]
+
+
+def test_a_street_built_on_ground_heights_stands_its_cameras_on_them(tmp_path, monkeypatch):
+    # The street on ground rising 5 m per 100 m north: the cameras stand 2.5 to 4 m below the building's base. Read on
+    # the same ground the scene was built on, it gives the flat street's zones; on flat cameras it wouldn't.
+    data = street(slope=0.05)
+    monkeypatch.setattr(look.terrain_mod, "load", lambda net, frame, r: (Slope(0.05), None))
+    on_ground = look.run(request(tmp_path / "a", data, ground_at_centre_m=100.0), fake_net(data), TOKEN)
+    flat = look.run(request(tmp_path / "b", data), fake_net(data), TOKEN)
+    assert _zones(on_ground) == [("storefront", 0.0, 3.0), ("opaque", 3.0, 12.0), ("glass", 12.0, None)]
+    assert _zones(flat) != _zones(on_ground)
+
+
+def test_a_scene_built_on_ground_heights_stops_when_they_cant_be_had(tmp_path, monkeypatch):
+    data = street()
+    note = ("warn", "terrain", "Natural Resources Canada couldn't be reached; try again in a minute. "
+                               "The ground is flat.")
+    monkeypatch.setattr(look.terrain_mod, "load", lambda net, frame, r: (terrain.FlatTerrain(), note))
+    net = fake_net(data)
+    with pytest.raises(look.NoGround) as e:
+        look.run(request(tmp_path, data, ground_at_centre_m=100.0), net, TOKEN)
+    assert str(e.value) == "Ground heights couldn't be fetched for the photos; try again in a minute."
+    assert net.calls == []   # nothing asked of Mapillary
+
+
+def test_expired_photos_and_labels_are_deleted_at_the_end_of_a_run(tmp_path):
+    data = street()
+    net = fake_net(data)
+    look.run(request(tmp_path, data), net, TOKEN)
+    assert net.pruned == ["mapillary"]
+
+
+THROTTLE_BODY = (b'{"error": {"message": "(#4) Application request limit reached", "type": "OAuthException", '
+                 b'"code": 4, "error_subcode": 1349210}}')
+
+
+def test_a_throttled_label_request_is_asked_again_then_skipped_without_its_text(tmp_path):
+    # Photo 93's labels meet the request limit twice, a pause apart: the photo is skipped and noted like any photo
+    # whose labels failed, and nothing of Mapillary's answer reaches the look.
+    data = street(extra=1)
+    throttled = SourceError("Mapillary answered HTTP 403; try again in a minute.", status=403, body=THROTTLE_BODY)
+    net = _reply(fake_net(data), "/93/detections", throttled)
+    answer = look.run(request(tmp_path, data), net, TOKEN)
+    assert answer["buildings"]["test:1"]["photos"] == 4 and net.slept == [30]
+    assert _label_requests(net).count("93") == 2
+    assert _note(answer, "mapillary_photos") == "1 photo couldn't be read and was skipped."
+    assert "request limit" not in json.dumps(answer)

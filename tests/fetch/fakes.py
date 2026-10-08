@@ -12,6 +12,8 @@ class FakeNet:
         self.keeps = []
         self.timeouts = []
         self.headers = []
+        self.pruned = []
+        self.slept = []
 
     def get(self, url, *, source, data=None, check=None, timeout=120, keep=True, headers=None, key=None):
         self.calls.append((url, source, data))
@@ -29,6 +31,12 @@ class FakeNet:
 
     def cached(self, source, key, check=None):
         return None
+
+    def prune(self, source):
+        self.pruned.append(source)
+
+    def sleep(self, seconds):
+        self.slept.append(seconds)
 
 
 class Transport:

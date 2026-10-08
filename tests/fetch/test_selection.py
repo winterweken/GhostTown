@@ -152,6 +152,15 @@ def test_columns_in_the_left_and_right_2_percent_of_the_picture_are_not_seen():
     assert sorted(set(np.round(s.P[seen[0][0], 0], 1))) == [-26.7, 26.7]
 
 
+def test_a_360_photo_sees_the_wall_straight_behind_it():
+    # A 360° camera 50 m south of BOX, facing away from it: the wall sits on the picture's seam, where a 2% frame
+    # margin would cut out every column within 7.2° of straight behind (the three middle ones, 0 and ±2.9 m).
+    cam = camera((0, -60, 2), heading_deg=180, kind="spherical", width=2048, height=1024)
+    s, seen = _views([cam], raycast.Scene([BOX]))
+    south = seen[0][0][np.isclose(s.P[seen[0][0], 1], -10.0)]
+    assert sorted(set(np.round(s.P[south, 0], 1))) == [-8.6, -5.7, -2.9, 0.0, 2.9, 5.7, 8.6]
+
+
 def test_cameras_see_walls_from_3_to_500_m_away_in_plan():
     cams = [camera((0, -10 - back, 2)) for back in (2.9, 3.0, 500.0, 500.1)]    # metres from BOX's south wall
     _s, seen = _views(cams, raycast.Scene([BOX]))

@@ -39,7 +39,7 @@ class Recorder:
     """A Net that keeps every answer Street Look got, by cache key or URL."""
 
     def __init__(self, net):
-        self.net, self.answers = net, {}
+        self.net, self.answers, self.sleep = net, {}, net.sleep
 
     def get(self, url, *, key=None, **kwargs):
         body = self.net.get(url, key=key, **kwargs)

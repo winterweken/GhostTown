@@ -84,7 +84,8 @@ def thin(cameras, cell_m=THIN_CELL_M, heading_deg=THIN_HEADING_DEG):
 
 
 def views(cameras, samples, scene):
-    """{camera index: (sample indices, pixels per metre)} for each camera that sees at least one point."""
+    """{camera index: (sample indices, pixels per metre)} for each camera that sees at least one point. The 2%
+    frame margin keeps points off the edges of a picture; a 360° photo has none, so every point is in its frame."""
     out = {}
     if not len(samples):
         return out
@@ -103,7 +104,8 @@ def views(cameras, samples, scene):
         if not len(idx):
             continue
         u, v, ok = cam.project(samples.P[idx])
-        inside = ok & (u >= FRAME_MARGIN) & (u <= 1 - FRAME_MARGIN) & (v >= FRAME_MARGIN) & (v <= 1 - FRAME_MARGIN)
+        margin = 0.0 if cam.kind == "spherical" else FRAME_MARGIN   # a 360° photo has no edge, only a seam behind
+        inside = ok & (u >= margin) & (u <= 1 - margin) & (v >= margin) & (v <= 1 - margin)
         idx = idx[inside]
         if not len(idx):
             continue
@@ -143,6 +145,34 @@ def _usable(samples, idx, ppm, building=None):
     return ok if building is None else ok & (samples.building[idx] == building)
 
 
+def candidates(seen, samples):
+    """{building index: [camera indices]}: the photos that see some of each building's wall at USABLE_PPM or better,
+    in camera order."""
+    by_building = {}
+    for ci, (idx, ppm) in seen.items():
+        for b in np.unique(samples.building[idx[_usable(samples, idx, ppm)]]):
+            by_building.setdefault(int(b), []).append(ci)
+    return by_building
+
+
+def gain(cameras, seen, samples, ci, b, times, free):
+    """What photo ci adds to building b: the wall area it sees at USABLE_PPM or better x sharpness (capped at
+    PPM_CAP) x recency, each point counting half as much for each photo already covering it (`times`), and
+    FREE_BONUS times as much when the photo is already chosen for another building (`free`)."""
+    idx, ppm = seen[ci]
+    mine = _usable(samples, idx, ppm, b)
+    k = idx[mine]
+    value = float((samples.area[k] * np.minimum(ppm[mine], PPM_CAP) / PPM_CAP * 0.5 ** times[k]).sum())
+    return value * (recency(cameras[ci].year) * (FREE_BONUS if free else 1.0))
+
+
+def cover(times, seen, samples, ci, b, step=1):
+    """Count photo ci, picked for building b, on the points of b it sees at USABLE_PPM or better (step -1 takes it
+    off again)."""
+    idx, ppm = seen[ci]
+    times[idx[_usable(samples, idx, ppm, b)]] += step
+
+
 def choose(cameras, seen, samples, *, budget, order):
     """{building index: [camera indices, in the order picked]}: each building in `order` gets up to PER_BUILDING.
 
@@ -152,12 +182,8 @@ def choose(cameras, seen, samples, *, budget, order):
     20 may be asked for. Pass two, in `order` again, adds more photos to each building while the budget
     lasts: a photo nobody has chosen yet costs one from it, a photo already chosen is free.
 
-    Each pick is the photo adding the most wall area x sharpness (capped at PPM_CAP) x recency. Points already
-    covered count half as much each time, and a photo already chosen counts FREE_BONUS times as much."""
-    by_building = {}
-    for ci, (idx, ppm) in seen.items():
-        for b in np.unique(samples.building[idx[_usable(samples, idx, ppm)]]):
-            by_building.setdefault(int(b), []).append(ci)
+    Each pick is the photo with the highest `gain`."""
+    by_building = candidates(seen, samples)
     chosen, picks = set(), {}
     times = np.zeros(len(samples))   # how many picked photos cover each point; a point has one owner building
 
@@ -167,17 +193,12 @@ def choose(cameras, seen, samples, *, budget, order):
         for ci in by_building.get(b, ()):
             if ci in picks.get(b, ()) or not (may_add_new or ci in chosen):
                 continue
-            idx, ppm = seen[ci]
-            mine = _usable(samples, idx, ppm, b)
-            k = idx[mine]
-            gain = float((samples.area[k] * np.minimum(ppm[mine], PPM_CAP) / PPM_CAP * 0.5 ** times[k]).sum())
-            gain *= recency(cameras[ci].year) * (FREE_BONUS if ci in chosen else 1.0)
-            if gain > best_gain:
-                best, best_gain = ci, gain
+            value = gain(cameras, seen, samples, ci, b, times, ci in chosen)
+            if value > best_gain:
+                best, best_gain = ci, value
         if best is None:
             return False
-        idx, ppm = seen[best]
-        times[idx[_usable(samples, idx, ppm, b)]] += 1
+        cover(times, seen, samples, best, b)
         chosen.add(best)
         picks.setdefault(b, []).append(best)
         return True

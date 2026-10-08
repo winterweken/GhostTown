@@ -1,4 +1,4 @@
-"""A plain file cache: <root>/<source>/<sha1(key)>, kept for max_age_days."""
+"""A plain file cache: <root>/<source>/<sha1(key)>, used for max_age_days; prune() deletes what is older."""
 import hashlib
 import os
 import tempfile
@@ -23,6 +23,22 @@ class Cache:
                 return f.read()
         except OSError:
             return None
+
+    def prune(self, source):
+        """Delete the files in `source`'s folder older than max_age_days, which reads no longer use."""
+        folder = os.path.join(self.root, source)
+        try:
+            names = os.listdir(folder)
+        except OSError:
+            return
+        now = self.clock()
+        for name in names:
+            path = os.path.join(folder, name)
+            try:
+                if os.path.isfile(path) and now - os.path.getmtime(path) > self.max_age_s:
+                    os.unlink(path)
+            except OSError:
+                pass
 
     def write(self, source, key, body):
         path = self._path(source, key)

@@ -151,3 +151,98 @@ def test_fetch_many_raises_token_rejected_immediately():
 
     with pytest.raises(m.TokenRejected, match="token bad"):
         m.fetch_many(fn, ["a", "b"])
+
+
+THROTTLE_BODY = json.dumps({"error": {"message": "(#4) Application request limit reached", "type": "OAuthException",
+                                      "code": 4, "error_subcode": 1349210}}).encode()
+REFUSED_BODY = json.dumps({"error": {"message": "Invalid OAuth access token.", "type": "OAuthException",
+                                     "code": 190}}).encode()
+AWAY = SourceError("Mapillary couldn't be reached (timed out); try again in a minute.")   # no HTTP status
+
+
+def _forbidden(body):
+    return SourceError("Mapillary answered HTTP 403; try again in a minute.", status=403, body=body)
+
+
+def test_a_request_turned_away_for_the_request_limit_is_asked_once_more_after_a_pause():
+    answers = iter([_forbidden(THROTTLE_BODY), json.dumps({"data": []}).encode()])
+    net = FakeNet({"mapillary": lambda url, data: next(answers)})
+    assert m.detections(net, "77", TOKEN) == [] and net.slept == [30] and len(net.calls) == 2
+
+
+def test_a_request_turned_away_twice_says_so_in_plain_words():
+    net = FakeNet({"mapillary": _forbidden(THROTTLE_BODY)})
+    with pytest.raises(m.Throttled) as e:
+        m.detections(net, "77", TOKEN)
+    assert str(e.value) == "Mapillary's request limit was reached; try again in a minute."
+    assert not isinstance(e.value, m.TokenRejected) and "Application" not in str(e.value) and len(net.calls) == 2
+
+
+def test_a_throttled_tile_is_a_failed_tile_not_a_refused_token():
+    calls = []
+
+    def answer(url, data):
+        calls.append(url)
+        return _forbidden(THROTTLE_BODY) if len(calls) <= 2 else json.dumps({"data": [{"id": "1"}]}).encode()
+
+    images, failed = m.list_images(FakeNet({"mapillary": answer}), F, 100, TOKEN, workers=1)
+    assert failed == 1 and [im["id"] for im in images] == ["1"]
+
+
+def test_a_403_without_the_request_limit_is_still_a_refused_token():
+    net = FakeNet({"mapillary": _forbidden(REFUSED_BODY)})
+    with pytest.raises(m.TokenRejected, match="refused the token"):
+        m.list_images(net, F, 100, TOKEN)
+    assert net.slept == []
+
+
+def _always(error):
+    calls = []
+
+    def fn(i):
+        calls.append(i)
+        raise error
+
+    return fn, calls
+
+
+@pytest.mark.parametrize("error, sentence", [
+    (AWAY, "Mapillary couldn't be reached; try again in a minute."),
+    (SourceError("Mapillary answered HTTP 502; try again in a minute.", status=502),
+     "Mapillary couldn't be reached; try again in a minute."),
+    (m.Throttled(m.THROTTLED, status=403), "Mapillary's request limit was reached; try again in a minute."),
+], ids=["unreachable", "down", "throttled"])
+def test_downloads_stop_asking_after_eight_failures_in_a_row(error, sentence):
+    fn, calls = _always(error)
+    got = m.fetch_many(fn, [str(i) for i in range(40)])
+    assert len(calls) <= 2 * m.WORKERS and m.OUTAGE_FAILURES == 8
+    assert len(got) == 40 and all(isinstance(v, SourceError) for v in got.values())
+    assert {str(v) for v in got.values() if isinstance(v, m.NotSent)} == {sentence}
+
+
+def test_listing_stops_asking_after_eight_tiles_in_a_row_find_nobody_there():
+    net = FakeNet({"mapillary": AWAY})
+    assert len(m.tiles(F, 250)) == 25
+    images, failed = m.list_images(net, F, 250, TOKEN)
+    assert images == [] and failed == 25 and len(net.calls) <= 2 * m.WORKERS
+
+
+def test_failures_that_are_answers_or_are_broken_up_by_one_do_not_stop_downloads():
+    gone = SourceError("Mapillary answered HTTP 404; try again in a minute.", status=404)
+    fn, calls = _always(gone)
+    assert len(m.fetch_many(fn, [str(i) for i in range(20)], workers=1)) == 20 and len(calls) == 20
+
+    def flaky(i):   # seven unreachable, one answer, seven unreachable
+        if i == "7":
+            return b"ok"
+        raise AWAY
+
+    got = m.fetch_many(flaky, [str(i) for i in range(15)], workers=1)
+    assert got["7"] == b"ok" and not any(isinstance(v, m.NotSent) for v in got.values())
+
+
+def test_a_refused_token_stops_the_requests_still_waiting():
+    fn, calls = _always(m.TokenRejected(m.REFUSED, status=401))
+    with pytest.raises(m.TokenRejected):
+        m.fetch_many(fn, [str(i) for i in range(40)], workers=1)
+    assert len(calls) == 1

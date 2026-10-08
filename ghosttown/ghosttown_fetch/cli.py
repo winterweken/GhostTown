@@ -147,7 +147,7 @@ def look(path, net_factory):
     net = (net_factory or Net)(doc["cache_dir"], fresh=doc["fetch_fresh"])
     try:
         answer = look_mod.run(doc, net, token, progress=_progress_writer(out_dir))
-    except (TokenRejected, look_mod.NothingListed) as e:
+    except (TokenRejected, look_mod.NothingListed, look_mod.NoGround, look_mod.NotReached) as e:
         return _fail(out_dir, str(e), traceback.format_exc())
     except Exception as e:
         return _fail(out_dir, f"Street Look failed ({type(e).__name__}: {e}).", traceback.format_exc())
