@@ -112,7 +112,7 @@ def test_without_a_look_the_plain_colour_shows():
     assert abs(row[0] - row[2]) < 0.05
 
 
-# Reviewer's tests: probe the exact shader output values by routing Color or Roughness into an Emission shader
+# Probes: the exact shader output values, with Color or Roughness routed into an Emission shader
 PLAIN = materials.COLOURS["building"]
 SHOP, CAP = (0.12, 0.10, 0.09), (0.45, 0.45, 0.43)
 DARK = materials.DARK_GLASS

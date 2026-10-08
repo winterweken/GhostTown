@@ -207,6 +207,27 @@ def test_applying_twice_replaces_the_detail_and_keeps_one_of_everything():
     assert root["credits"].splitlines() == ["© OpenStreetMap contributors", CREDIT, LABELS]
 
 
+def test_reapply_drops_a_damaged_look_but_a_bug_stays_loud():
+    # Only the errors a damaged or hand-edited look raises drop it; anything else is a bug, and the look stays.
+    root = _build()
+    _apply(root)
+
+    def broken(root, sources):
+        raise RuntimeError("a bug")
+
+    real = look_build._credit
+    look_build._credit = broken
+    try:
+        look_build.reapply(bpy.context.scene, root)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("reapply should have raised the bug")
+    finally:
+        look_build._credit = real
+    assert look_build.LOOK_PROP in root
+
+
 def test_reapply_skips_buildings_that_are_gone():
     root = _build()
     _apply(root)
@@ -336,15 +357,21 @@ def test_add_sky_only_over_blenders_default_world():
     assert sun.data.type == "SUN" and sun.name in scene.collection.objects
     scene.world = bpy.data.worlds.new("Studio")
     assert not look_build.can_add_sky(scene)
+    for world in [w for w in bpy.data.worlds if w.name == "World"]:
+        bpy.data.worlds.remove(world)
+    scene.world = bpy.data.worlds.new("World")   # Blender's name, but the user gave it an environment image
+    scene.world.node_tree.nodes.new("ShaderNodeTexEnvironment")
+    assert scene.world.name == "World" and not look_build.can_add_sky(scene)
 
 
 def _sky_brightness(direction):
-    """Mean rendered brightness of the world seen through a narrow camera pointing along direction."""
+    """Mean rendered brightness of the world seen through a narrow camera pointing along direction, read from a
+    32-bit EXR: scene-linear, so the bright side never clips at 1 as an 8-bit picture does."""
     scene = bpy.context.scene
     scene.render.engine = "CYCLES"
     scene.cycles.samples = 4
     scene.cycles.device = "CPU"
-    scene.view_settings.view_transform = "Standard"
+    scene.render.image_settings.file_format, scene.render.image_settings.color_depth = "OPEN_EXR", "32"
     scene.render.resolution_x = scene.render.resolution_y = 16
     cam = scene.camera or bpy.data.objects.new("cam", bpy.data.cameras.new("cam"))
     if scene.camera is None:
@@ -352,14 +379,19 @@ def _sky_brightness(direction):
         scene.camera = cam
     cam.data.angle = math.radians(4)
     cam.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
-    path = os.path.join(tempfile.mkdtemp(), "sky.png")
+    path = os.path.join(tempfile.mkdtemp(), "sky.exr")
     scene.render.filepath = path
     bpy.ops.render.render(write_still=True)
-    px = bpy.data.images.load(path).pixels[:]
+    image = bpy.data.images.load(path)
+    px = image.pixels[:]
+    bpy.data.images.remove(image)
     return sum(px[0::4]) / (len(px) / 4)
 
 
 def test_the_sky_glows_where_the_sun_lamp_shines_from():
+    # The check mirrors the lamp east to west: within about 6 degrees of due north or south the mirror image is too
+    # near the sun to tell apart (measured: 5.4 times as bright at 200 degrees, 2.7 at 190, 1.6 at 186, 1.3 at 184).
+    assert abs(math.sin(math.radians(look_build.SUN_AZIMUTH_DEG))) > 0.1, "the sun is too near due north or south"
     look_build.add_sky(bpy.context.scene)
     sun = bpy.data.objects[look_build.SKY_SUN]
     sun.hide_render = True
@@ -367,4 +399,20 @@ def test_the_sky_glows_where_the_sun_lamp_shines_from():
     to_sun = (sun.matrix_world.to_3x3() @ Vector((0, 0, 1))).normalized()
     mirrored = Vector((-to_sun.x, to_sun.y, to_sun.z))   # where the glow would be with east and west swapped
     bright, other = _sky_brightness(to_sun), _sky_brightness(mirrored)
-    assert bright > 1.1 * other
+    assert bright > 1.5 * other, (bright, other)
+
+
+def test_the_sky_glows_at_the_sun_lamps_height():
+    # 20 degrees above and below the lamp's direction the sky is dimmer (measured: 3.4 against 0.7 and 1.8), so a
+    # lamp set higher or lower than the sky's sun fails here
+    look_build.add_sky(bpy.context.scene)
+    sun = bpy.data.objects[look_build.SKY_SUN]
+    sun.hide_render = True
+    bpy.context.view_layer.update()
+    to_sun = (sun.matrix_world.to_3x3() @ Vector((0, 0, 1))).normalized()
+    level = Vector((to_sun.x, to_sun.y, 0)).normalized()
+    elevation = math.asin(to_sun.z)
+    above, below = (level * math.cos(elevation + d) + Vector((0, 0, math.sin(elevation + d)))
+                    for d in (math.radians(20), math.radians(-20)))
+    bright, above, below = _sky_brightness(to_sun), _sky_brightness(above), _sky_brightness(below)
+    assert bright > 1.5 * above and bright > 1.5 * below, (bright, above, below)

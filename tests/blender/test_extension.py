@@ -6,7 +6,7 @@ import tempfile
 import bpy
 
 import ghosttown
-from ghosttown import look_build, materials, ops, runner, scene_build
+from ghosttown import look_build, materials, ops, props, runner, scene_build, site_use
 from ghosttown.ghosttown_fetch import look_schema as ls
 from ghosttown.ghosttown_fetch import request as rq
 from helpers import FIXTURES, load_fixture, photo_doc
@@ -23,9 +23,16 @@ class Settings:
 def test_register_and_unregister_twice():
     for _ in range(2):
         ghosttown.register()
-        assert hasattr(bpy.types.Scene, "ghosttown") and hasattr(bpy.ops.ghosttown, "build")
+        assert hasattr(bpy.types.Scene, "ghosttown")
+        bpy.ops.ghosttown.build.get_rna_type()   # hasattr(bpy.ops.ghosttown, ...) is true for any name; this raises
         ghosttown.unregister()
         assert not hasattr(bpy.types.Scene, "ghosttown")
+        try:
+            bpy.ops.ghosttown.build.get_rna_type()
+        except KeyError:
+            pass
+        else:
+            raise AssertionError("Build Context is still registered")
 
 
 def test_import_context_operator_builds_the_fixture():
@@ -928,6 +935,64 @@ def test_a_finished_look_goes_to_its_site_unless_the_site_has_gone():
         reports.clear()
         assert ops.GHOSTTOWN_OT_street_look.finished(op, bpy.context, answer) == {"CANCELLED"} and reports == gone
         assert look_build.LOOK_PROP not in other
+    finally:
+        ghosttown.unregister()
+
+
+def test_street_look_from_the_search_menu_says_why_it_cannot_start():
+    # F3 runs invoke even where the panel greys Apply out: with no token it says so and starts nothing.
+    from types import SimpleNamespace
+
+    from ghosttown import prefs
+
+    prior = os.environ.get(ls.TOKEN_ENV)
+    ghosttown.register()
+    os.environ.pop(ls.TOKEN_ENV, None)
+    real_refusal, real_cache_dir = ops.look_refusal, prefs.cache_dir
+    try:
+        _picked_site()
+        ops.look_refusal = lambda context, online=None: real_refusal(context, online=True)   # background says offline
+        prefs.cache_dir = lambda context: tempfile.mkdtemp()   # invoke reads it before the refusal
+        reports, launched = [], []
+        op = SimpleNamespace(report=lambda *a: reports.append(a),
+                             _launch=lambda *a, **kw: launched.append(a) or {"RUNNING_MODAL"})
+        assert ops.GHOSTTOWN_OT_street_look.invoke(op, bpy.context, None) == {"CANCELLED"}
+        assert reports == [({"ERROR"}, ops.NO_TOKEN)] and launched == []
+    finally:
+        ops.look_refusal, prefs.cache_dir = real_refusal, real_cache_dir
+        _restore_env(ls.TOKEN_ENV, prior)
+        ghosttown.unregister()
+
+
+def test_add_sky_runs_once_over_blenders_default_world():
+    ghosttown.register()
+    try:
+        scene = bpy.context.scene
+        assert scene.world is None and bpy.ops.ghosttown.add_sky.poll()
+        assert bpy.ops.ghosttown.add_sky() == {"FINISHED"}
+        assert scene.world.name == look_build.SKY_WORLD and look_build.SKY_SUN in scene.collection.objects
+        assert not bpy.ops.ghosttown.add_sky.poll()   # the sky is the scene's own world now
+    finally:
+        ghosttown.unregister()
+
+
+def test_applying_a_look_counts_its_detail_for_revit():
+    ghosttown.register()
+    try:
+        root = _picked_site()
+        root["ctx_triangles"] = -1   # a stale count
+        ops.apply_look(bpy.context, root, LOOK, lambda *a: None)
+        counted = root["ctx_triangles"]
+        assert counted == site_use.count_triangles(root, bpy.context.evaluated_depsgraph_get()) > 0
+    finally:
+        ghosttown.unregister()
+
+
+def test_the_photo_budget_allows_what_the_request_accepts():
+    ghosttown.register()
+    try:
+        budget = props.GhostTownSettings.bl_rna.properties["look_budget"]
+        assert (budget.hard_min, budget.hard_max) == ls.BUDGET_RANGE
     finally:
         ghosttown.unregister()
 
