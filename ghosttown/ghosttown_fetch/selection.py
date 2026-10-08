@@ -84,40 +84,56 @@ def thin(cameras, cell_m=THIN_CELL_M, heading_deg=THIN_HEADING_DEG):
 
 
 def views(cameras, samples, scene):
-    """{camera index: (sample indices, pixels per metre)} for each camera that sees at least one point. The 2%
-    frame margin keeps points off the edges of a picture; a 360° photo has none, so every point is in its frame."""
+    """{camera index: (sample indices, pixels per metre)} for each camera that sees at least one point at
+    USABLE_PPM or better, with only those points: the ones choose weighs. Blurrier points are never sight-tested,
+    which is most of the work at a dense site; `sight` gives a photo's whole view."""
     out = {}
     if not len(samples):
         return out
-    cos_max = math.cos(math.radians(MAX_INCIDENCE_DEG))
     for ci, cam in enumerate(cameras):
-        if cam.kind != "spherical" and abs(cam.pitch_deg()) > MAX_PITCH_DEG:
-            continue
-        if scene.covered(cam.position[None])[0]:
-            continue   # a pose inside a building is wrong; it would "see" walls from inside
-        d = samples.P - cam.position
-        flat = np.hypot(d[:, 0], d[:, 1])
-        m = (flat >= MIN_DIST_M) & (flat <= MAX_DIST_M)
-        cos_inc = -(d[:, 0] * samples.N[:, 0] + d[:, 1] * samples.N[:, 1]) / np.maximum(flat, 1e-9)
-        m &= cos_inc >= cos_max
-        idx = np.nonzero(m)[0]
-        if not len(idx):
-            continue
-        u, v, ok = cam.project(samples.P[idx])
-        margin = 0.0 if cam.kind == "spherical" else FRAME_MARGIN   # a 360° photo has no edge, only a seam behind
-        inside = ok & (u >= margin) & (u <= 1 - margin) & (v >= margin) & (v <= 1 - margin)
-        idx = idx[inside]
-        if not len(idx):
-            continue
-        target = samples.P[idx].copy()
-        target[:, :2] += samples.N[idx] * 0.05
-        ray = target - cam.position
-        dist = np.linalg.norm(ray, axis=1)
-        owner, hit = scene.first_hit(cam.position[None], ray / dist[:, None], dist + 0.5)
-        idx = idx[(owner == samples.building[idx]) & (np.abs(hit - dist) <= SIGHT_TOLERANCE_M)]
-        if len(idx):
-            out[ci] = (idx, cam.pixels_per_metre(samples.P[idx], cos_inc[idx]))
+        got = _sight(cam, samples, scene, USABLE_PPM)
+        if got is not None:
+            out[ci] = got
     return out
+
+
+def sight(cam, samples, scene):
+    """(sample indices, pixels per metre) for every point `cam` sees, sharp or not (None when it sees none): the
+    label check weighs them all."""
+    return _sight(cam, samples, scene, 0.0) if len(samples) else None
+
+
+def _sight(cam, samples, scene, min_ppm):
+    """The points `cam` sees at min_ppm or better, as (sample indices, pixels per metre), or None. The 2% frame
+    margin keeps points off the edges of a picture; a 360° photo has none, so every point is in its frame."""
+    if cam.kind != "spherical" and abs(cam.pitch_deg()) > MAX_PITCH_DEG:
+        return None
+    if scene.covered(cam.position[None])[0]:
+        return None   # a pose inside a building is wrong; it would "see" walls from inside
+    d = samples.P - cam.position
+    flat = np.hypot(d[:, 0], d[:, 1])
+    m = (flat >= MIN_DIST_M) & (flat <= MAX_DIST_M)
+    cos_inc = -(d[:, 0] * samples.N[:, 0] + d[:, 1] * samples.N[:, 1]) / np.maximum(flat, 1e-9)
+    m &= cos_inc >= math.cos(math.radians(MAX_INCIDENCE_DEG))
+    idx = np.nonzero(m)[0]
+    if not len(idx):
+        return None
+    u, v, ok = cam.project(samples.P[idx])
+    margin = 0.0 if cam.kind == "spherical" else FRAME_MARGIN   # a 360° photo has no edge, only a seam behind
+    inside = ok & (u >= margin) & (u <= 1 - margin) & (v >= margin) & (v <= 1 - margin)
+    idx = idx[inside]
+    ppm = cam.pixels_per_metre(samples.P[idx], cos_inc[idx])
+    sharp = ppm >= min_ppm
+    idx, ppm = idx[sharp], ppm[sharp]
+    if not len(idx):
+        return None
+    target = samples.P[idx].copy()
+    target[:, :2] += samples.N[idx] * 0.05
+    ray = target - cam.position
+    dist = np.linalg.norm(ray, axis=1)
+    owner, hit = scene.first_hit(cam.position[None], ray / dist[:, None], dist + 0.5)
+    visible = (owner == samples.building[idx]) & (np.abs(hit - dist) <= SIGHT_TOLERANCE_M)
+    return (idx[visible], ppm[visible]) if visible.any() else None
 
 
 def recency(year):

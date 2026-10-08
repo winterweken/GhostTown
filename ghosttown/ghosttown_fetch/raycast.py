@@ -1,6 +1,7 @@
 """Line of sight against Ghost Town's buildings. They are vertical prisms, so a ray can only be stopped by
 a wall: each test is a 2D segment crossing plus a height check at the crossing. Rays that would come down
-onto a roof are not stopped; street cameras rarely look down."""
+onto a roof are not stopped; street cameras rarely look down. A ray stops being tested once it has hit, has run
+its length, or is above every roof and rising or below every wall's foot and falling, where nothing can stop it."""
 import numpy as np
 import shapely
 from shapely.geometry import Polygon
@@ -8,6 +9,7 @@ from shapely.geometry.polygon import orient
 
 EPS = 1e-9
 SEGMENT_M = 50.0   # rays are tested in pieces this long, nearest first
+CHUNK = 4096       # rays tested together in one piece: bounds the ray x wall pairs held at once
 
 
 def _polygon(rings):
@@ -85,39 +87,47 @@ class Scene:
         if self._walls is None or n == 0:
             return owner, dist
         live = np.nonzero(np.hypot(D[:, 0], D[:, 1]) > EPS)[0]   # vertical rays never meet a wall
-        top = float(self.wall_z1.max())
+        top, bottom = float(self.wall_z1.max()), float(self.wall_z0.min())
         t0 = 0.0
         while len(live):
             # The rays go out in SEGMENT_M pieces, nearest first: a short piece's box meets only the walls
             # near it, so this costs far less than one query with the whole ray, and the first hit is the same.
             t1 = t0 + SEGMENT_M
-            start = O[live, :2] + D[live, :2] * t0
-            end = O[live, :2] + D[live, :2] * np.minimum(t1, T[live])[:, None]
-            rays_i, walls_i = self._walls.query(shapely.linestrings(np.stack([start, end], 1)))   # boxes only
-            r = live[rays_i]
-            p0, d2 = O[r, :2], D[r, :2]
-            a = self.A[walls_i]
-            e = self.B[walls_i] - a
-            denom = d2[:, 0] * e[:, 1] - d2[:, 1] * e[:, 0]
-            ap = a - p0
-            safe = np.where(np.abs(denom) > EPS, denom, 1.0)
-            t = (ap[:, 0] * e[:, 1] - ap[:, 1] * e[:, 0]) / safe
-            s = (ap[:, 0] * d2[:, 1] - ap[:, 1] * d2[:, 0]) / safe
-            z = O[r, 2] + t * D[r, 2]
-            good = ((np.abs(denom) > EPS) & (t > max(t0, 1e-6)) & (t <= np.minimum(t1, T[r]))
-                    & (s >= -1e-9) & (s <= 1 + 1e-9)
-                    & (z >= self.wall_z0[walls_i] - 1e-6) & (z <= self.wall_z1[walls_i] + 1e-6))
-            r, t, w = r[good], t[good], walls_i[good]
-            order = np.lexsort((t, r))
-            r, t, w = r[order], t[order], w[order]
-            first = np.ones(len(r), dtype=bool)
-            first[1:] = r[1:] != r[:-1]
-            owner[r[first]] = self.wall_owner[w[first]]
-            dist[r[first]] = t[first]
+            for i in range(0, len(live), CHUNK):
+                self._piece(live[i:i + CHUNK], O, D, T, t0, t1, owner, dist)
             live = live[(owner[live] < 0) & (T[live] > t1)]
-            live = live[~((D[live, 2] > 0) & (O[live, 2] + D[live, 2] * t1 > top))]   # above every roof, still rising
+            z = O[live, 2] + D[live, 2] * t1
+            over = (D[live, 2] > 0) & (z > top)               # above every roof, still rising
+            under = (D[live, 2] < 0) & (z < bottom - 1e-6)    # below every wall's foot, still falling
+            live = live[~(over | under)]
             t0 = t1
         return owner, dist
+
+    def _piece(self, live, O, D, T, t0, t1, owner, dist):
+        """Test rays `live` between t0 and t1 along them, writing the first hit of each into owner and dist."""
+        start = O[live, :2] + D[live, :2] * t0
+        end = O[live, :2] + D[live, :2] * np.minimum(t1, T[live])[:, None]
+        rays_i, walls_i = self._walls.query(shapely.linestrings(np.stack([start, end], 1)))   # boxes only
+        r = live[rays_i]
+        p0, d2 = O[r, :2], D[r, :2]
+        a = self.A[walls_i]
+        e = self.B[walls_i] - a
+        denom = d2[:, 0] * e[:, 1] - d2[:, 1] * e[:, 0]
+        ap = a - p0
+        safe = np.where(np.abs(denom) > EPS, denom, 1.0)
+        t = (ap[:, 0] * e[:, 1] - ap[:, 1] * e[:, 0]) / safe
+        s = (ap[:, 0] * d2[:, 1] - ap[:, 1] * d2[:, 0]) / safe
+        z = O[r, 2] + t * D[r, 2]
+        good = ((np.abs(denom) > EPS) & (t > max(t0, 1e-6)) & (t <= np.minimum(t1, T[r]))
+                & (s >= -1e-9) & (s <= 1 + 1e-9)
+                & (z >= self.wall_z0[walls_i] - 1e-6) & (z <= self.wall_z1[walls_i] + 1e-6))
+        r, t, w = r[good], t[good], walls_i[good]
+        order = np.lexsort((t, r))
+        r, t, w = r[order], t[order], w[order]
+        first = np.ones(len(r), dtype=bool)
+        first[1:] = r[1:] != r[:-1]
+        owner[r[first]] = self.wall_owner[w[first]]
+        dist[r[first]] = t[first]
 
     def covered(self, points):
         """Whether each point is inside or under a solid: in its footprint and below its top."""

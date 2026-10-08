@@ -83,7 +83,17 @@ def run(request, net, token, *, progress=None):
     picks = selection.choose(cameras, seen, samples, budget=request["budget_photos"], order=order)
 
     progress("Downloading photos", 45)
-    choice = _Choice(cameras, seen, samples, order, picks, request["budget_photos"], lambda ci: seen[ci][0])
+    whole = {}
+
+    def points(ci):
+        """The sample indices photo ci sees, sharp or not: the label check weighs them all. One sight test per
+        photo whose labels are checked; choosing only ever looks at the sharp ones."""
+        if ci not in whole:
+            got = selection.sight(cameras[ci], samples, scene)
+            whole[ci] = got[0] if got is not None else np.zeros(0, dtype=int)
+        return whole[ci]
+
+    choice = _Choice(cameras, seen, samples, order, picks, request["budget_photos"], points)
     choice.start(net, token)
     photos, pictures = {}, {}
     decoded = _decoder(photos)

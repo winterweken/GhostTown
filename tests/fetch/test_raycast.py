@@ -115,3 +115,40 @@ def test_base_z_is_the_lowest_z0_among_a_buildings_solids():
         {"rings": [[[0, 0], [10, 0], [10, 10], [0, 10]]], "z0": 2.0, "z1": 12.0},
         {"rings": [[[0, 0], [5, 0], [5, 5], [0, 5]]], "z0": 12.0, "z1": 30.0}]}
     assert Scene([b]).base_z.tolist() == [2.0]
+
+
+def _brute_first_hit(scene, origin, dirs, max_dist):
+    """The first wall each ray crosses, checked against every wall: the answer first_hit must give."""
+    a, e = scene.A, scene.B - scene.A
+    owner, dist = np.full(len(dirs), -1), np.full(len(dirs), np.inf)
+    for i, d in enumerate(dirs):
+        denom = d[0] * e[:, 1] - d[1] * e[:, 0]
+        ok = np.abs(denom) > 1e-9
+        safe = np.where(ok, denom, 1.0)
+        ap = a - origin[:2]
+        t = (ap[:, 0] * e[:, 1] - ap[:, 1] * e[:, 0]) / safe
+        s = (ap[:, 0] * d[1] - ap[:, 1] * d[0]) / safe
+        z = origin[2] + t * d[2]
+        ok &= (t > 1e-6) & (t <= max_dist) & (s >= -1e-9) & (s <= 1 + 1e-9)
+        ok &= (z >= scene.wall_z0 - 1e-6) & (z <= scene.wall_z1 + 1e-6)
+        if ok.any():
+            w = np.flatnonzero(ok)[np.argmin(t[ok])]
+            owner[i], dist[i] = scene.wall_owner[w], t[w]
+    return owner, dist
+
+
+def test_many_rays_falling_and_rising_through_raised_buildings_meet_the_walls_a_brute_force_check_does():
+    # More rays than one batch holds, from a camera 2 m up among buildings standing on bases from -3 to 6 m. A ray
+    # that falls below every wall's foot is dropped early, so this pins that it could have hit nothing there.
+    rng = np.random.default_rng(7)
+    buildings = [box(f"b{i}", x, y, x + rng.uniform(5, 30), y + rng.uniform(5, 30), z0=z0, z1=z0 + rng.uniform(3, 60))
+                 for i, (x, y, z0) in enumerate(zip(rng.uniform(-300, 280, 40), rng.uniform(-300, 280, 40),
+                                                    rng.uniform(-3, 6, 40)))]
+    scene = Scene(buildings)
+    origin = np.array([0.0, 0.0, 2.0])
+    dirs = rng.normal(size=(9000, 3)) * [1, 1, 0.15]
+    dirs /= np.linalg.norm(dirs, axis=1, keepdims=True)
+    owner, dist = scene.first_hit(origin[None], dirs, 600.0)
+    expected_owner, expected_dist = _brute_first_hit(scene, origin, dirs, 600.0)
+    assert len(dirs) > 4096 and (owner >= 0).sum() > 1000 and (dirs[owner < 0, 2] < 0).sum() > 1000
+    assert np.array_equal(owner, expected_owner) and np.allclose(dist, expected_dist, rtol=0, atol=1e-9)

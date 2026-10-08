@@ -163,8 +163,10 @@ def test_a_360_photo_sees_the_wall_straight_behind_it():
 
 def test_cameras_see_walls_from_3_to_500_m_away_in_plan():
     cams = [camera((0, -10 - back, 2)) for back in (2.9, 3.0, 500.0, 500.1)]    # metres from BOX's south wall
-    _s, seen = _views(cams, raycast.Scene([BOX]))
-    assert sorted(seen) == [1, 2]
+    scene = raycast.Scene([BOX])
+    s, seen = _views(cams, scene)
+    assert [selection.sight(c, s, scene) is not None for c in cams] == [False, True, True, False]
+    assert sorted(seen) == [1]   # 500 m back the wall is 2.5 px/m, never usable, so choosing doesn't record it
 
 
 def test_walls_are_seen_within_35_degrees_of_square_on_and_blur_with_the_angle():
@@ -315,10 +317,26 @@ def test_sharpness_counts_up_to_20_px_per_metre_and_no_further():
 def test_photos_are_usable_from_5_px_per_metre_and_blurrier_ones_are_never_chosen():
     # A lens of focal length 0.625 (1280 px at 2048 px wide), 257 and 256 m back: 4.98 and exactly 5 px/m.
     cams = [camera((0, -1 - back, 2), focal=0.625) for back in (257.0, 256.0)]
-    s, seen = _views(cams, raycast.Scene([TINY]))
-    assert sorted(seen) == [0, 1]                            # both see the wall; only the second is sharp enough
+    scene = raycast.Scene([TINY])
+    s, seen = _views(cams, scene)
+    assert all(selection.sight(c, s, scene) is not None for c in cams)   # both see the wall
+    assert sorted(seen) == [1]                               # only the second is sharp enough to be recorded
     assert selection.choose(cams, seen, s, budget=10, order=[0]) == {0: [1]}
-    assert selection.choose(cams[:1], {0: seen[0]}, s, budget=10, order=[0]) == {}
+    assert selection.choose(cams[:1], {0: selection.sight(cams[0], s, scene)}, s, budget=10, order=[0]) == {}
+
+
+def test_choosing_records_exactly_the_sharp_part_of_each_photos_view():
+    # Photos 60 to 400 m back from BOX: sharp, part sharp (the top rows are farther and seen more obliquely) or blurry.
+    scene = raycast.Scene([BOX, box("b", 40, -10, 60, 10)])
+    cams = [camera((x, -10 - back, 2), image_id=f"{x},{back}") for x in (0, 30) for back in (60, 150, 240, 400)]
+    s, seen = _views(cams, scene)
+    for ci, cam in enumerate(cams):
+        idx, ppm = selection.sight(cam, s, scene) or (np.zeros(0, dtype=int), np.zeros(0))
+        sharp = ppm >= selection.USABLE_PPM
+        if sharp.any():
+            assert np.array_equal(seen[ci][0], idx[sharp]) and np.array_equal(seen[ci][1], ppm[sharp]), ci
+        else:
+            assert ci not in seen, ci
 
 
 def test_a_building_gets_at_most_its_four_best_photos():
