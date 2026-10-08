@@ -146,7 +146,7 @@ Switching never downloads anything again, and each site in a file keeps its own 
 
 ### Street Look
 
-Street Look gives a site's buildings colours and materials read from Mapillary's street photos: a dark
+Street Look gives a site's buildings colours, glass and storefronts read from Mapillary's street photos: a dark
 storefront, a brick-coloured or concrete-grey body, glass with mullions, a cap, at measured heights, with windows
 spaced by the floor height it finds. It is a separate step after Build Context and needs your own free Mapillary
 token: create one at mapillary.com/dashboard/developers and paste it in Preferences › Add-ons › Ghost Town ›
@@ -216,7 +216,7 @@ you used. The panel lists them after every build.
 | Natural Resources Canada (HRDEM) | Terrain | Contains information licensed under the Open Government Licence – Canada |
 | Geospatial Ontario (lidar-derived surface and terrain models) | LiDAR roofs in Ontario | Contains information licensed under the Open Government Licence – Ontario |
 | OpenStreetMap | Buildings outside Toronto | © OpenStreetMap contributors (ODbL) |
-| Mapillary | Street Look: facade colours read from street photos | Street photos © Mapillary contributors, CC BY-SA 4.0; labels from Mapillary (https://www.mapillary.com) |
+| Mapillary | Street Look: facade colours read from street photos | Street photos © Mapillary contributors, CC BY-SA 4.0<br>Labels from Mapillary · https://www.mapillary.com |
 
 More detail is in [CREDITS.md](CREDITS.md).
 
@@ -230,22 +230,26 @@ and the City's open data portal (`ckan0.cf.opendata.inter.prod-toronto.ca`), `da
 the search button, Build Context or Apply Street Look. It sends what the query needs (the address you search for, or
 the location and radius you build) and nothing else. Answers are cached on your computer for 30 days. The City's 3D
 Massing model is downloaded once per yearly edition (81 MB, about 300 MB unpacked in the cache folder) and kept
-until a newer edition comes out. It lives in the cache folder (Preferences › Cache folder; by default the
-extension's own folder); deleting its `toronto_massing` folder is safe, and the next Toronto build downloads it
-again. With **Aerial photo** ticked, the photo comes from `gis.toronto.ca` with the build and is kept inside the
-.blend file, which adds up to about 5 MB. LiDAR answers (10–30 MB a site) are cached like the rest, and LiDAR roofs
-are kept inside the .blend file, about 20 to 30 MB for a dense 300 m site (less with Compress, in File › Save As or
+until a newer edition comes out. It lives in the cache folder (Preferences › Add-ons › Ghost Town › Cache folder,
+which shows where it is; by default
+`~/Library/Application Support/Blender/<version>/extensions/.user/user_default/ghosttown/cache` on macOS, with
+`<version>` 5.2 today, a hidden folder, and the matching Blender extensions folder on other systems); deleting its
+`toronto_massing` folder is safe, and the next Toronto build downloads it again.
+With **Aerial photo** ticked, the photo comes from `gis.toronto.ca` with the build and is kept inside the .blend
+file, which adds up to about 5 MB. LiDAR answers (10–30 MB a site) are cached like the rest, and LiDAR roofs are
+kept inside the .blend file, about 20 to 30 MB for a dense 300 m site (less with Compress, in File › Save As or
 Preferences › Save & Load).
 
 **Apply Street Look** contacts `graph.mapillary.com` (photo listings and labels) and Mapillary's image servers
-on `fbcdn.net`, and only then. Inside Canada it also asks `datacube.services.geo.ca` for ground heights over the
-same area, as Build Context does. `graph.mapillary.com` receives the area around the site, the ids of the photos
-read and your Mapillary token, which Ghost Town sends only in a request header and never stores in a .blend
-file; the image servers receive only the link for each photo read. Each user registers their own free
-application with Mapillary, so the request limits are theirs. Photos and labels are cached on your computer for
-30 days, in the cache folder set in Preferences › Add-ons › Ghost Town (delete its `mapillary` folder to clear
-them; the whole cache folder also holds the City's massing model); the photos are the blurred thumbnails
-Mapillary serves, kept as they are; only the colours and heights read from them reach the .blend file.
+on `fbcdn.net`, and only then. Inside Canada, when the site was built with ground heights, it also asks
+`datacube.services.geo.ca` for ground heights over the photo search area, as Build Context does for the site.
+`graph.mapillary.com` receives the area around the site, the ids of the photos read and your Mapillary token, which
+Ghost Town sends only in a request header and never stores in a .blend file; the image servers receive only the link
+for each photo read. Each user registers their own free application with Mapillary, so the request limits are
+theirs. Photos and labels are cached on your computer for 30 days, in the cache folder set in Preferences ›
+Add-ons › Ghost Town › Cache folder (delete its `mapillary` folder to clear them; the whole cache folder also holds
+the City's massing model); the photos are the blurred thumbnails Mapillary serves, kept as they are; only the
+colours and heights read from them reach the .blend file.
 
 Ghost Town is an independent project. It is not affiliated with or endorsed by the City of Toronto,
 Natural Resources Canada, the Province of Ontario, OpenStreetMap or Mapillary.
@@ -315,6 +319,12 @@ one module that turns a public dataset into polygons, points or lines.
 
 GPL-3.0-or-later. See [LICENSE](LICENSE). The data Ghost Town downloads keeps its own licence, listed
 under [Data and credits](#data-and-credits).
+
+Recorded test data in `tests/fetch/fixtures/` keeps its sources' licences (see
+[tests/fetch/fixtures/README.md](tests/fetch/fixtures/README.md)): OpenStreetMap data under the ODbL, City of
+Toronto, NRCan and Ontario data under their Open Government Licences, and six Mapillary street photos under CC BY-SA
+4.0 with, beside them, Mapillary's own data about those photos (labels and listing records), for which Mapillary
+states no licence. The GPL does not cover them, and the extension package does not include them.
 
 The Ghost Town name and logo are © winterweken and are not covered by the GPL. That includes the files
 in [media/brand](media/brand) and the icon in `ghosttown/icons/`. You may use them to refer to this

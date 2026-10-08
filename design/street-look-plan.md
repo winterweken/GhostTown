@@ -17,7 +17,8 @@ text, and the fetcher and Blender test suites pass. Start from a `dev` that cont
 **Deviations.** The plan was executed task by task on 2026-10-07; reviews changed some task code, and the task
 bodies below were left as written. The code is the truth. The changes: Task 7's `choose` picks in two passes
 (spec §6.4); Task 8's manifest permission text is at most 64 characters; Task 9 sets MIN_PHOTOS_PER_BAND = 1 and
-accepts a floor height only at a strict autocorrelation peak above a noise level; Task 10 decodes photos on
+accepts a floor height only where the 2.8–6 m window's highest autocorrelation lies inside the window (never at its
+first or last lag) and above a noise level, and skips flat walls; Task 10 decodes photos on
 demand through a per-run LRU of 8, adds the `mapillary_none` warning and does not count thin clutter against a
 photo; Task 11 refuses a token with control, space or non-ASCII characters; Task 12's stdlib guard also blocks
 PIL; Task 15's `reapply` applies the scene's Show street look and Photo brightness, `apply` dresses before storing,
@@ -26,8 +27,17 @@ registration, the token's path into the fetcher, the panel's draw, the finished 
 17 saves the request with budget 10 while recording 6 photos, replays listings by bounding box, and keeps
 buildings with a corner within 60 m; Task 18's accuracy tool fetches terrain with the buildings
 (`layers=["buildings", "terrain"]`), so its cameras and buildings share the add-on's ground datum, and it refuses a
-token with whitespace or non-ASCII characters before any request. Every commit after Task 14 carries the Claude
-Fable 5.1 trailer.
+token with whitespace or non-ASCII characters before any request. The final fix wave (2026-10-07/08) replaces
+photos the label check or a download drops (labels first, up to 6 tries per building, within the budget), reads
+only a building's nearest surface (owner-grid depth check), uses the request's ground datum (flat ground when Build
+had none; a mismatch stops the run), counts thin clutter in the sky/ground denominator, keeps the 2 % frame margin
+off 360° cameras, refuses redirects on requests carrying the token, reports Mapillary's request limit as such,
+deletes expired Mapillary cache files after a run, stops early in an outage, prunes and chunks the ray march and
+sight tests, gives both tools the token check; in Blender it aligns detail bands and fins with the shader and clamps
+floor_h to 1 m, matches Esc on press only with a per-panel Cancel, refuses Not before 1–1999 in plain words, adds
+the "Labels from Mapillary" credit line, shows the resolved cache folder in Preferences and warns when a stored look
+is dropped. Every commit after Task 14 carries the Claude Fable 5.1 trailer, except the fix wave's five fetcher
+commits (cf5f7b0 to 05157e5), which carry Claude Opus 5.5's.
 
 ## Global Constraints
 

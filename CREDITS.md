@@ -13,9 +13,11 @@ Ghost Town downloads open data at build time. Credit the sources you use in anyt
 - **Mapillary** street photos, from which Street Look reads facade colours (no photo is stored in your file), and the
   labels, which are data Mapillary extracted from the photos, used under Mapillary's terms
   (https://www.mapillary.com/terms). Street photos © Mapillary contributors, CC BY-SA 4.0,
-  https://creativecommons.org/licenses/by-sa/4.0/ — https://www.mapillary.com. The six resized photos in
-  `tests/fetch/fixtures/kingst/` are CC BY-SA 4.0, not GPL-3
-  (see `tests/fetch/fixtures/README.md` for each photo's credit).
+  https://creativecommons.org/licenses/by-sa/4.0/ — https://www.mapillary.com. The panel and the stored credits
+  carry two lines: "Street photos © Mapillary contributors, CC BY-SA 4.0" and "Labels from Mapillary ·
+  https://www.mapillary.com". The six resized photos in `tests/fetch/fixtures/kingst/` are CC BY-SA 4.0, not GPL-3
+  (see `tests/fetch/fixtures/README.md` for each photo's credit), beside Mapillary's labels and listing records for
+  those photos, whose redistribution is open (see that README).
 
 The add-on also lists the credits for each build in its panel and stores them on the context
 collection (`credits` custom property).

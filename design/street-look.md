@@ -55,8 +55,8 @@ Dr, with the user's token. The code is not kept; the numbers are.
    and an **Apply Street Look** button; it acts on the site picked there. Optionally select a few building
    objects and tick **Detail for selected**.
 3. Apply runs in the background with progress and Cancel, like Build. Afterwards the section shows, for example,
-   "Look from photos: 41 buildings · guessed: 23 · 128 photos (2014–2025)" and the credit line
-   "Street photos © Mapillary contributors, CC BY-SA 4.0".
+   "Look from photos: 41 buildings · guessed: 23 · 128 photos (2014–2025)" and the credit lines
+   "Street photos © Mapillary contributors, CC BY-SA 4.0" and "Labels from Mapillary · https://www.mapillary.com".
 4. **Show street look** and **Show detail** switch the result on and off. **Photo brightness** (default 1.15)
    scales the measured colours.
 5. If the scene still uses Blender's default world, Apply offers to add a `Ghost Town Sky` world (sky texture
@@ -138,8 +138,10 @@ timer (no new process, but a sluggish interface and against "Blender only draws"
   the ring set, and its lowest and highest points are z0 and z1, matching the `context.json` solid format.
   A building that keeps 0.3.0 roof shapes is read from its flat mesh, the prism set the fetcher models,
   whichever roof shape it shows.
-- Ground heights for cameras come from the fetcher's own terrain source and cache, fetched for the search area
-  (site radius plus `search_margin_m`). Outside Canada the ground is flat, as in Build.
+- Ground heights for cameras come from the fetcher's own terrain source and cache, fetched for the photo search area
+  (200 m past the farthest wall read, capped at 1,000 m) when the request carries `ground_at_centre_m`; when it is
+  null (a site built on flat ground, or outside Canada) the cameras stand on flat ground like the buildings and
+  nothing is fetched; a request with a datum whose look-run terrain comes back flat stops with one sentence.
 - The token is never in this file.
 
 ### 5.3 look.json
@@ -224,8 +226,17 @@ the wall lies inside or under another solid.
   or fewer than 30% land on building (blocked).
 - Otherwise only pixels labelled `construction--structure--building` are used. Thin clutter (wires, poles, street
   lights, signs) is masked but not counted against the photo.
+- Replacement: labels are fetched for the chosen photos first, and photos are downloaded only for the final set. A
+  building that loses a photo, to the label check or to a labels download, photo download or decode that fails,
+  tries its next candidates, labels only, best first by the greedy pick's own gain (6.4), up to 6 tries per
+  building, until it has as many photos as it was picked. Candidates from the sequence of a photo dropped for sky
+  or ground come after every other. A replacement takes only a place a lost photo gave back, so the photos
+  downloaded stay within the budget (or choose's first picks, when detail buildings need more); a building short
+  only because the budget ran out is not topped up.
 - Per-pixel model mask: a ray grid 200 px wide per photo; a pixel counts for a building only if its ray first
-  hits that building.
+  hits that building, and only where that hit is the wall point itself: a pixel whose ray meets a nearer part of
+  the same building (by more than max(1 m, 0.5 % of the distance)) is not read, so a podium in front of a tower is
+  never read as the tower's wall.
 
 ### 6.6 Exposure calibration
 
@@ -247,13 +258,13 @@ site's median road luminance, clamped to 0.5–2×. Photos with fewer than 500 r
   > 0.7. With fewer views, glass if blue minus red > 0.04 × max(luminance ÷ 0.1, 1). Known blind spot: lower-floor
   glass that mirrors the same street from every angle reads as opaque.
 - Floor height: the repeat of horizontal edges in each straightened wall, searched over 2.8–6 m. For each wall, the
-  edge strength of each row is autocorrelated, and the wall's spacing is the highest lag of the autocorrelation
-  within 2.8–6 m. It counts only if that lag is an interior one (never the first or last lag of the window, which
-  are only the slope of something outside it), above the lag before it and not below the next, and at least the noise
-  level, max(0.3, 3 / √rows) of the value at lag 0, rows being the rows with data. A wall with less than 12 m of rows
-  with data, a plain gradient (the same edge strength on every row) or no such peak (a featureless or smoothly
-  shaded wall) counts for nothing. The floor height is the mean of the walls that agree, accepted only when at least
-  2 walls agree within 0.25 m; otherwise 3.5 m.
+  edge strength of each row is autocorrelated, and the wall's spacing is the lag within 2.8–6 m where the
+  autocorrelation is highest. It counts only if that lag is an interior one (never the first or last lag of the
+  window, which are only the slope of something outside it), above the lag before it and not below the next, and at
+  least the noise level, max(0.3, 3 / √rows) of the value at lag 0, rows being the rows with data. A wall with less
+  than 12 m of rows with data, a plain gradient (the same edge strength on every row) or no such peak (a featureless
+  or smoothly shaded wall) counts for nothing. The floor height is the mean of the walls that agree, accepted only
+  when at least 2 walls agree within 0.25 m; otherwise 3.5 m.
 - Window and mullion spacing are not measured in version 1: 1.5 m on glass, 3.0 m on opaque walls.
 
 ### 6.8 Defaults and confidence
@@ -306,7 +317,7 @@ site's median road luminance, clamped to 0.5–2×. Photos with fewer than 500 r
 ### 7.4 Rebuild and undo
 
 - The look is stored on the context collection as JSON keyed by building id, with the panel's summary and
-  credit line beside it, like 0.3.0's other per-site state. When Build replaces a site,
+  credit lines beside it, like 0.3.0's other per-site state. When Build replaces a site,
   `scene_build.build` copies it from the old collection before removing it, re-applies the properties to the new
   objects with matching ids, and regenerates detail for buildings still present.
 - Detail objects carry `ctx_id` and are listed in the collection's `ctx_objects`, so `remove()` handles them like
@@ -319,13 +330,13 @@ site's median road luminance, clamped to 0.5–2×. Photos with fewer than 500 r
   its environment. It is sent only as an `Authorization: OAuth` header, never in a URL.
 - New servers, contacted only when Apply is pressed: `graph.mapillary.com` (listings, metadata, labels) and
   Mapillary's image servers on `fbcdn.net` (photos). `graph.mapillary.com` receives the site's tile boxes, photo ids
-  and the token; the image servers receive only the link for each photo, never the token. Inside Canada, Apply also
-  asks `datacube.services.geo.ca`, which Build already uses, for ground heights (5.2). The README's privacy
-  paragraph and its list of servers are updated.
+  and the token; the image servers receive only the link for each photo, never the token. Inside Canada, when the
+  scene was built with ground heights, Apply also asks `datacube.services.geo.ca`, which Build already uses, for
+  ground heights (5.2). The README's privacy paragraph and its list of servers are updated.
 - Photos and labels are cached by image id (Mapillary's download links expire) for the usual 30 days.
-- Only derived values reach the .blend file, so CC BY-SA share-alike does not extend to users' files; the credit
-  still applies. It appears in the panel, in the `Context origin` credits property, in README's data table and in
-  CREDITS.md.
+- Only derived values reach the .blend file; the credits apply all the same. They appear in the panel (the photo
+  credit and "Labels from Mapillary · https://www.mapillary.com"), in the `Context origin` credits property, in
+  README's data table and in CREDITS.md.
 
 ### Mapillary terms, checked 2026-10-07
 
@@ -336,7 +347,8 @@ From the Terms (https://www.mapillary.com/terms, 2024-02-15) and the API documen
   (https://blog.mapillary.com/update/2021/06/23/getting-started-with-the-new-mapillary-api-v4.html). The 30-day
   cache by image id, no link stored and photos kept as served (§5 forbids unblurring), fits: 30 days stays.
 - Rate limits, per application: 60,000 entity calls a minute (photos, labels), 10,000 search calls. A run makes about
-  90 searches (100 m tiles, 8 at a time) and at most 500 photo and 500 label calls: far under both. A bbox must be
+  90 searches (100 m tiles, 8 at a time), at most max(budget, the pass-one picks) photo calls (500 at the largest
+  budget) and as many label calls plus up to 6 replacement tries per building read: far under both. A bbox must be
   under 0.01 square degrees and returns at most 2,000 results (a denser tile would be cut; paging not verified).
   Throttling answers an OAuthException (code 4, subcode 1349210) with no documented HTTP status; a 2022 forum report
   shows 403 (https://forum.mapillary.com/t/hitting-request-limit/5820).
@@ -345,22 +357,24 @@ From the Terms (https://www.mapillary.com/terms, 2024-02-15) and the API documen
   https://www.mapillary.com when extracted data (the labels) is integrated; §7 reserves the logo
   (https://www.mapillary.com/press-kit). The help centre's model credit links the title to the image and the username
   to the profile (https://help.mapillary.com/hc/en-us/articles/115001770409-CC-BY-SA-license-for-open-data); the
-  fixtures README credits each photo by image page and username. README's table and CREDITS.md now name the labels
-  and link the homepage.
+  fixtures README credits each photo by image page and username. The panel, the stored credits, README's table and
+  CREDITS.md name the labels and link the homepage.
 - Fixture photos: CC BY-SA 4.0 permits resized copies with a note of modification
   (https://creativecommons.org/licenses/by-sa/4.0/legalcode.en; a downscale being technical is our reading), and
   photos beside GPL-3 code are a collection, not an adaptation
   (https://wiki.creativecommons.org/wiki/ShareAlike_interpretation). CC's GPLv3 page says its one-way route is not for
   general use (https://wiki.creativecommons.org/wiki/ShareAlike_compatibility:_GPLv3), so the six stay CC BY-SA 4.0,
-  not claimed by the GPL-3 LICENSE. No page states a licence for the labels.
+  and README's Licence section excepts them from the GPL. No page states a licence for the labels.
 - Tokens: the header form is documented; §11 has each application register its own client_id, so each user's limits
   are their own. Not verified: whether Meta's Platform Terms reach Mapillary tokens.
 
 Open, both the user's call:
 
 - The Mapillary logo beside the credit (§11 asks for it; it is a trademark).
-- The recorded labels in `tests/fetch/fixtures/kingst/mapillary.json.gz`: ask support@mapillary.com; if the answer is
-  no, the labels leave the repo and the recorded test is reworked.
+- The recorded labels and listing records (Mapillary's computed camera positions and rotations) in
+  `tests/fetch/fixtures/kingst/mapillary.json.gz`: ask support@mapillary.com; the terms research recommends hand-made
+  labels and poses if there is no answer by release; if the answer is no, they leave the repo and the recorded test
+  is reworked.
 
 ## 9. Failure handling
 
@@ -369,10 +383,16 @@ Each message is one plain sentence, as elsewhere in Ghost Town.
 | Situation | Behaviour |
 |---|---|
 | No token | Apply disabled; the section points to Preferences. |
-| Token rejected (HTTP 401 or 403) | "Mapillary refused the token; check it in Preferences." Nothing applied. |
+| Token rejected (HTTP 401, or 403 other than the request limit) | "Mapillary refused the token; check it in Preferences." Nothing applied. |
+| Mapillary's request limit reached (HTTP 403, code 4, subcode 1349210) | Asked once more after a pause; still turned away, it counts as a failed tile or photo, and when the requests keep being turned away the run stops: "Mapillary's request limit was reached; try again in a minute." Nothing applied. |
 | No coverage, or no usable photos | Every building gets the guessed look; a note says so. |
 | Some listing tiles fail (429, 5xx) | Retry with backoff, continue with the rest, note "Some areas couldn't be searched." |
-| A photo or its labels fail | Skip it; take the next-best photo. |
+| A photo's labels fail to download or fail the check | The building's next candidate is tried, labels only, up to 6 per building, within the photo budget; candidates from the sequence of a photo dropped for sky or ground come last. A chosen photo whose labels fail to download counts in the note below. |
+| A chosen photo fails to download or decode | Replaced the same way while candidates remain; otherwise the building is read from its other photos. Either way the note "N photos couldn't be read and were skipped." counts it. |
+| Mapillary stops answering: 8 requests in a row get no answer, 429, 5xx or the request limit | The requests still waiting are not sent. When nothing of that stage came, the run stops instead of returning an all-guessed look: "Mapillary couldn't be searched; try again in a minute." for the listing, "Mapillary couldn't be reached; try again in a minute." for photos or labels (the request-limit sentence when that was the cause). Nothing applied. |
+| The request has a ground datum but the look run's terrain comes back flat | "Ground heights couldn't be fetched for the photos; try again in a minute." Nothing applied. |
+| A redirect on a request carrying the token | Not followed: it counts as that request's failure, like any other error answer. |
+| Not before set to a year from 1 to 1999 | Apply disabled; the section says "Not before must be 0 or a year from 2000 on." |
 | Cancel or Esc | As Build: the process stops and nothing is applied. |
 | A damaged cached file | Fetched again through `Net`'s existing `check` mechanism. |
 | A photo missing fields | Skipped. |
@@ -442,7 +462,8 @@ Peak memory (maximum resident set size) over the five runs: 1,259 MB, at 320 Bay
 ## 13. Risks and open questions
 
 - Mapillary's terms: checked 2026-10-07 (section 8). Two items stay open: the Mapillary logo beside the credit, and
-  whether the recorded labels may stay in the repo.
+  whether the recorded labels and listing records may stay in the repo (hand-made ones if Mapillary does not answer
+  by release).
 - Old photos: most usable photos at the test sites are from 2014–2019; buildings change. Recency weighting and
   "Not before" mitigate.
 - Colour fidelity: calibration is relative to the site, not absolute; Photo brightness is the user's control.
