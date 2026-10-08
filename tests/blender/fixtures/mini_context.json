@@ -1,5 +1,5 @@
 {
-  "schema": 1, "tool": "ghosttown 0.3.0",
+  "schema": 1, "tool": "ghosttown 0.4.0",
   "centre": {"lat": 43.649667, "lon": -79.380991}, "address": "320 Bay St", "radius_m": 150.0,
   "region": "world", "ground_at_centre_m": 84.7, "survey": {"epsg": "EPSG:32617", "name": "WGS 84 / UTM zone 17N", "easting_m": 630564.787, "northing_m": 4834236.788, "elevation_m": 84.7, "grid_angle_deg": 1.117674}, "terrain": {"source": "test", "cell_m": null},
   "site_rings_m": [],
