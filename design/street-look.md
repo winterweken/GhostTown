@@ -321,7 +321,10 @@ site's median road luminance, clamped to 0.5–2×. Photos with fewer than 500 r
 - The look is stored on the context collection as JSON keyed by building id, with the panel's summary and
   credit lines beside it, like 0.3.0's other per-site state. When Build replaces a site,
   `scene_build.build` copies it from the old collection before removing it, re-applies the properties to the new
-  objects with matching ids, and regenerates detail for buildings still present.
+  objects with matching ids, and regenerates detail for buildings still present whose stored detail walls still
+  lie on them (each wall's ends within 0.5 m of the footprint, any tier). A building that moved (the site fetched
+  around a nudged centre) or changed its footprint keeps its shader look, whose heights are from its lowest
+  point, but gets no detail.
 - Detail objects carry `ctx_id` and are listed in the collection's `ctx_objects`, so `remove()` handles them like
   everything else Ghost Town makes.
 - Apply is one undo step. With Keep street look on rebuild unticked, a rebuild drops the look and its detail.

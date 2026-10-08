@@ -24,6 +24,7 @@ DETAIL_KIND = "facade_detail"
 TOP = 1.0e5                       # a zone top meaning "to the top of the building"
 GLASS_BAY_M, OPAQUE_BAY_M = 1.5, 3.0
 BOTTOM_NORMAL_Z = -0.99           # faces pointing this far down are a solid's underside
+DETAIL_FIT_M = 0.5                # a rebuild keeps stored detail walls whose ends lie this near the footprint
 SKY_WORLD = "Ghost Town Sky"
 SKY_SUN = "Ghost Town Sky sun"
 SKY_STRENGTH = 0.25
@@ -146,13 +147,15 @@ def apply(scene, root, answer, settings=None):
 
 
 def reapply(scene, root):
-    """Dress a context collection again from its stored look, e.g. after a rebuild. A stored look that
-    can't be read, validated or applied is dropped, and the buildings keep the plain look; returns True
-    when it dropped the look, so the caller can say so."""
+    """Dress a context collection again from its stored look, e.g. after a rebuild; a building whose stored
+    detail walls no longer lie on it gets no detail. A stored look that can't be read, validated or applied
+    is dropped, and the buildings keep the plain look; returns True when it dropped the look, so the caller
+    can say so."""
     try:
         answer = json.loads(root.get(LOOK_PROP, ""))
         usable = answer is not None and not ls.validate_answer(answer)
         if usable:
+            _drop_moved_detail(root, answer["buildings"])
             _dress(root, answer)
     except (ValueError, TypeError, KeyError, AttributeError, IndexError):   # a look damaged or edited by hand
         usable = False
@@ -166,6 +169,27 @@ def reapply(scene, root):
         materials.set_street_look(look=settings.show_look, brightness=settings.look_brightness)
         set_show_detail(scene, settings.show_detail)
     return False
+
+
+def _drop_moved_detail(root, entries):
+    """Forget a building's stored detail walls when they no longer lie on it (a site fetched again around a
+    nudged centre, a changed footprint), so its bands don't float off the facade: each wall's ends must be
+    within DETAIL_FIT_M of one of its footprint rings, any tier. The shader look stays, as its heights are
+    from the building's lowest point. The stored look keeps the walls, so each rebuild checks again."""
+    for ob in made_buildings(root):
+        entry = entries.get(ob["ctx_id"])
+        if entry and entry.get("detail_walls"):
+            edges = [(r[i - 1], r[i]) for s in mesh_solids(ob) for r in s["rings"] for i in range(len(r))]
+            if not all(any(_to_segment(p, a, b) <= DETAIL_FIT_M for a, b in edges)
+                       for w in entry["detail_walls"] for p in (w["a"], w["b"])):
+                del entry["detail_walls"]
+
+
+def _to_segment(p, a, b):
+    """Distance in plan from point p to the segment a-b."""
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    t = max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / max(dx * dx + dy * dy, 1e-12)))
+    return math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy)
 
 
 def _dress(root, answer):

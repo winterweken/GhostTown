@@ -189,6 +189,39 @@ def test_a_rebuild_keeps_the_look_and_regenerates_detail():
     assert all(me.users > 0 for me in bpy.data.meshes)
 
 
+def _look_with_two_detail_buildings():
+    """mini_look.json with detail on the courtyard building too, along its south wall."""
+    answer = load_fixture("mini_look.json")
+    answer["buildings"]["osm:way:2"]["detail_walls"] = [{"a": [30, 10], "b": [50, 10], "n": [0, -1],
+                                                         "z0": 0.0, "z1": 9.3}]
+    return answer
+
+
+def _context_with_the_tower_moved(dx):
+    """mini_context.json fetched around a nudged centre: the same site and label, the tower dx metres east."""
+    doc = load_fixture("mini_context.json")
+    tower = next(el for el in doc["elements"] if el["id"] == "osm:way:1")
+    for solid in tower["solids"]:
+        solid["rings"] = [[[x + dx, y] for x, y in ring] for ring in solid["rings"]]
+    return doc
+
+
+def test_a_rebuild_drops_the_detail_of_a_building_whose_walls_moved():
+    look_build.apply(bpy.context.scene, _build(), _look_with_two_detail_buildings(), Settings())
+    both = ["detail:osm:way:1", "detail:osm:way:2"]
+    assert sorted(d["ctx_id"] for d in _details()) == both
+    _build(_context_with_the_tower_moved(0.3))   # within half a metre the stored walls still lie on the tower
+    assert sorted(d["ctx_id"] for d in _details()) == both
+    root = _build(_context_with_the_tower_moved(2.0))
+    courtyard, = _details()   # the tower's bands would float 2 m off its facade
+    assert courtyard["ctx_id"] == "detail:osm:way:2" and courtyard.name in json.loads(root["ctx_objects"])
+    entry = _look_with_two_detail_buildings()["buildings"]["osm:way:2"]
+    assert len(courtyard.data.polygons) == len(look_detail.boxes(entry, base_z=-0.3)[1]) > 0
+    tower = _building("osm:way:1")
+    assert tower["gt_look_on"] == 1.0 and tower["gt_look_z3_kind"] == 3.0   # its shader look stays
+    assert all(me.users > 0 for me in bpy.data.meshes)
+
+
 def test_a_rebuild_without_keep_drops_the_look():
     _apply(_build())
     root = _build(keep_look=False)
