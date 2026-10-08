@@ -25,6 +25,7 @@
       "zones": [{"h0": 0, "h1": null, "kind": "opaque", "colour": [0.42, 0.42, 0.40]}]
     }
   },
-  "sources": [{"key": "mapillary", "name": "Mapillary", "credit": "Street photos © Mapillary contributors, CC BY-SA 4.0"}],
+  "sources": [{"key": "mapillary", "name": "Mapillary", "credit": "Street photos © Mapillary contributors, CC BY-SA 4.0"},
+              {"key": "mapillary_labels", "name": "Mapillary", "credit": "Labels from Mapillary · https://www.mapillary.com"}],
   "notes": [{"level": "warn", "code": "mapillary_tiles", "text": "Some areas couldn't be searched."}]
 }

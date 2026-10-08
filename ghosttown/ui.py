@@ -76,7 +76,7 @@ class GHOSTTOWN_PT_main(bpy.types.Panel):
         col.prop(settings, "fetch_lidar")
         if "build" in runner.ACTIVE:
             layout.label(text=runner.STATUS.get("build", "Working…"), icon="TIME")
-            layout.operator("ghosttown.cancel", icon="CANCEL")
+            layout.operator("ghosttown.cancel", icon="CANCEL").key = "build"
         else:
             row = layout.row()
             row.enabled = bpy.app.online_access
@@ -167,6 +167,14 @@ class GHOSTTOWN_PT_site(bpy.types.Panel):
                         box.label(text=line)
 
 
+def hint_width(context):
+    """Characters that fit across the sidebar. region.width is in pixels at the UI scale (twice as many on a
+    Retina screen, where the text is twice as large too); ui_scale reads 0 in background Blender. An int:
+    textwrap raises on a float width once a word is longer than the line."""
+    scale = max(1.0, context.preferences.system.ui_scale)
+    return max(20, int(context.region.width / scale) // 7)
+
+
 class GHOSTTOWN_PT_street_look(bpy.types.Panel):
     bl_idname = "GHOSTTOWN_PT_street_look"
     bl_label = "Street Look"
@@ -182,7 +190,7 @@ class GHOSTTOWN_PT_street_look(bpy.types.Panel):
         refusal = ops.look_refusal(context)
         if refusal and refusal != ops.OFFLINE:   # the main panel already says when online access is off
             col = layout.box().column(align=True)
-            for line in textwrap.wrap(refusal, max(20, context.region.width // 7)):
+            for line in textwrap.wrap(refusal, hint_width(context)):
                 col.label(text=line)
         col = layout.column()
         col.prop(settings, "look_budget")
@@ -191,7 +199,7 @@ class GHOSTTOWN_PT_street_look(bpy.types.Panel):
         col.prop(settings, "look_keep")
         if "look" in runner.ACTIVE:
             layout.label(text=runner.STATUS.get("look", "Working…"), icon="TIME")
-            layout.operator("ghosttown.cancel", icon="CANCEL")
+            layout.operator("ghosttown.cancel", icon="CANCEL").key = "look"
         else:
             row = layout.row()
             row.enabled = refusal is None

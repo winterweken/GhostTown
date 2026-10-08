@@ -109,6 +109,26 @@ def test_modal_passes_timer_events_through_while_the_fetch_runs():
         ghosttown.unregister()
 
 
+def test_only_pressing_esc_cancels_a_run():
+    # Releasing an Esc that closed a menu, a text field or a move reaches the run too; it must pass through.
+    from types import SimpleNamespace
+
+    ghosttown.register()
+    try:
+        run = runner.Run(["unused"], work_dir=tempfile.mkdtemp(), extra_paths=[], argv=SLEEPER)
+        runner.ACTIVE["build"] = run
+        reports, op = [], _fake_operator()
+        op.report = lambda *a: reports.append(a)
+        result = ops.GHOSTTOWN_OT_build.modal(op, bpy.context, SimpleNamespace(type="ESC", value="RELEASE"))
+        assert result == {"PASS_THROUGH"} and "build" in runner.ACTIVE and run.proc.poll() is None and reports == []
+        result = ops.GHOSTTOWN_OT_build.modal(op, bpy.context, SimpleNamespace(type="ESC", value="PRESS"))
+        assert result == {"CANCELLED"} and "build" not in runner.ACTIVE and run.proc.poll() is not None
+        assert reports == [({"WARNING"}, "Cancelled.")]
+    finally:
+        runner.cancel_all()
+        ghosttown.unregister()
+
+
 def test_cancelling_the_operator_stops_the_fetch():
     ghosttown.register()
     try:
@@ -481,6 +501,7 @@ def test_the_token_in_preferences_wins_over_the_environment_and_is_masked():
 
 LOOK = os.path.join(FIXTURES, "mini_look.json")
 CREDIT = "Street photos © Mapillary contributors, CC BY-SA 4.0"
+LABELS = "Labels from Mapillary · https://www.mapillary.com"
 
 
 def _picked_site():
@@ -517,6 +538,12 @@ def test_street_look_says_why_it_cannot_start():
         assert ops.look_refusal(bpy.context, online=True) == ops.NO_SITE
         _picked_site()
         assert ops.look_refusal(bpy.context, online=True) is None
+        settings = bpy.context.scene.ghosttown
+        settings.look_not_before = 1990   # the field takes it; the request doesn't
+        assert ops.look_refusal(bpy.context, online=True) == "Not before must be 0 or a year from 2000 on."
+        for year in (2019, 0):
+            settings.look_not_before = year
+            assert ops.look_refusal(bpy.context, online=True) is None
     finally:
         _restore_env(ls.TOKEN_ENV, prior)
         ghosttown.unregister()
@@ -562,7 +589,8 @@ def test_a_finished_look_is_reported_and_kept_on_the_site():
         reports = []
         text = ops.apply_look(bpy.context, root, LOOK, lambda *a: reports.append(a))
         assert text == root[look_build.SUMMARY_PROP] == "Look from photos: 1 building · guessed: 1 · 3 photos (2019–2025)"
-        assert root[look_build.CREDITS_PROP] == CREDIT and CREDIT in root["credits"]
+        assert root[look_build.CREDITS_PROP] == CREDIT + "\n" + LABELS   # the panel's two credit lines
+        assert root["credits"].splitlines()[-2:] == [CREDIT, LABELS]
         assert ({"WARNING"}, "Some areas couldn't be searched.") in reports and ({"INFO"}, text) in reports
     finally:
         ghosttown.unregister()
@@ -612,6 +640,29 @@ def test_a_rebuild_keeps_or_drops_the_look_as_set():
         ghosttown.unregister()
 
 
+def test_a_rebuild_that_drops_a_stored_look_says_so():
+    ghosttown.register()
+    path = os.path.join(FIXTURES, "mini_context.json")
+    dropped = ({"WARNING"}, "The street look couldn't be put back on the rebuilt site; apply it again.")
+    stored = (look_build.LOOK_PROP, look_build.SUMMARY_PROP, look_build.CREDITS_PROP)
+    try:
+        reports = []
+        root = ops.import_into_scene(bpy.context, path, lambda *a: reports.append(a))
+        ops.apply_look(bpy.context, root, LOOK, lambda *a: None)
+        root = ops.import_into_scene(bpy.context, path, lambda *a: reports.append(a))   # a healthy carry-over
+        assert look_build.LOOK_PROP in root and dropped not in reports
+        root[look_build.LOOK_PROP] = "not json"   # a look that can't be put back
+        root = ops.import_into_scene(bpy.context, path, lambda *a: reports.append(a))
+        assert dropped in reports and [key for key in stored if key in root] == []
+        ops.apply_look(bpy.context, root, LOOK, lambda *a: None)
+        bpy.context.scene.ghosttown.look_keep = False
+        reports.clear()
+        root = ops.import_into_scene(bpy.context, path, lambda *a: reports.append(a))   # dropped as asked
+        assert look_build.LOOK_PROP not in root and dropped not in reports
+    finally:
+        ghosttown.unregister()
+
+
 def test_a_rebuild_dresses_a_fresh_material_with_the_switches_as_set():
     ghosttown.register()
     path = os.path.join(FIXTURES, "mini_context.json")
@@ -635,6 +686,22 @@ def test_cancel_stops_a_running_street_look_too():
         runner.ACTIVE["look"] = run
         assert bpy.ops.ghosttown.cancel() == {"FINISHED"}
         assert run.proc.poll() is not None and "look" not in runner.ACTIVE
+    finally:
+        runner.cancel_all()
+        ghosttown.unregister()
+
+
+def test_each_panels_cancel_stops_only_its_own_run():
+    ghosttown.register()
+    try:
+        build = runner.Run(["unused"], work_dir=tempfile.mkdtemp(), extra_paths=[], argv=SLEEPER)
+        look = runner.Run(["unused"], work_dir=tempfile.mkdtemp(), extra_paths=[], argv=SLEEPER)
+        runner.ACTIVE["build"], runner.ACTIVE["look"] = build, look
+        assert bpy.ops.ghosttown.cancel(key="look") == {"FINISHED"}   # Street Look's Cancel
+        assert look.proc.poll() is not None and "look" not in runner.ACTIVE
+        assert build.proc.poll() is None and "build" in runner.ACTIVE   # Build goes on
+        assert bpy.ops.ghosttown.cancel(key="build") == {"FINISHED"}   # Build's Cancel
+        assert build.proc.poll() is not None and runner.ACTIVE == {}
     finally:
         runner.cancel_all()
         ghosttown.unregister()
@@ -700,9 +767,10 @@ class DrawnLayout:
 
     def operator(self, idname, text="", icon="NONE", **kwargs):
         module, name = idname.split(".")
-        getattr(getattr(bpy.ops, module), name).get_rna_type()   # raises KeyError for an operator that isn't registered
+        rna = getattr(getattr(bpy.ops, module), name).get_rna_type()   # raises KeyError for an unregistered operator
         self._check_icon(icon)
         self.drawn.append(("operator", idname, self.enabled))
+        return OperatorProperties(self.drawn, idname, rna)
 
     @staticmethod
     def _check_icon(icon):
@@ -710,24 +778,39 @@ class DrawnLayout:
         assert icon == "NONE" or icon in icons, icon
 
 
-def _draw_street_look():
+class OperatorProperties:
+    """What layout.operator returns: setting a property the operator doesn't have fails, as in Blender."""
+
+    def __init__(self, drawn, idname, rna):
+        self.__dict__.update(_drawn=drawn, _idname=idname, _rna=rna)
+
+    def __setattr__(self, name, value):
+        assert name in self._rna.properties, name
+        self._drawn.append(("operator property", self._idname, name, value))
+
+
+def _draw_street_look(width=2000, ui_scale=None):
     """What the Street Look panel draws now: the calls it made on its layout, in order. Background Blender has
-    no region and reports online access as off, so the context gets a wide region (no sentence wraps) and
-    look_refusal answers as if online access were on."""
+    no region and reports online access as off, so the context gets a region (wide by default, so no sentence
+    wraps) and look_refusal answers as if online access were on. ui_scale stands in for the Resolution Scale,
+    which reads 0 in background Blender."""
     from types import SimpleNamespace
 
     from ghosttown import ui
 
     class Context:
-        region = SimpleNamespace(width=2000)
-
         def __getattr__(self, name):   # everything else is the real context's
             return getattr(bpy.context, name)
 
+    context = Context()
+    context.region = SimpleNamespace(width=width)
+    if ui_scale is not None:
+        context.preferences = SimpleNamespace(system=SimpleNamespace(ui_scale=ui_scale),
+                                              addons=bpy.context.preferences.addons)   # prefs.get reads these
     drawn, real = [], ops.look_refusal
     try:
         ops.look_refusal = lambda context, online=None: real(context, online=True)
-        ui.GHOSTTOWN_PT_street_look.draw(SimpleNamespace(layout=DrawnLayout(drawn)), Context())
+        ui.GHOSTTOWN_PT_street_look.draw(SimpleNamespace(layout=DrawnLayout(drawn)), context)
     finally:
         ops.look_refusal = real
     return drawn
@@ -754,12 +837,74 @@ def test_the_street_look_panel_explains_a_refusal_and_offers_its_settings():
         assert not any(d[:2] == ("operator", "ghosttown.add_sky") for d in _draw_street_look())
 
         root[look_build.SUMMARY_PROP] = "Look from photos: 2 buildings · guessed: 0"
-        root[look_build.CREDITS_PROP] = CREDIT + "\nA second credit"
+        root[look_build.CREDITS_PROP] = CREDIT + "\n" + LABELS
         drawn = _draw_street_look()   # the site keeps a summary and credits
         assert ("box",) in drawn and ("label", "Look from photos: 2 buildings · guessed: 0") in drawn
-        assert ("label", CREDIT) in drawn and ("label", "A second credit") in drawn
+        assert ("label", CREDIT) in drawn and ("label", LABELS) in drawn
     finally:
         _restore_env(ls.TOKEN_ENV, prior)
+        ghosttown.unregister()
+
+
+def test_the_no_token_hint_fits_a_retina_sidebar():
+    # A 280 px sidebar at UI scale 2 reports 560 px and draws its text twice as large: about 40 characters fit.
+    prior = os.environ.get(ls.TOKEN_ENV)
+    ghosttown.register()
+    os.environ.pop(ls.TOKEN_ENV, None)
+    try:
+        lines = [d[1] for d in _draw_street_look(width=560, ui_scale=2.0) if d[0] == "label"]
+        assert len(lines) > 1 and " ".join(lines) == ops.NO_TOKEN and all(len(line) <= 40 for line in lines), lines
+        # a narrow sidebar: GHOSTTOWN_MAPILLARY_TOKEN) is longer than a line, which textwrap breaks only with an int
+        lines = [d[1] for d in _draw_street_look(width=150, ui_scale=1.0) if d[0] == "label"]
+        assert "".join(lines).replace(" ", "") == ops.NO_TOKEN.replace(" ", "") and max(map(len, lines)) <= 21, lines
+    finally:
+        _restore_env(ls.TOKEN_ENV, prior)
+        ghosttown.unregister()
+
+
+def test_each_panels_cancel_button_names_its_own_run():
+    from types import SimpleNamespace
+
+    from ghosttown import ui
+
+    ghosttown.register()
+    try:
+        _picked_site()
+        runner.ACTIVE["build"] = runner.ACTIVE["look"] = "running"   # the panels only ask whether a run is there
+        drawn = []
+        ui.GHOSTTOWN_PT_main.draw(SimpleNamespace(layout=DrawnLayout(drawn)), bpy.context)
+        assert ("operator property", "ghosttown.cancel", "key", "build") in drawn
+        assert ("operator property", "ghosttown.cancel", "key", "look") in _draw_street_look()
+    finally:
+        runner.ACTIVE.pop("build", None)
+        runner.ACTIVE.pop("look", None)
+        ghosttown.unregister()
+
+
+def test_preferences_show_the_cache_folder_in_use_on_two_lines():
+    from types import SimpleNamespace
+
+    from ghosttown import prefs
+
+    default = "/Users/someone/Library/Application Support/Blender/5.2/extensions/.user/user_default/ghosttown/cache"
+    real, asked = bpy.utils.extension_path_user, []
+    ghosttown.register()
+    try:
+        # extension_path_user works only inside an installed extension, so it answers here for one
+        bpy.utils.extension_path_user = lambda package, path="", create=False: asked.append(create) or default
+        for field, shown in (("", default), ("/tmp/gt-cache/", "/tmp/gt-cache/")):
+            drawn = []
+            me = SimpleNamespace(layout=DrawnLayout(drawn), bl_rna=prefs.GhostTownPreferences.bl_rna, cache_dir=field)
+            prefs.GhostTownPreferences.draw(me, bpy.context)
+            labels = [d[1] for d in drawn if d[0] == "label"]
+            assert labels[-2:] == [f"Or set {ls.TOKEN_ENV}.",
+                                   "The token is saved in Blender's preferences file, never in your scene's .blend files."]
+            folder = labels[:-2]
+            assert "".join(folder) == shown and all(len(line) <= 60 for line in folder), folder
+            assert len(folder) == (2 if field == "" else 1)
+        assert asked == [False]   # showing the folder never makes it
+    finally:
+        bpy.utils.extension_path_user = real
         ghosttown.unregister()
 
 
@@ -791,21 +936,21 @@ def test_street_look_does_not_start_on_a_failed_validation_or_without_buildings(
     prior = os.environ.get(ls.TOKEN_ENV)
     ghosttown.register()
     os.environ[ls.TOKEN_ENV] = "MLY|abc"
+    real = ops.ls.validate_request
     try:
         root = _picked_site()
-        settings, cache = bpy.context.scene.ghosttown, tempfile.mkdtemp()
-        settings.look_not_before = 1990   # the setting takes it; the request schema wants 2000 or later
-        problems = ls.validate_request(look_build.make_request(root, settings, cache))
-        assert problems and "not_before_year" in problems[0]
-        assert ops.look_launch(bpy.context, cache, online=True) == (None, problems[0])
+        cache = tempfile.mkdtemp()
+        ops.ls.validate_request = lambda req: ["A made-up problem."]
+        assert ops.look_launch(bpy.context, cache, online=True) == (None, "A made-up problem.")
         assert os.listdir(cache) == []   # nothing was written, not even the run folder
 
-        settings.look_not_before = 0
+        ops.ls.validate_request = real
         for building in look_build.made_buildings(root):
             bpy.data.objects.remove(building)
         assert ops.look_launch(bpy.context, cache, online=True) == (None, ops.NO_BUILDINGS)
         assert os.listdir(cache) == []
     finally:
+        ops.ls.validate_request = real
         _restore_env(ls.TOKEN_ENV, prior)
         ghosttown.unregister()
 

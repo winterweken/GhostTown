@@ -14,7 +14,8 @@ class GhostTownPreferences(bpy.types.AddonPreferences):
 
     cache_dir: StringProperty(
         name="Cache folder", subtype="DIR_PATH",
-        description="Where downloaded data and runs are kept. Leave blank for the extension's own folder")
+        description="Where downloaded data and runs are kept. Leave blank for Ghost Town's own folder under "
+                    "Blender's extensions folder, shown below")
     overpass_url: StringProperty(
         name="Overpass endpoint", default=DEFAULT_OVERPASS,
         description="OpenStreetMap Overpass API server")
@@ -28,10 +29,30 @@ class GhostTownPreferences(bpy.types.AddonPreferences):
     def draw(self, context):
         col = self.layout.column()
         col.prop(self, "cache_dir")
+        # the folder in use; never cache_dir(), whose create=True would make the folder on every redraw
+        if self.cache_dir.strip():
+            folder = bpy.path.abspath(self.cache_dir)
+        else:
+            folder = bpy.utils.extension_path_user(__package__, path="cache", create=False)
+        for line in path_lines(folder):
+            col.label(text=line)
         col.prop(self, "overpass_url")
         col.prop(self, "revit_triangle_budget")
         col.prop(self, "mapillary_token")
-        col.label(text=f"Or set {TOKEN_ENV}. The token stays in Blender's preferences, never in .blend files.")
+        col.label(text=f"Or set {TOKEN_ENV}.")
+        col.label(text="The token is saved in Blender's preferences file, never in your scene's .blend files.")
+
+
+def path_lines(path, width=60):
+    """A folder as one or two labels, broken after a path separator, so the Preferences window (about 500 px)
+    doesn't clip the middle out of a long one."""
+    if len(path) <= width:
+        return [path]
+    cuts = [i + 1 for i, ch in enumerate(path) if ch in "/\\" and 0 < i < len(path) - 1]
+    if not cuts:
+        return [path]
+    cut = min(cuts, key=lambda i: max(i, len(path) - i))
+    return [path[:cut], path[cut:]]
 
 
 def get(context):

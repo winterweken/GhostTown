@@ -21,6 +21,7 @@ NO_MATCH = "No Toronto address matched. Outside Toronto, enter latitude, longitu
 NO_TOKEN = f"Add your Mapillary token in Preferences › Add-ons › Ghost Town (or set {ls.TOKEN_ENV})."
 NO_SITE = "Pick a site in the Site panel first."
 NO_BUILDINGS = "This site has no buildings to dress."
+NOT_BEFORE = "Not before must be 0 or a year from 2000 on."
 _LOCATION = re.compile(r"\s*(-?\d+(?:\.\d+)?)\s*[,\s]\s*(-?\d+(?:\.\d+)?)\s*")
 
 
@@ -108,7 +109,7 @@ def import_into_scene(context, path, report):
         report({"ERROR"}, problems[0])
         return None
     root = scene_build.build(context.scene, doc, folder=os.path.dirname(os.path.abspath(path)),
-                             keep_look=context.scene.ghosttown.look_keep)
+                             keep_look=context.scene.ghosttown.look_keep, report=report)
     settings = context.scene.ghosttown
     settings.site = root
     settings.summary = _summary(doc)
@@ -148,6 +149,8 @@ def look_refusal(context, online=None):
         return NO_TOKEN
     if site_use.picked(context) is None:
         return NO_SITE
+    if 0 < context.scene.ghosttown.look_not_before < 2000:   # the field allows them; the request schema doesn't
+        return NOT_BEFORE
     return None
 
 
@@ -228,7 +231,8 @@ class _FetcherOperator:
         if run is None:  # cancelled from the panel, by a file load or by unregister
             self._stop(context)
             return {"CANCELLED"}
-        if event.type == "ESC":
+        # Only the press: the release of an Esc that closed a menu, a text field or a move would cancel the run too.
+        if event.type == "ESC" and event.value == "PRESS":
             runner.cancel(self.key)
             self._stop(context)
             self.report({"WARNING"}, "Cancelled.")
@@ -495,7 +499,7 @@ class GHOSTTOWN_OT_save_photo(bpy.types.Operator):
 class GHOSTTOWN_OT_street_look(_FetcherOperator, bpy.types.Operator):
     bl_idname = "ghosttown.street_look"
     bl_label = "Apply Street Look"
-    bl_description = "Give the picked site's buildings colours and materials read from Mapillary street photos"
+    bl_description = "Give the picked site's buildings colours, glass and storefronts read from Mapillary street photos"
     bl_options = {"REGISTER", "UNDO"}
     key = "look"
     needs = (("shapely", MISSING_SHAPELY), ("PIL", MISSING_PILLOW))
@@ -541,8 +545,10 @@ class GHOSTTOWN_OT_cancel(bpy.types.Operator):
     bl_label = "Cancel"
     bl_description = "Stop the running fetch"
 
+    # Each panel's button stops only its own run; without a key (the F3 search) every run stops.
+    key: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+
     def execute(self, context):
-        runner.cancel("build")
-        runner.cancel("find")
-        runner.cancel("look")
+        for key in [self.key] if self.key else ["build", "find", "look"]:
+            runner.cancel(key)
         return {"FINISHED"}

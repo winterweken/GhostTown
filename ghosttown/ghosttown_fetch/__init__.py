@@ -21,12 +21,13 @@ RADIUS_RANGE_M = (50.0, 1000.0)
 SITE_LIMIT_M = 2000.0  # site outlines must sit within this distance of the centre
 
 SOURCE_NAMES = {"osm": "OpenStreetMap", "toronto": "City of Toronto", "nrcan": "Natural Resources Canada",
-                "ontario": "Geospatial Ontario", "mapillary": "Mapillary"}
+                "ontario": "Geospatial Ontario", "mapillary": "Mapillary", "mapillary_labels": "Mapillary"}
 CREDITS = {
     "osm": "© OpenStreetMap contributors",
     "toronto": "Contains information licensed under the Open Government Licence – Toronto",
     "nrcan": "Contains information licensed under the Open Government Licence – Canada",
     "ontario": "Contains information licensed under the Open Government Licence – Ontario",
     "mapillary": "Street photos © Mapillary contributors, CC BY-SA 4.0",
+    "mapillary_labels": "Labels from Mapillary · https://www.mapillary.com",   # the labels are Mapillary's own data
 }
 LOOK_SCHEMA = 1

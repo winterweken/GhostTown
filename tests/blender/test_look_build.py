@@ -13,6 +13,7 @@ from ghosttown.ghosttown_fetch import look_schema as ls
 from helpers import closed_and_outward, fitted_doc, load_fixture, mesh_arrays
 
 CREDIT = "Street photos © Mapillary contributors, CC BY-SA 4.0"
+LABELS = "Labels from Mapillary · https://www.mapillary.com"
 
 
 class Settings:
@@ -94,7 +95,8 @@ def test_apply_sets_properties_materials_credits_and_detail():
     root = _build()
     before = site_use.count_triangles(root, bpy.context.evaluated_depsgraph_get())
     assert _apply(root) == "Look from photos: 1 building · guessed: 1 · 3 photos (2019–2025)"
-    assert root[look_build.SUMMARY_PROP].startswith("Look from photos") and root[look_build.CREDITS_PROP] == CREDIT
+    assert root[look_build.SUMMARY_PROP].startswith("Look from photos")
+    assert root[look_build.CREDITS_PROP] == CREDIT + "\n" + LABELS   # the panel's two credit lines
     tower = _building("osm:way:1")
     assert tower["gt_look_on"] == 1.0 and abs(tower["gt_look_base_z"] + 0.3) < 1e-6 and tower["gt_look_floor_h"] == 3.5
     assert [tower[f"gt_look_z{n}_kind"] for n in range(1, 5)] == [1.0, 2.0, 3.0, 0.0]
@@ -110,7 +112,7 @@ def test_apply_sets_properties_materials_credits_and_detail():
     assert bpy.data.materials["Context - Road"].node_tree.nodes.get(materials.LOOK_NODE) is None
     origin, = [ob for ob in root.objects if ob.get("ctx_id") == "origin"]
     for block in (root, origin):
-        assert block["credits"].splitlines() == ["© OpenStreetMap contributors", CREDIT]
+        assert block["credits"].splitlines() == ["© OpenStreetMap contributors", CREDIT, LABELS]
     detail, = _details()
     coll = detail.users_collection[0]
     assert detail.name == "Detail · Tower" and detail["ctx_id"] == "detail:osm:way:1"
@@ -202,14 +204,14 @@ def test_applying_twice_replaces_the_detail_and_keeps_one_of_everything():
     assert len([c for c in root.children if c.get("ctx_group") == "Detail"]) == 1
     assert sum(1 for name in json.loads(root["ctx_objects"]) if name.startswith("Detail")) == 1
     assert all(me.users > 0 for me in bpy.data.meshes)   # the first detail mesh went with its object
-    assert root["credits"].splitlines() == ["© OpenStreetMap contributors", CREDIT]
+    assert root["credits"].splitlines() == ["© OpenStreetMap contributors", CREDIT, LABELS]
 
 
 def test_reapply_skips_buildings_that_are_gone():
     root = _build()
     _apply(root)
     bpy.data.objects.remove(_building("osm:way:1"))
-    look_build.reapply(bpy.context.scene, root)
+    assert look_build.reapply(bpy.context.scene, root) is False   # the look stays for the buildings still there
     assert _details() == [] and not [c for c in root.children if c.get("ctx_group") == "Detail"]
     assert not any(name.startswith("Detail") for name in json.loads(root["ctx_objects"]))
     assert _building("osm:way:2")["gt_look_on"] == 1.0
@@ -242,7 +244,7 @@ def test_a_corrupt_stored_look_is_dropped():
         root = _build()
         root[look_build.LOOK_PROP] = text
         root[look_build.SUMMARY_PROP] = root[look_build.CREDITS_PROP] = "old"
-        look_build.reapply(bpy.context.scene, root)   # nothing raises
+        assert look_build.reapply(bpy.context.scene, root) is True   # nothing raises; the caller hears it was dropped
         assert _look_props(root) == [], text
         root[look_build.LOOK_PROP] = text
         assert _look_props(_build()) == [], text   # nor does a rebuild that carries it over

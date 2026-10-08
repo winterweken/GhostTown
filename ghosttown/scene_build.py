@@ -18,6 +18,7 @@ from .ghosttown_fetch import context as ctx
 ROOT_PREFIX = "Context · "
 GROUP_ORDER = ("Buildings", "Ground", "Trees", "Parcels")
 MAX_LABEL = 60
+LOOK_DROPPED = "The street look couldn't be put back on the rebuilt site; apply it again."
 
 
 def _group(kind):
@@ -45,7 +46,7 @@ def find_root(scene, label):
     return None
 
 
-def build(scene, doc, folder=None, *, keep_look=True):
+def build(scene, doc, folder=None, *, keep_look=True, report=None):
     label = site_label(doc)
     old = find_root(scene, label)
     look = old.get(look_build.LOOK_PROP) if old is not None and keep_look else None
@@ -128,7 +129,8 @@ def build(scene, doc, folder=None, *, keep_look=True):
                 pass  # a photo file Blender can't read: the site builds without a photo
     if look:
         root[look_build.LOOK_PROP] = look   # Street Look carries over to the new objects by building id
-        look_build.reapply(scene, root)
+        if look_build.reapply(scene, root) and report is not None:
+            report({"WARNING"}, LOOK_DROPPED)
     return root
 
 

@@ -70,7 +70,9 @@ def test_credits_years_and_the_token_stays_in_headers(tmp_path):
     answer = look.run(request(tmp_path, data), net, TOKEN)
     assert answer["photos_used"] >= 3 and answer["years"] == [2024, 2024]
     assert answer["sources"] == [{"key": "mapillary", "name": "Mapillary",
-                                  "credit": "Street photos © Mapillary contributors, CC BY-SA 4.0"}]
+                                  "credit": "Street photos © Mapillary contributors, CC BY-SA 4.0"},
+                                 {"key": "mapillary_labels", "name": "Mapillary",
+                                  "credit": "Labels from Mapillary · https://www.mapillary.com"}]
     assert all(TOKEN not in url and "MLY%7C" not in url for url, _source, _data in net.calls)   # nor URL-encoded
     # every call to Mapillary's API carries the token as a header, and nothing else does (the photo links are signed)
     api = [url for url, _source, _data in net.calls if url.startswith("https://graph.mapillary.com/")]

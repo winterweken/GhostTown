@@ -10,7 +10,7 @@ import functools
 
 import numpy as np
 
-from . import CREDITS, appearance, imagery, raycast, selection
+from . import CREDITS, SOURCE_NAMES, appearance, imagery, raycast, selection
 from . import look_schema as ls
 from . import terrain as terrain_mod
 from .camera import Camera
@@ -153,7 +153,8 @@ def run(request, net, token, *, progress=None):
     answer["photos_used"] = len(used)
     answer["years"] = [min(years), max(years)] if years else None
     if used:
-        answer["sources"].append({"key": "mapillary", "name": "Mapillary", "credit": CREDITS["mapillary"]})
+        for key in ("mapillary", "mapillary_labels"):
+            answer["sources"].append({"key": key, "name": SOURCE_NAMES[key], "credit": CREDITS[key]})
     prune = getattr(net, "prune", None)   # stand-ins for Net in tests and tools may have no cache
     if prune:
         prune("mapillary")   # photos and labels are reused for 30 days, then deleted

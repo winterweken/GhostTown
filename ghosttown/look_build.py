@@ -147,7 +147,8 @@ def apply(scene, root, answer, settings=None):
 
 def reapply(scene, root):
     """Dress a context collection again from its stored look, e.g. after a rebuild. A stored look that
-    can't be read, validated or applied is dropped, and the buildings keep the plain look."""
+    can't be read, validated or applied is dropped, and the buildings keep the plain look; returns True
+    when it dropped the look, so the caller can say so."""
     try:
         answer = json.loads(root.get(LOOK_PROP, ""))
         usable = answer is not None and not ls.validate_answer(answer)
@@ -159,11 +160,12 @@ def reapply(scene, root):
         for key in (LOOK_PROP, SUMMARY_PROP, CREDITS_PROP):
             root.pop(key, None)
         _undress(root)   # a look that failed part-way may already have dressed buildings and made detail
-        return
+        return True
     settings = getattr(scene, "ghosttown", None)
     if settings is not None:
         materials.set_street_look(look=settings.show_look, brightness=settings.look_brightness)
         set_show_detail(scene, settings.show_detail)
+    return False
 
 
 def _dress(root, answer):
