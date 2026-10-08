@@ -27,3 +27,15 @@ def test_atomic_write_leaves_no_temp_files(tmp_path):
     atomic_write(str(target), b"2")
     assert sorted(os.listdir(tmp_path)) == ["a.json"]
     assert target.read_bytes() == b"2"
+
+
+def test_prune_deletes_a_sources_files_older_than_the_age(tmp_path):
+    c = Cache(str(tmp_path), max_age_days=30)
+    day = 86400
+    for source, key, age in (("mapillary", "old", 31), ("mapillary", "recent", 29), ("osm", "old", 31)):
+        c.write(source, key, key.encode())
+        os.utime(c._path(source, key), (c.clock() - age * day,) * 2)
+    c.prune("mapillary")
+    assert c.read("mapillary", "recent") == b"recent" and len(os.listdir(tmp_path / "mapillary")) == 1
+    assert len(os.listdir(tmp_path / "osm")) == 1   # other sources are left alone
+    c.prune("nothing-yet")                          # a folder that doesn't exist is fine

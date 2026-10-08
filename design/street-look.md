@@ -1,0 +1,493 @@
+# Street Look: building appearance from street photos
+
+Status: design approved in conversation, 2026-10-07; implementation plan in `design/street-look-plan.md`.
+Builds on Ghost Town 0.3.0 (City massing, aerial photos, LiDAR and fitted roofs, the Site panel).
+
+## 1. Summary
+
+Street Look gives every building in a Ghost Town context a believable facade in Blender renders, derived from
+Mapillary street photos: up to four height zones (for example storefront base, podium, body, cap), each with a
+colour and a kind (storefront, opaque, glass or cap), plus a floor height. A few buildings the user selects can also get simple
+detail geometry (floor bands, mullions, a storefront band). It is a separate step after Build Context, off by
+default, and needs the user's own Mapillary token.
+
+The look is a procedural shader driven by per-building values. No photo is ever stored in the .blend file. The
+approach tolerates the metre-level camera errors, clutter and gaps found in testing; it does not try to be exact.
+
+## 2. Goals and non-goals
+
+Goals
+
+- Realistic context for presentation renders: most buildings near the address look like themselves; the rest get
+  a sensible default.
+- Work wherever Mapillary has photos and Ghost Town has buildings (Toronto massing or OpenStreetMap).
+- Keep today's defaults intact: clean massing, stable material names, Revit and BIM export unchanged.
+- Bounded and visible cost: a photo budget, progress, Cancel, and a cache.
+
+Non-goals (version 1)
+
+- Exact photo textures on walls. Projecting photos through their cameras was tried and rejected: Mapillary's
+  computed positions are 1–4 m and a few degrees off in downtown Toronto, and none of the four automatic
+  corrections tried (edge matching, point-cloud fitting, label fitting, per-drive offsets) was reliable without a
+  person checking.
+- Material classes (brick, concrete, stone, metal), measured window spacing, roof shapes. See section 12.
+
+## 3. What the tests showed
+
+Throwaway tests on 2026-10-06/07 at 351 King St E, 320 Bay St, 235 Queens Quay W, 2300 Yonge St and 300 Borough
+Dr, with the user's token. The code is not kept; the numbers are.
+
+| Finding | Evidence |
+|---|---|
+| Photos from blocks away are the useful ones | Share of the target's visible wall seen level and head-on: 0–23% using photos within 60 m, 38–73% within 500 m. Median distance of the sharpest view: 63–201 m. |
+| Coverage depends on building type | At ≥ 5 px/m (2048 px images): 71% for a 17 m waterfront building, 57% for an 87 m tower, 16% for a 296 m downtown complex. Photos needed to reach 90% of what all photos give: 5–11, but 37 for the 296 m complex. |
+| Mapillary's labels separate building from clutter | Labels were present for all 200 photos checked. They catch trees, vehicles, people, poles and fencing, and a high share of target points landing on sky flags a bad camera pose (91% at 300 Borough Dr). Bus shelters and awnings are labelled as building and slip through. |
+| A per-pixel model mask is needed | Without it, lower neighbouring buildings standing in front of the target were sampled as the target. |
+| Exposure must be calibrated relative to the site | Assuming a fixed road brightness failed (every photo hit the clamp). Bringing each photo's road to the site's median road brightness worked (gains 0.5–2×). |
+| Height zones come out of a colour-by-height profile | 351 King St E: dark storefront 0–9 m, podium 9–36 m, light blue glass 36–84 m, dark cap above. |
+| Glass changes colour with viewpoint; walls do not | Spread of chromaticity across ≥ 3 views per 6 m band: about 0.08 on the podium, 0.15–0.19 on the glass. Brightness spread about 0.3–0.6 against 0.8–1.1. |
+| Floor height is measurable; window spacing is not yet | The 351 King St E tower showed 3.5 m floors in 7 m two-storey boxes. Bay-spacing estimates sat at the edge of the search range (noise). |
+
+## 4. User experience
+
+1. Build Context as today.
+2. In the Ghost Town tab, a Street Look section under the Site panel shows the token status, the settings,
+   and an **Apply Street Look** button; it acts on the site picked there. Optionally select a few building
+   objects and tick **Detail for selected**.
+3. Apply runs in the background with progress and Cancel, like Build. Afterwards the section shows, for example,
+   "Look from photos: 41 buildings · guessed: 23 · 128 photos (2014–2025)" and the credit lines
+   "Street photos © Mapillary contributors, CC BY-SA 4.0" and "Labels from Mapillary · https://www.mapillary.com".
+4. **Show street look** and **Show detail** switch the result on and off. **Photo brightness** (default 1.15)
+   scales the measured colours.
+5. If the scene still uses Blender's default world, Apply offers to add a `Ghost Town Sky` world (sky texture
+   plus sun) so glass has something to reflect. It never replaces a world the user made.
+
+Settings: photo budget (default 150), "Not before" year (default off), Detail for selected (default off),
+Keep street look on rebuild (default on).
+Preferences: Mapillary token (masked field), with the `GHOSTTOWN_MAPILLARY_TOKEN` environment variable as a
+fallback. Without a token, Apply is disabled and the section points to Preferences.
+
+## 5. Architecture
+
+The existing split holds: the fetcher process does all network and analysis work; the Blender side only draws.
+
+```
+Street Look panel ─▶ look_request.json ─▶ fetcher process ─▶ look.json ─▶ building properties, shared
+                     (+ token in env)     (ghosttown_fetch look)          node group, detail objects
+```
+
+### 5.1 New and changed pieces
+
+Fetcher (`ghosttown/ghosttown_fetch/`, plain Python, never imports bpy):
+
+- `cli.py`: a `look <look_request.json>` command beside `fetch` and `geocode`, with the same one-line JSON answer,
+  `error.txt` and `progress.jsonl` conventions.
+- `sources/mapillary.py`: photo listing by tiles, image metadata, thumbnail download, label download. Requests
+  run about 8 at a time.
+- `mvt.py`: a small decoder for the Mapbox Vector Tile polygons in which Mapillary encodes its labels (about 100
+  lines; avoids a protobuf dependency).
+- `raycast.py`: 2.5D ray casting against building solids. Ghost Town buildings are vertical prisms, so a ray only
+  needs testing against wall segments (candidates from a shapely STRtree) plus a height check at the hit.
+  Downward rays onto roofs are not handled; street cameras rarely look down.
+- `look.py`: the pipeline in section 6.
+- `net.py`: per-call request headers (for the token) and a cache-key override (Mapillary's photo links are
+  signed and change); 0.3.0's `keep=False` already covers answers that must not be stored. Cache keys never
+  include the token.
+- `__init__.py`: `mapillary` in `SOURCE_NAMES` and `CREDITS`.
+
+New dependency: **Pillow**, for JPEG decoding and polygon filling, bundled as per-platform wheels exactly like
+shapely (`tools/fetch_wheels.py` and `blender_manifest.toml` cover both). Licence HPND, compatible with GPL.
+
+Blender side (`ghosttown/`):
+
+- `prefs.py`: the token field.
+- `props.py`: Street Look settings and the result summary.
+- `ui.py`: the Street Look section.
+- `ops.py`: `GHOSTTOWN_OT_street_look`, built on the same `_FetcherOperator` pattern as Build; one undo step.
+  It acts on the Site panel's picked site, and only on the site's own buildings (`site_use.made_objects`),
+  as the aerial photo on roofs does; the user's duplicates are left alone.
+- `runner.py`: passes the token in the child environment only.
+- `look_build.py` (new): applies `look.json` (section 7).
+- `materials.py`: the `Ghost Town · Street Look` node group and its insertion into the building materials; a new
+  stable material kind `facade_detail` (`Context - Facade detail`).
+- `scene_build.py`: carries the look across a rebuild (section 7.4).
+
+Alternatives considered: a headless `blender -b` worker (no new wheels, but Blender's start-up time and memory on
+every run, tests need Blender, and a second kind of child process), and analysis inside the open Blender on a
+timer (no new process, but a sluggish interface and against "Blender only draws").
+
+### 5.2 look_request.json
+
+```json
+{
+  "schema": 1, "tool": "ghosttown 0.3.0",
+  "centre": {"lat": 43.651769, "lon": -79.365065}, "radius_m": 300.0, "ground_at_centre_m": 80.783,
+  "buildings": [
+    {"id": "toronto:massing:2025:361309", "detail": true,
+     "solids": [{"rings": [[[-21.4, -62.0], [71.4, -60.3], [70.8, 22.0], [-20.9, 20.6]]], "z0": -1.2, "z1": 85.4}]}
+  ],
+  "budget_photos": 150, "not_before_year": null, "search_margin_m": 200.0,
+  "fetch_fresh": false,
+  "cache_dir": "/Users/me/Library/Application Support/Blender/5.2/extensions/.user/user_default/ghosttown/cache",
+  "out_dir": "<cache_dir>/runs/look-20261007-101500"
+}
+```
+
+- `buildings` lists what is in the scene now, so deleted buildings are skipped and edited prisms are respected.
+  Blender rebuilds each building's solids from its mesh: each connected part is a tier, its bottom outline is
+  the ring set, and its lowest and highest points are z0 and z1, matching the `context.json` solid format.
+  A building that keeps 0.3.0 roof shapes is read from its flat mesh, the prism set the fetcher models,
+  whichever roof shape it shows.
+- Ground heights for cameras come from the fetcher's own terrain source and cache, fetched for the photo search area
+  (200 m past the farthest wall read, capped at 1,000 m) when the request carries `ground_at_centre_m`; when it is
+  null (a site built on flat ground, or outside Canada) the cameras stand on flat ground like the buildings and
+  nothing is fetched; a request with a datum whose look-run terrain comes back flat stops with one sentence.
+- The token is never in this file.
+
+### 5.3 look.json
+
+```json
+{
+  "schema": 1, "tool": "ghosttown 0.3.0",
+  "photos_used": 128, "years": [2014, 2025],
+  "buildings": {
+    "toronto:massing:2025:361309": {
+      "source": "photos", "photos": 9, "confidence": 0.8, "floor_h": 3.5,
+      "zones": [
+        {"h0": 0, "h1": 9, "kind": "storefront", "colour": [0.073, 0.048, 0.042]},
+        {"h0": 9, "h1": 36, "kind": "opaque", "colour": [0.269, 0.218, 0.250]},
+        {"h0": 36, "h1": 84, "kind": "glass", "colour": [0.273, 0.451, 0.550]},
+        {"h0": 84, "h1": null, "kind": "cap", "colour": [0.157, 0.131, 0.146]}
+      ],
+      "detail_walls": [{"a": [-21.4, -62.0], "b": [71.4, -60.3], "n": [0.018, -1.0], "z0": 9.0, "z1": 84.0}]
+    }
+  },
+  "sources": [{"key": "mapillary", "name": "Mapillary", "credit": "Street photos © Mapillary contributors, CC BY-SA 4.0"},
+              {"key": "mapillary_labels", "name": "Mapillary", "credit": "Labels from Mapillary · https://www.mapillary.com"}],
+  "notes": []
+}
+```
+
+Colours are linear RGB, as measured after exposure calibration. Heights are metres above the building's lowest
+point. `detail_walls` appears only for buildings with `detail: true` and lists the exposed wall spans and heights.
+Buildings without a usable photo have `"source": "guessed"` and the default zones (section 6.8).
+
+## 6. Selection and extraction
+
+### 6.1 List photos
+
+- All Mapillary images within the site radius plus 200 m (capped at 1,000 m), listed in 100 m tiles.
+- Fields: id, captured_at, camera_type, computed_geometry, computed_rotation, camera_parameters, width, height,
+  sequence.
+- Photos missing computed geometry or rotation are skipped.
+- Near-duplicates are thinned: the newest photo per 5 m cell and 30° of heading (360° photos: per cell).
+  Mapillary shoots every few metres along a street; at 351 King St E this kept 5,937 of 9,048 photos for
+  about 1% less wall area seen well.
+- Recency weight: 2022 or later ×1.0, 2018–2021 ×0.8, earlier ×0.6. "Not before" excludes older years.
+- Poses: the computed position, the computed rotation (OpenSfM convention: world east-north-up to camera with x
+  right, y down, z forward), camera height from the terrain plus 2.0 m (Mapillary altitudes are unreliable).
+
+### 6.2 Points on each building
+
+A grid of about 3 × 4 m over each building's exposed wall area. A point is exposed unless a probe 0.3 m out from
+the wall lies inside or under another solid.
+
+### 6.3 Which photo sees which point
+
+| Rule | Value |
+|---|---|
+| Distance from camera | 3–500 m |
+| Head-on, in plan | within 35° of square to the wall |
+| Camera level (perspective and fisheye) | pitch within ±12° |
+| In frame | 2% margin; perspective points with r² < 1.2 (avoids extreme corners) |
+| Line of sight | the first wall hit is the point's own building, within 1 m of the point |
+| Sharpness | px/m = focal length in pixels ÷ distance × cos(angle), at 2048 px; usable from 5 px/m |
+
+360° photos have every point in frame; their focal length in pixels is width ÷ 2π.
+
+### 6.4 Choose photos for the whole site
+
+- Priority: detail buildings first, then by distance from the address. Photos are read for at most as many
+  buildings as the budget (or as there are detail buildings, if more), in that order; the rest get the guessed
+  look. More could not all get photos anyway, and it keeps a 1,000 m site about as quick as a small one. The photo
+  search reaches 200 m past the farthest of those buildings, capped at 1,000 m.
+- A greedy pick that shares photos between buildings. Each pick is the photo that adds the most wall area ×
+  sharpness (capped at 20 px/m) × recency, counting only points seen at 5 px/m or better. Points already covered
+  by a picked photo count half as much each time, and a photo already chosen for another building counts 1.5 times
+  as much.
+- Two passes over the buildings, in priority order. Pass one gives every building that has a usable photo its best
+  one, whatever the budget, so a building's only usable photo is never dropped for budget. Pass two adds photos,
+  up to 4 per building, while the budget lasts: a photo nobody has chosen yet costs one from the budget, and a
+  photo already chosen for another building is free.
+
+### 6.5 Label check and masks
+
+- One labels download per chosen photo, rasterised at 512 px width.
+- A photo is dropped for a building if more than 30% of that building's points land on sky or ground (bad pose),
+  or fewer than 30% land on building (blocked).
+- Otherwise only pixels labelled `construction--structure--building` are used. Thin clutter (wires, poles, street
+  lights, signs) is masked but not counted against the photo.
+- Replacement: labels are fetched for the chosen photos first, and photos are downloaded only for the final set. A
+  building that loses a photo, to the label check or to a labels download, photo download or decode that fails,
+  tries its next candidates, labels only, best first by the greedy pick's own gain (6.4), up to 6 tries per
+  building, until it has as many photos as it was picked. Candidates from the sequence of a photo dropped for sky
+  or ground come after every other. A replacement takes only a place a lost photo gave back, so the photos
+  downloaded stay within the budget (or choose's first picks, when detail buildings need more); a building short
+  only because the budget ran out is not topped up.
+- Per-pixel model mask: a ray grid 200 px wide per photo; a pixel counts for a building only if its ray first
+  hits that building, and only where that hit is the wall point itself: a pixel whose ray meets a nearer part of
+  the same building (by more than max(1 m, 0.5 % of the distance)) is not read, so a podium in front of a tower is
+  never read as the tower's wall.
+
+### 6.6 Exposure calibration
+
+Each photo's gain brings its median road luminance (pixels labelled `construction--flat--road`, linear) to the
+site's median road luminance, clamped to 0.5–2×. Photos with fewer than 500 road pixels get gain 1.
+
+### 6.7 Profile, zones, glass and floors
+
+- Straighten each visible wall in each photo at about 6 px/m (sample the photo at points on the wall plane).
+- Profile: calibrated linear colour per 3 m height band, the median per photo (a photo counts for a band from 20
+  of its pixels), then the median across photos. One photo suffices for a band (`MIN_PHOTOS_PER_BAND = 1`); the
+  confidence (6.8) carries how thin the evidence is.
+- Zones: split the bands where the kind changes, or where luminance changes by more than 30% or chromaticity
+  (r, g, b divided by their sum) moves by more than 0.05 between neighbouring bands; merge runs shorter than 6 m;
+  keep at most 4 zones by merging the most similar neighbours. A storefront base is set at the first band
+  boundary between 3 and 9 m above the lowest point where the band above is at least 1.6 times as bright as the
+  band below; without such a jump there is no storefront zone.
+- Glass or opaque: with ≥ 3 views of a 6 m band, glass if chromaticity spread > 0.12 and log-brightness spread
+  > 0.7. With fewer views, glass if blue minus red > 0.04 × max(luminance ÷ 0.1, 1). Known blind spot: lower-floor
+  glass that mirrors the same street from every angle reads as opaque.
+- Floor height: the repeat of horizontal edges in each straightened wall, searched over 2.8–6 m. For each wall, the
+  edge strength of each row is autocorrelated, and the wall's spacing is the lag within 2.8–6 m where the
+  autocorrelation is highest. It counts only if that lag is an interior one (never the first or last lag of the
+  window, which are only the slope of something outside it), above the lag before it and not below the next, and at
+  least the noise level, max(0.3, 3 / √rows) of the value at lag 0, rows being the rows with data. A wall with less
+  than 12 m of rows with data, a plain gradient (the same edge strength on every row) or no such peak (a featureless
+  or smoothly shaded wall) counts for nothing. A wall seen in several photos is one vote, the median of their
+  spacings, so a facade can't agree with itself. The floor height is the mean of the walls that agree, accepted only
+  when at least 2 walls agree within 0.25 m; otherwise 3.5 m.
+- Window and mullion spacing are not measured in version 1: 1.5 m on glass, 3.0 m on opaque walls.
+
+### 6.8 Defaults and confidence
+
+- No usable photo: storefront 0–4.5 m, linear (0.32, 0.32, 0.31); opaque body above, (0.42, 0.42, 0.40);
+  `"source": "guessed"`. The panel counts these like today's "height guessed".
+- Confidence (0–1) = min(1, photos used ÷ 3) × the share of the building's exposed wall area seen at 5 px/m or
+  better.
+
+## 7. Blender integration
+
+### 7.1 The look in the existing materials
+
+- A node group, `Ghost Town · Street Look`, is inserted into `Context - Building`, `Context - Building (on site)`
+  and `Context - Building (height guessed)`, between the Principled BSDF and its Base Color and Roughness inputs.
+  Inputs: the plain colour, Look on/off, Photo brightness.
+- Per-building values are custom properties on each building object (zone tops, kinds, colours; floor height;
+  bay widths; lowest point; source; confidence), read through Attribute nodes of type Object. One material renders
+  every building differently, and switching between flat, fitted and LiDAR roofs keeps the look, since the
+  values sit on the object and every roof shape uses the same building materials. Roof faces keep the plain
+  colour (or 0.3.0's aerial photo on roofs, which takes them into its own material).
+- Material names, kinds and the plain colour (the BSDF default value) stay as today, so FBX and OBJ export and
+  the Revit Object Styles mapping are unchanged. A Blender test confirms this (section 11).
+- Rejected: a separate `Context - Building (street look)` material, which would add a name to every export.
+
+### 7.2 Detail geometry for selected buildings
+
+- One mesh per selected building, `Detail · <building>`, in a `Detail · <site>` collection under the context.
+- From the building's zones and `detail_walls`: floor bands on every floor (heavier at zone boundaries), mullion
+  fins at the glass bay width on glass zones, a band at the top of the storefront. Only on exposed walls and
+  heights. About 4,000 faces for the 87 m test tower. The bands sit on the floor lines the shader paints, k × floor
+  height above the building's lowest point, skipping those at or below the storefront top; the fins sit on its
+  mullions, multiples of 1.5 m along the wall measured from the model origin, so the 3D detail and the painted
+  facade coincide. The heavy band is the floor band nearest a zone boundary, up to half a floor from the painted
+  colour change.
+- Material `Context - Facade detail`. The massing is untouched; untick (exclude) the collection to leave detail
+  out of an export. Show detail only hides it from viewports and renders, which FBX export ignores. Detail
+  counts toward the site's Revit triangle figure.
+- At most 20 buildings per run; about 5 recommended.
+- Rejected for version 1: a Geometry Nodes modifier (hard to build and maintain from Python; exporters apply
+  visible modifiers by default).
+
+### 7.3 Switches and sky
+
+- Show street look sets the node group's Look input; Show detail hides or shows the detail collection.
+- Photo brightness is the node group input, so the stored colours stay as measured.
+- `Ghost Town Sky`: Sky Texture (multiple scattering, sun disc off) at strength about 0.25 plus a sun lamp,
+  added only if the scene's world is Blender's default and the user accepts.
+
+### 7.4 Rebuild and undo
+
+- The look is stored on the context collection as JSON keyed by building id, with the panel's summary and
+  credit lines beside it, like 0.3.0's other per-site state. When Build replaces a site,
+  `scene_build.build` copies it from the old collection before removing it, re-applies the properties to the new
+  objects with matching ids, and regenerates detail for buildings still present whose stored detail walls still
+  lie on them (each wall's ends within 0.5 m of the footprint, any tier). A building that moved (the site fetched
+  around a nudged centre) or changed its footprint keeps its shader look, whose heights are from its lowest
+  point, but gets no detail.
+- Detail objects carry `ctx_id` and are listed in the collection's `ctx_objects`, so `remove()` handles them like
+  everything else Ghost Town makes.
+- Apply is one undo step. With Keep street look on rebuild unticked, a rebuild drops the look and its detail.
+
+## 8. Settings, privacy, licensing
+
+- The token is stored in Blender's user preferences, never in a .blend file, and reaches the fetcher only through
+  its environment. It is sent only as an `Authorization: OAuth` header, never in a URL.
+- New servers, contacted only when Apply is pressed: `graph.mapillary.com` (listings, metadata, labels) and
+  Mapillary's image servers on `fbcdn.net` (photos). `graph.mapillary.com` receives the site's tile boxes, photo ids
+  and the token; the image servers receive only the link for each photo, never the token. Inside Canada, when the
+  scene was built with ground heights, Apply also asks `datacube.services.geo.ca`, which Build already uses, for
+  ground heights (5.2). The README's privacy paragraph and its list of servers are updated.
+- Photos and labels are cached by image id (Mapillary's download links expire) for the usual 30 days.
+- Only derived values reach the .blend file; the credits apply all the same. They appear in the panel (the photo
+  credit and "Labels from Mapillary · https://www.mapillary.com"), in the `Context origin` credits property, in
+  README's data table and in CREDITS.md.
+
+### Mapillary terms, checked 2026-10-07
+
+From the Terms (https://www.mapillary.com/terms, 2024-02-15) and the API documentation
+(https://www.mapillary.com/developer/api-documentation), each claim checked against the page it cites.
+
+- Caching: silent on keeping photos or labels and on retention; only the download links expire
+  (https://blog.mapillary.com/update/2021/06/23/getting-started-with-the-new-mapillary-api-v4.html). The 30-day
+  cache by image id, no link stored and photos kept as served (§5 forbids unblurring), fits: 30 days stays.
+- Rate limits, per application: 60,000 entity calls a minute (photos, labels), 10,000 search calls. A run makes about
+  90 searches (100 m tiles, 8 at a time), at most max(budget, the pass-one picks) photo calls (500 at the largest
+  budget) and as many label calls plus up to 6 replacement tries per building read: far under both. A bbox must be
+  under 0.01 square degrees and returns at most 2,000 results (a denser tile would be cut; paging not verified).
+  Throttling answers an OAuthException (code 4, subcode 1349210) with no documented HTTP status; a 2022 forum report
+  shows 403 (https://forum.mapillary.com/t/hitting-request-limit/5820).
+- Attribution: §3(b) gives other users' content CC BY-SA unless Mapillary indicates otherwise (4.0, by the deed it
+  links, https://creativecommons.org/licenses/by-sa/4.0/). §11 asks for the Mapillary logo and a link to
+  https://www.mapillary.com when extracted data (the labels) is integrated; §7 reserves the logo
+  (https://www.mapillary.com/press-kit). The help centre's model credit links the title to the image and the username
+  to the profile (https://help.mapillary.com/hc/en-us/articles/115001770409-CC-BY-SA-license-for-open-data); the
+  fixtures README credits each photo by image page and username. The panel, the stored credits, README's table and
+  CREDITS.md name the labels and link the homepage.
+- Fixture photos: CC BY-SA 4.0 permits resized copies with a note of modification
+  (https://creativecommons.org/licenses/by-sa/4.0/legalcode.en; a downscale being technical is our reading), and
+  photos beside GPL-3 code are a collection, not an adaptation
+  (https://wiki.creativecommons.org/wiki/ShareAlike_interpretation). CC's GPLv3 page says its one-way route is not for
+  general use (https://wiki.creativecommons.org/wiki/ShareAlike_compatibility:_GPLv3), so the six stay CC BY-SA 4.0,
+  and README's Licence section excepts them from the GPL. No page states a licence for the labels.
+- Tokens: the header form is documented; §11 has each application register its own client_id, so each user's limits
+  are their own. Not verified: whether Meta's Platform Terms reach Mapillary tokens.
+
+Open, both the user's call:
+
+- The Mapillary logo beside the credit (§11 asks for it; it is a trademark).
+- The recorded labels and listing records (Mapillary's computed camera positions and rotations) in
+  `tests/fetch/fixtures/kingst/mapillary.json.gz`: ask support@mapillary.com; the terms research recommends hand-made
+  labels and poses if there is no answer by release; if the answer is no, they leave the repo and the recorded test
+  is reworked.
+
+## 9. Failure handling
+
+Each message is one plain sentence, as elsewhere in Ghost Town.
+
+| Situation | Behaviour |
+|---|---|
+| No token | Apply disabled; the section points to Preferences. |
+| Token rejected (HTTP 401, or 403 other than the request limit) | "Mapillary refused the token; check it in Preferences." Nothing applied. |
+| Mapillary's request limit reached (HTTP 403, code 4, subcode 1349210) | Asked once more after a pause; still turned away, it counts as a failed tile or photo, and when the requests keep being turned away the run stops: "Mapillary's request limit was reached; try again in a minute." for photos and labels, or "Mapillary couldn't be searched; try again in a minute." when the listing itself is turned away. Nothing applied. |
+| No coverage, or no usable photos | Every building gets the guessed look; a note says so. |
+| Some listing tiles fail (429, 5xx) | Retry with backoff, continue with the rest, note "Some areas couldn't be searched." |
+| A photo's labels fail to download or fail the check | The building's next candidate is tried, labels only, up to 6 per building, within the photo budget; candidates from the sequence of a photo dropped for sky or ground come last. A chosen photo whose labels fail to download counts in the note below. |
+| A chosen photo fails to download or decode | Replaced the same way while candidates remain; otherwise the building is read from its other photos. Either way the note "N photos couldn't be read and were skipped." counts it. |
+| Mapillary stops answering: 8 requests in a row get no answer, 429, 5xx or the request limit | The requests still waiting are not sent. When nothing of that stage came, the run stops instead of returning an all-guessed look: "Mapillary couldn't be searched; try again in a minute." for the listing, "Mapillary couldn't be reached; try again in a minute." for photos or labels (the request-limit sentence when that was the cause). Nothing applied. |
+| The request has a ground datum but the look run's terrain comes back flat | "Ground heights couldn't be fetched for the photos; try again in a minute." Nothing applied. |
+| A redirect on a request carrying the token | Not followed: it counts as that request's failure, like any other error answer. |
+| Not before set to a year from 1 to 1999 | Apply disabled; the section says "Not before must be 0 or a year from 2000 on." |
+| Cancel or Esc | As Build: the process stops and nothing is applied. |
+| A damaged cached file | Fetched again through `Net`'s existing `check` mechanism. |
+| A photo missing fields | Skipped. |
+
+## 10. Performance
+
+Measured with the plan's code at 351 King St E (300 m, 87 buildings, 9,048 photos listed), 2026-10-07:
+
+- The first version took 16 minutes, 11 of them choosing photos: each ray of up to 500 m was tested against
+  every wall its bounding box touched, with GEOS predicates. Rays now go out in 50 m pieces, nearest first,
+  with the crossing test in numpy, and near-duplicate photos are thinned: choosing takes 30 s and reading
+  the facades (including the 200 px per-pixel grid) 33 s.
+- Re-run with listings and photos cached: 66 s. A first run adds the listing (about 90 tiles, 3 MB) and
+  about 110 photos with their labels, roughly 1–2 minutes more.
+- Listing a 500 m radius with 8 parallel requests: about 30 s (3.5 min sequential in testing).
+
+Five sites with `tools/look_accuracy.py` after the final fix wave, 2026-10-08 (300 m radius, 150-photo budget),
+measured with the add-on's own buildings-plus-terrain fetch, so the buildings stand on the same ground as the cameras.
+The code now replaces a photo the label check drops, or whose labels or photo fail, with the building's next candidate
+(6.5), reads only the pixels that show a building's nearest surface, sight-tests only points sharp enough to choose by,
+and stops testing rays that fall below every wall. Each site ran twice; the table is the second pass. The cache already
+held the City's massing model and the Mapillary listings and photos from earlier passes over the same sites; the first
+pass wrote 32–121 new Mapillary files (6–24 MB, mostly the replacements' labels and photos) and took 3–9 s longer, and
+the second wrote none, so the totals are warm-cache totals; a first run at a new site adds the downloads, as above.
+Choosing and reading are CPU work, and 320 Bay St, the densest site, is the slow one: 47 s choosing photos, 103 s in
+all. Photos is the number of photos read; at two sites it is the whole budget. The building at the address is the one
+with a footprint corner nearest it; its zones are heights in metres above its lowest point, the last running to the
+roof.
+
+| Site | Buildings | From photos | Photos | Building at the address | Choosing s | Reading s | Total s |
+|---|---|---|---|---|---|---|---|
+| 351 King St E | 87 | 82 | 150 | photos, 0.39: storefront 0–6 · opaque 6–42 · opaque 42–78 · opaque 78– | 8 | 30 | 58 |
+| 320 Bay St | 56 | 55 | 150 | photos, 0.14: storefront 0–9 · glass 9–150 · opaque 150–180 · opaque 180– | 47 | 34 | 103 |
+| 235 Queens Quay W | 29 | 28 | 82 | photos, 0.33: storefront 0–9 · opaque 9– | 8 | 15 | 35 |
+| 2300 Yonge St | 204 | 67 | 123 | photos, 0.12: storefront 0–3 · opaque 3–51 · opaque 51–126 · cap 126– | 2 | 24 | 42 |
+| 300 Borough Dr | 13 | 11 | 26 | photos, 0.02: storefront 0–9 · opaque 9– | 1 | 4 | 9 |
+
+Peak memory (maximum resident set size) over the five runs: 1,259 MB, at 320 Bay St.
+
+## 11. Testing
+
+- Fetcher, offline pytest as today (`--disable-socket`): unit tests for the MVT decoder, the 2.5D ray caster,
+  the selection rules, exposure calibration, zone splitting, the glass test, floor-height estimation and the
+  `look.json` schema, on synthetic data.
+- One end-to-end fetcher test on a small recorded fixture: a few listing tiles, about 5 photos downscaled to
+  512 px, and their labels. Credits go in `tests/fetch/fixtures/README.md`, since the photos are CC BY-SA.
+  `tools/record_fixtures.py` learns to record it.
+- Blender tests (`tests/blender/run.py`): applying a `look.json` fixture to the mini context; node group and
+  properties present; both switches; detail objects generated; rebuild carries the look; FBX and OBJ export keep
+  today's material names.
+- `tools/smoke_live.py`: an optional Street Look run when `GHOSTTOWN_MAPILLARY_TOKEN` is set.
+- An accuracy script (not in CI) that reruns the five-site coverage table to catch selection regressions.
+
+## 12. Later
+
+- Setbacks and terraces from LiDAR for detail buildings. Ghost Town 0.3.0 already measures roofs from Geospatial
+  Ontario's LiDAR surface and terrain models (fitted and sampled roofs); the same surface could place floor
+  bands and fins only where a facade really rises, and catch setbacks the massing misses. Outside Ontario,
+  NRCan's CanElevation point clouds (GTA 2023 at about 24.5 points/m², as 1 km COPC tiles that accept range
+  requests) and the 1 m HRDEM surface and ground models are the national options.
+- Material classes (brick, concrete, stone, metal) from texture cues or a vision model.
+- Better lower-floor glass detection.
+- Measured window and mullion spacing.
+- Optional real-photo projection onto one hero building, with the user nudging the camera.
+- Geometry Nodes detail.
+
+## 13. Risks and open questions
+
+- Mapillary's terms: checked 2026-10-07 (section 8). Two items stay open: the Mapillary logo beside the credit, and
+  whether the recorded labels and listing records may stay in the repo (hand-made ones if Mapillary does not answer
+  by release).
+- Old photos: most usable photos at the test sites are from 2014–2019; buildings change. Recency weighting and
+  "Not before" mitigate.
+- Colour fidelity: calibration is relative to the site, not absolute; Photo brightness is the user's control.
+- Zone errors: lower-floor glass can read as an opaque podium; foreground buildings missing from the massing
+  (or not yet built) can still be sampled.
+- Facade reading on real photos. In the first live run at 351 King St E (2026-10-07, the plan's code) the dark
+  storefront and brick podiums came out right, but the 84 m tower's glass above 36 m read as opaque (three photos,
+  whose colours varied too little for the glass test), and one building got a sky-blue top zone, likely sky at the
+  roofline passing the building label. The five-site run of 2026-10-07 read the tower at the address as four
+  opaque zones (0–30 · 30–42 · 42–60 · 60– m), and none of the five address buildings with a storefront. At 351
+  King St E the cause was photos the label check dropped and never replaced: 125 of 330 picks were dropped, the
+  tower kept only photos that see nothing below 12 m, and its lowest seen band was stretched down to 0; the other
+  address buildings turned on which one to four photos were picked (320 Bay St lost no pick). With replacement and the
+  depth check (section 10, 2026-10-08) the run reads 82 of 87 buildings there from photos and the tower as storefront
+  0–6 · opaque 6–42 · opaque 42–78 · opaque 78– (confidence 0.39), against section 3's reference profile (storefront
+  0–9, podium 9–36, glass 36–84): the storefront is back, 3 m short, and the glass above 36 m is still not found, so
+  the glass weak spot stands. All five address buildings now have a storefront zone. `tools/look_accuracy.py` prints
+  only the zone kinds and heights of the building at the address, never colours: it shows whether the glass is
+  found, not a sky-blue top, which takes a look in Blender. For the sky-blue top, eroding the building label by a few
+  pixels and refusing sky-coloured top zones are the first things to try.
+- The token sits in plain text in Blender's user preferences.
+- Pillow's wheels are 4.7–7.6 MB, so each platform package grows by that much.

@@ -13,7 +13,7 @@ FLAT_KEY, FITTED_KEY, LIDAR_KEY = "ctx_mesh_flat", "ctx_mesh_fitted", "ctx_mesh_
 SHAPE_KEYS = {"flat": FLAT_KEY, "fitted": FITTED_KEY, "lidar": LIDAR_KEY}  # roof shape -> the mesh's ID property
 ROOF_GROUP = "roof interior"    # LiDAR roof vertices off the outline: the only ones Roof detail may move
 DETAIL_MODIFIER = "Ghost Town roof detail"
-SITE_KINDS = BUILDING_KINDS + GROUND_KINDS + ("tree", "parcel", "parcel_on_site")
+SITE_KINDS = BUILDING_KINDS + GROUND_KINDS + ("tree", "parcel", "parcel_on_site", "facade_detail")  # exported kinds
 
 
 def made_objects(root, kinds):

@@ -1,6 +1,7 @@
 # Recorded source answers
 
-Recorded with `uv run python tools/record_fixtures.py`. Answers are gzipped exactly as received.
+Most answers were recorded with `uv run python tools/record_fixtures.py` and are gzipped exactly as received. The
+entries below name the other recorders, and say where an answer was cut down or resized.
 
 - `*/osm.json.gz`: OpenStreetMap data © OpenStreetMap contributors, available under the
   Open Database License (ODbL) 1.0, https://www.openstreetmap.org/copyright
@@ -16,3 +17,18 @@ Recorded with `uv run python tools/record_fixtures.py`. Answers are gzipped exac
   (`ws.geoservices.lrc.gov.on.ca`, ImageServer `exportImage`, a ±40 m box at 0.5 m around 320 Bay St),
   recorded by `tools/record_lidar_fixture.py`; `lake_none.tif` is the service's empty answer out in Lake
   Ontario. Contains information licensed under the Open Government Licence – Ontario.
+- `kingst/look_request.json`, `kingst/mapillary.json.gz`: the City of Toronto's massing of every building with a
+  corner within 60 m of 351 King St E, six Mapillary street photos resized to 512 px, and two kinds of Mapillary's
+  data about those photos: their labels, and their listing records, cut down to the six, which carry Mapillary's
+  computed camera positions, rotations and camera parameters. Recorded by `tools/record_look_fixture.py`, which needs
+  `GHOSTTOWN_MAPILLARY_TOKEN` set in the environment. Contains information licensed under the Open Government
+  Licence – Toronto.
+  The labels and listing records are Mapillary's data (https://www.mapillary.com). Mapillary states no licence for
+  them, and whether they may be redistributed here is open (design/street-look.md, section 8).
+  Street photos © Mapillary contributors, CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/
+  - 465172451218605: https://www.mapillary.com/app/?pKey=465172451218605 by kevo (resized to 512 px)
+  - 778110916399372: https://www.mapillary.com/app/?pKey=778110916399372 by jarekp (resized to 512 px)
+  - 285566829854674: https://www.mapillary.com/app/?pKey=285566829854674 by kevo (resized to 512 px)
+  - 866962730524181: https://www.mapillary.com/app/?pKey=866962730524181 by kevo (resized to 512 px)
+  - 2945761572361391: https://www.mapillary.com/app/?pKey=2945761572361391 by to_ (resized to 512 px)
+  - 475750006841564: https://www.mapillary.com/app/?pKey=475750006841564 by kevo (resized to 512 px)

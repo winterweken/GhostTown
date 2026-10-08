@@ -48,6 +48,9 @@ Each build makes one collection, `Context · <site>`:
 - **Parcels:** lot lines draped 15 cm above the ground.
 - **Aerial photo** (Toronto): the City's newest aerial photo of the site, kept inside the .blend file,
   for the ground and low roofs. See [Use](#use).
+- **Street Look** (a step after the build, with your own Mapillary token): facades coloured from street
+  photos, with storefront, wall, glass and cap zones and window patterns, plus floor bands and mullions on
+  a few buildings you pick. See [Street Look](#street-look).
 - **Materials:** one per kind, named `Context - Building`, `Context - Road`, and so on. A building whose
   height had to be guessed is orange (`Context - Building (height guessed)`).
 - **Location:** a `Context origin` empty at 0,0,0 holding the latitude, longitude, ground elevation above
@@ -66,7 +69,7 @@ Everything is in metres, with x east, y north, the address at the origin and z =
 ## Install
 
 Ghost Town needs **Blender 5.2 or later** on macOS (Apple silicon or Intel), Windows x64 or Linux x64.
-It bundles the one library it needs (shapely), so there is nothing to `pip install`.
+It bundles the libraries it needs (shapely, and Pillow for Street Look), so there is nothing to `pip install`.
 
 1. Download the zip for your computer from the [latest release](https://github.com/winterweken/GhostTown/releases/latest):
 
@@ -88,7 +91,7 @@ cd GhostTown
 tools/build.sh
 ```
 
-`tools/build.sh` downloads the shapely wheels from PyPI and writes one zip per platform into `dist/`.
+`tools/build.sh` downloads the shapely and Pillow wheels from PyPI and writes one zip per platform into `dist/`.
 It expects Blender at `/Applications/Blender.app`; on other systems, set `BLENDER` to your Blender
 executable first. Install the zip as above.
 
@@ -141,6 +144,32 @@ here. Data: OpenStreetMap, Natural Resources Canada and Geospatial Ontario.*
 
 Switching never downloads anything again, and each site in a file keeps its own choices.
 
+### Street Look
+
+Street Look gives a site's buildings colours, glass and storefronts read from Mapillary's street photos: a dark
+storefront, a brick-coloured or concrete-grey body, glass with mullions, a cap, at measured heights, with windows
+spaced by the floor height it finds. It is a separate step after Build Context and needs your own free Mapillary
+token: create one at mapillary.com/dashboard/developers and paste it in Preferences › Add-ons › Ghost Town ›
+**Mapillary token** (or set `GHOSTTOWN_MAPILLARY_TOKEN`). The token is saved in Blender's preferences like any
+other setting; the field only hides it on screen.
+
+1. Build Context, then open **Street Look** under the Site panel. It works on the site picked there.
+2. Optionally select up to 20 buildings (about 5 is plenty) and tick **Detail for selected** to model floor
+   bands, a storefront band and mullion fins on them, in a `Detail · <site>` collection.
+3. Press **Apply Street Look**. A 300 m site in Toronto takes from about 10 seconds to 2 minutes (the densest
+   downtown blocks are the slow end), and up to 2 minutes more the first time, while the photos download.
+   Cancel or Esc stops it; Ctrl+Z undoes it.
+4. **Show street look**, **Show detail** and **Photo brightness** change the result without fetching again.
+   **Add Sky**, shown while the scene has no world or Blender's default one, adds a sky texture and a sun so
+   glass has something to reflect.
+
+A building no photo shows clearly gets a plain storefront-and-body look, and the panel counts it as guessed:
+"Look from photos: 23 buildings · guessed: 1 · 38 photos (2014–2025)". **Photo budget** (150 to start)
+caps the photos read, nearest buildings first; **Not before** leaves out older photos. With **Keep street look
+on rebuild** (on), Build Context puts the look back on the buildings that are still there. The look is a
+shader driven by values on each building, so material names stay as they are, roof shapes and the roof photo
+keep working, and no photo is stored in the .blend file.
+
 ## Taking it into Revit
 
 Ghost Town does not export. It keeps the geometry friendly to exporters and to Revit instead:
@@ -154,6 +183,9 @@ metres, closed building solids, outlines cleaned of edges under 3 mm, and stable
   `Context - …` material. While the photo shows, exporters see the photo material on those faces instead.
 - Fitted roofs export as closed solids of a few faces each: the lightest measured roofs, and the ones to
   take into Revit.
+- Street Look changes how buildings render, not their materials' names. Its detail meshes sit in the
+  `Detail · <site>` collection with the `Context - Facade detail` material and count toward the triangle
+  figure; exclude that collection (untick it in the Outliner) to leave them out of an export.
 - LiDAR roofs export as meshes, which Revit imports as DirectShapes: heavier than prisms. Exporters apply
   Roof detail (modifiers are applied by default), so keep the site under the panel's budget, or use Fitted
   or Flat roofs.
@@ -184,6 +216,7 @@ you used. The panel lists them after every build.
 | Natural Resources Canada (HRDEM) | Terrain | Contains information licensed under the Open Government Licence – Canada |
 | Geospatial Ontario (lidar-derived surface and terrain models) | LiDAR roofs in Ontario | Contains information licensed under the Open Government Licence – Ontario |
 | OpenStreetMap | Buildings outside Toronto | © OpenStreetMap contributors (ODbL) |
+| Mapillary | Street Look: facade colours read from street photos | Street photos © Mapillary contributors, CC BY-SA 4.0<br>Labels from Mapillary · https://www.mapillary.com |
 
 More detail is in [CREDITS.md](CREDITS.md).
 
@@ -191,21 +224,35 @@ More detail is in [CREDITS.md](CREDITS.md).
 heights are derived from aerial data, some are guessed, and lot lines are approximate. Check anything
 you rely on against a survey.
 
-**Privacy.** Ghost Town contacts only `gis.toronto.ca` and the City's open data portal
-(`ckan0.cf.opendata.inter.prod-toronto.ca`), `datacube.services.geo.ca` and `overpass-api.de`, and, only with
-**LiDAR roofs** ticked, `ws.geoservices.lrc.gov.on.ca`, and only when you press the search button or Build
-Context. It sends what the query needs (the address you search for, or the location and radius you build) and
-nothing else. Answers are cached on your computer for 30 days. The City's 3D Massing model is downloaded
-once per yearly edition (81 MB, about 300 MB unpacked in the cache folder) and kept until a newer edition
-comes out. It lives in the cache folder (Preferences › Cache folder; by default the extension's own folder);
-deleting its `toronto_massing` folder is safe, and the next Toronto build downloads it again. With
-**Aerial photo** ticked, the photo comes from `gis.toronto.ca` with the build and is kept inside the .blend
-file, which adds up to about 5 MB. LiDAR answers (10–30 MB a site) are cached like the rest, and LiDAR roofs
-are kept inside the .blend file, about 20 to 30 MB for a dense 300 m site (less with Compress, in File › Save
-As or Preferences › Save & Load).
+**Privacy.** Apart from the Mapillary servers Street Look adds (below), Ghost Town contacts only `gis.toronto.ca`
+and the City's open data portal (`ckan0.cf.opendata.inter.prod-toronto.ca`), `datacube.services.geo.ca` and
+`overpass-api.de`, and, only with **LiDAR roofs** ticked, `ws.geoservices.lrc.gov.on.ca`, and only when you press
+the search button, Build Context or Apply Street Look. It sends what the query needs (the address you search for, or
+the location and radius you build) and nothing else. Answers are cached on your computer for 30 days. The City's 3D
+Massing model is downloaded once per yearly edition (81 MB, about 300 MB unpacked in the cache folder) and kept
+until a newer edition comes out. It lives in the cache folder (Preferences › Add-ons › Ghost Town › Cache folder,
+which shows where it is; by default
+`~/Library/Application Support/Blender/<version>/extensions/.user/user_default/ghosttown/cache` on macOS, with
+`<version>` 5.2 today, a hidden folder, and the matching Blender extensions folder on other systems); deleting its
+`toronto_massing` folder is safe, and the next Toronto build downloads it again.
+With **Aerial photo** ticked, the photo comes from `gis.toronto.ca` with the build and is kept inside the .blend
+file, which adds up to about 5 MB. LiDAR answers (10–30 MB a site) are cached like the rest, and LiDAR roofs are
+kept inside the .blend file, about 20 to 30 MB for a dense 300 m site (less with Compress, in File › Save As or
+Preferences › Save & Load).
+
+**Apply Street Look** contacts `graph.mapillary.com` (photo listings and labels) and Mapillary's image servers
+on `fbcdn.net`, and only then. Inside Canada, when the site was built with ground heights, it also asks
+`datacube.services.geo.ca` for ground heights over the photo search area, as Build Context does for the site.
+`graph.mapillary.com` receives the area around the site, the ids of the photos read and your Mapillary token, which
+Ghost Town sends only in a request header and never stores in a .blend file; the image servers receive only the link
+for each photo read. Each user registers their own free application with Mapillary, so the request limits are
+theirs. Photos and labels are cached on your computer for 30 days, in the cache folder set in Preferences ›
+Add-ons › Ghost Town › Cache folder (delete its `mapillary` folder to clear them; the whole cache folder also holds
+the City's massing model); the photos are the blurred thumbnails Mapillary serves, kept as they are; only the
+colours and heights read from them reach the .blend file.
 
 Ghost Town is an independent project. It is not affiliated with or endorsed by the City of Toronto,
-Natural Resources Canada, the Province of Ontario or OpenStreetMap.
+Natural Resources Canada, the Province of Ontario, OpenStreetMap or Mapillary.
 
 ## Known limits
 
@@ -222,6 +269,11 @@ Natural Resources Canada, the Province of Ontario or OpenStreetMap.
 - Bridges and elevated rail are draped onto the ground.
 - A stream is flat at one level along its length instead of following its valley.
 - Rebuilding a site resets colours you changed on the `Context - …` materials.
+- Street Look reads facades from street photos, many from 2014–2019: glass in the lower floors that mirrors
+  the street, or tall glass seen in only a few photos, can read as an opaque wall; sky at a roofline can tint
+  a building's top; a building changed or built since the photos gets what they show.
+- Street Look's windows and mullions are evenly spaced (1.5 m on glass, 3 m on walls), not measured on each
+  building; only the floor height is measured, and it is 3.5 m where the photos don't settle on one.
 
 ## How it works
 
@@ -234,9 +286,11 @@ sidebar panel ─▶ request.json ─▶ fetcher process ─▶ context.json ─
                                   (ghosttown_fetch)
 ```
 
-- `ghosttown/ghosttown_fetch/` is plain Python (numpy and shapely, no Blender). Each data source is one
+- `ghosttown/ghosttown_fetch/` is plain Python (numpy, shapely and Pillow, no Blender). Each data source is one
   module in `sources/`, which is where new cities and layers go.
 - `ghosttown/*.py` is the extension: panel, operators, the process runner and the scene builder.
+- Street Look is another fetcher command, `look`: it reads `look_request.json` and writes `look.json`, with
+  the Mapillary token in the process's environment only.
 
 ## Roadmap
 
@@ -248,12 +302,14 @@ sidebar panel ─▶ request.json ─▶ fetcher process ─▶ context.json ─
 ## Development
 
 ```bash
-uv sync                    # Python 3.13 with numpy and shapely, matching Blender 5.2
+uv sync                    # Python 3.13 with numpy, shapely and Pillow, matching Blender 5.2
 uv run pytest              # fetcher tests; they run offline against recorded answers
 /Applications/Blender.app/Contents/MacOS/Blender --background --factory-startup \
   --python-exit-code 1 --python tests/blender/run.py     # Blender-side tests
 tools/build.sh             # per-platform packages in dist/
 tools/smoke_installed.sh "320 Bay St" 300   # macOS: install into a throwaway profile, build a live site
+                                            # (and apply Street Look when GHOSTTOWN_MAPILLARY_TOKEN is set)
+uv run python tools/look_accuracy.py        # Street Look on five Toronto sites (needs the token)
 ```
 
 Issues and pull requests are welcome. New data sources are the most useful contribution: a source is
@@ -263,6 +319,12 @@ one module that turns a public dataset into polygons, points or lines.
 
 GPL-3.0-or-later. See [LICENSE](LICENSE). The data Ghost Town downloads keeps its own licence, listed
 under [Data and credits](#data-and-credits).
+
+Recorded test data in `tests/fetch/fixtures/` keeps its sources' licences (see
+[tests/fetch/fixtures/README.md](tests/fetch/fixtures/README.md)): OpenStreetMap data under the ODbL, City of
+Toronto, NRCan and Ontario data under their Open Government Licences, and six Mapillary street photos under CC BY-SA
+4.0 with, beside them, Mapillary's own data about those photos (labels and listing records), for which Mapillary
+states no licence. The GPL does not cover them, and the extension package does not include them.
 
 The Ghost Town name and logo are © winterweken and are not covered by the GPL. That includes the files
 in [media/brand](media/brand) and the icon in `ghosttown/icons/`. You may use them to refer to this

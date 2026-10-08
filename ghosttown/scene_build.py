@@ -11,13 +11,14 @@ import os
 
 import bpy
 
-from . import geometry, georef, materials, site_lidar, site_photo, site_use
+from . import geometry, georef, look_build, materials, site_lidar, site_photo, site_use
 from .ghosttown_fetch import BUILDING_KINDS
 from .ghosttown_fetch import context as ctx
 
 ROOT_PREFIX = "Context · "
 GROUP_ORDER = ("Buildings", "Ground", "Trees", "Parcels")
 MAX_LABEL = 60
+LOOK_DROPPED = "The street look couldn't be put back on the rebuilt site; apply it again."
 
 
 def _group(kind):
@@ -45,9 +46,10 @@ def find_root(scene, label):
     return None
 
 
-def build(scene, doc, folder=None):
+def build(scene, doc, folder=None, *, keep_look=True, report=None):
     label = site_label(doc)
     old = find_root(scene, label)
+    look = old.get(look_build.LOOK_PROP) if old is not None and keep_look else None
     if old is not None:
         remove(old, scene)
     georef.set_scene_units(scene)
@@ -125,6 +127,10 @@ def build(scene, doc, folder=None):
                 site_photo.attach(root, origin, label, path, photo)
             except (RuntimeError, ValueError):
                 pass  # a photo file Blender can't read: the site builds without a photo
+    if look:
+        root[look_build.LOOK_PROP] = look   # Street Look carries over to the new objects by building id
+        if look_build.reapply(scene, root) and report is not None:
+            report({"WARNING"}, LOOK_DROPPED)
     return root
 
 

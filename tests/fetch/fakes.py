@@ -11,11 +11,17 @@ class FakeNet:
         self.calls = []
         self.keeps = []
         self.timeouts = []
+        self.headers = []
+        self.requests = []   # (url, headers) of each call, kept together: the pool's threads may interleave
+        self.pruned = []
+        self.slept = []
 
-    def get(self, url, *, source, data=None, check=None, timeout=120, keep=True):
+    def get(self, url, *, source, data=None, check=None, timeout=120, keep=True, headers=None, key=None):
         self.calls.append((url, source, data))
         self.keeps.append(keep)
         self.timeouts.append(timeout)
+        self.headers.append(dict(headers or {}))
+        self.requests.append((url, dict(headers or {})))
         answer = self.answers[source]
         if callable(answer):
             answer = answer(url, data)
@@ -24,6 +30,15 @@ class FakeNet:
         if check is not None:
             check(answer)
         return answer
+
+    def cached(self, source, key, check=None):
+        return None
+
+    def prune(self, source):
+        self.pruned.append(source)
+
+    def sleep(self, seconds):
+        self.slept.append(seconds)
 
 
 class Transport:

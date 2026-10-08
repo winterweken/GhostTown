@@ -1,6 +1,8 @@
 """Live smoke test of the installed extension; run by tools/smoke_installed.sh inside Blender.
 
     ... --python tools/smoke_live.py -- "<address or lat, lon>" <radius_m> [lidar]
+
+With GHOSTTOWN_MAPILLARY_TOKEN set, it also applies Street Look to the site (a budget of 60 photos).
 """
 import importlib
 import json
@@ -80,5 +82,27 @@ if with_lidar:
         site_use.apply_roof_shapes(root, "lidar")
         print("TRIANGLES LIDAR", site_use.count_triangles(root, bpy.context.evaluated_depsgraph_get()))
         site_use.apply_roof_shapes(root, "fitted")
+token = os.environ.get("GHOSTTOWN_MAPILLARY_TOKEN", "").strip()
+if token:
+    look_build = importlib.import_module(pkg + ".look_build")
+    ls = importlib.import_module(pkg + ".ghosttown_fetch.look_schema")
+
+    class LookSettings:
+        look_detail, look_budget, look_not_before = False, 60, 0
+        show_look, show_detail, look_brightness = True, True, 1.15
+
+    look_req = look_build.make_request(root, LookSettings(), cache)
+    os.makedirs(look_req["out_dir"])
+    path = os.path.join(look_req["out_dir"], "look_request.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(look_req, f)
+    result = runner.run_blocking(["look", path], work_dir=look_req["out_dir"], extra_paths=wheels, timeout=900,
+                                 env_extra={ls.TOKEN_ENV: token})
+    print("LOOK", result)
+    assert result["ok"], result
+    with open(result["look"], encoding="utf-8") as f:
+        print("LOOK SUMMARY", look_build.apply(bpy.context.scene, root, json.load(f), LookSettings()))
+    if doc["region"] == "toronto":
+        assert result["from_photos"] >= 1, result
 bpy.ops.wm.save_as_mainfile(filepath=os.path.join(work, "smoke.blend"))
 print("SMOKE OK", work)

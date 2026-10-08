@@ -6,15 +6,22 @@ import time
 import bpy
 from bpy.props import EnumProperty, IntProperty, StringProperty
 
-from . import georef, prefs, runner, scene_build, site_photo, site_use
+from . import georef, look_build, prefs, runner, scene_build, site_photo, site_use
 from .ghosttown_fetch import context as ctx
+from .ghosttown_fetch import look_schema as ls
 from .ghosttown_fetch import request as rq
 from .ghosttown_fetch import LAYERS
 
 OFFLINE = "Online access is off. Turn on Preferences › System › Network › Allow Online Access."
 MISSING_SHAPELY = ("Ghost Town's shapely library isn't installed. Disable and re-enable Ghost Town in "
                    "Preferences › Add-ons, or reinstall it.")
+MISSING_PILLOW = ("Ghost Town's Pillow library isn't installed. Disable and re-enable Ghost Town in "
+                  "Preferences › Add-ons, or reinstall it.")
 NO_MATCH = "No Toronto address matched. Outside Toronto, enter latitude, longitude for now."
+NO_TOKEN = f"Add your Mapillary token in Preferences › Add-ons › Ghost Town (or set {ls.TOKEN_ENV})."
+NO_SITE = "Pick a site in the Site panel first."
+NO_BUILDINGS = "This site has no buildings to dress."
+NOT_BEFORE = "Not before must be 0 or a year from 2000 on."
 _LOCATION = re.compile(r"\s*(-?\d+(?:\.\d+)?)\s*[,\s]\s*(-?\d+(?:\.\d+)?)\s*")
 
 
@@ -101,7 +108,8 @@ def import_into_scene(context, path, report):
     if problems:
         report({"ERROR"}, problems[0])
         return None
-    root = scene_build.build(context.scene, doc, folder=os.path.dirname(os.path.abspath(path)))
+    root = scene_build.build(context.scene, doc, folder=os.path.dirname(os.path.abspath(path)),
+                             keep_look=context.scene.ghosttown.look_keep, report=report)
     settings = context.scene.ghosttown
     settings.site = root
     settings.summary = _summary(doc)
@@ -133,6 +141,64 @@ def import_into_scene(context, path, report):
     return root
 
 
+def look_refusal(context, online=None):
+    """Why Apply Street Look can't start, as one sentence, or None."""
+    if not (bpy.app.online_access if online is None else online):
+        return OFFLINE
+    if not prefs.token(context):
+        return NO_TOKEN
+    if site_use.picked(context) is None:
+        return NO_SITE
+    if 0 < context.scene.ghosttown.look_not_before < 2000:   # the field allows them; the request schema doesn't
+        return NOT_BEFORE
+    return None
+
+
+def look_launch(context, cache_dir, online=None, now=None):
+    """(launch, None) for Apply Street Look on the picked site, or (None, sentence) when it can't start.
+    launch holds the fetcher arguments, the run folder, the child's extra environment and the site's
+    name. The token goes in that environment only, never in the request file or the arguments."""
+    refusal = look_refusal(context, online)
+    if refusal:
+        return None, refusal
+    root = site_use.picked(context)
+    req = look_build.make_request(root, context.scene.ghosttown, cache_dir,
+                                  selected=context.selected_objects, now=now)
+    if not req["buildings"]:
+        return None, NO_BUILDINGS
+    problems = ls.validate_request(req)
+    if problems:
+        return None, problems[0]
+    os.makedirs(req["out_dir"], exist_ok=True)
+    path = os.path.join(req["out_dir"], "look_request.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(req, f, indent=1)
+    return {"args": ["look", path], "work_dir": req["out_dir"], "env": {ls.TOKEN_ENV: prefs.token(context)},
+            "root": root.name}, None
+
+
+def apply_look(context, root, path, report):
+    """Read look.json and dress the site with it; the summary, or None after reporting a problem
+    (nothing is changed then)."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            answer = json.load(f)
+    except (OSError, ValueError) as e:
+        report({"ERROR"}, f"Couldn't read {os.path.basename(path)} ({e}).")
+        return None
+    problems = ls.validate_answer(answer)
+    if problems:
+        report({"ERROR"}, problems[0])
+        return None
+    text = look_build.apply(context.scene, root, answer, context.scene.ghosttown)
+    site_use.count_triangles(root, context.evaluated_depsgraph_get())   # detail counts for Revit
+    for note in answer["notes"]:
+        if note["level"] == "warn":
+            report({"WARNING"}, note["text"])
+    report({"INFO"}, text)
+    return text
+
+
 def _redraw(context):
     screen = getattr(context, "screen", None)
     for area in (screen.areas if screen else ()):
@@ -143,14 +209,16 @@ def _redraw(context):
 class _FetcherOperator:
     """Shared modal loop: run the fetcher under `key`, poll it on a timer, hand its answer to `finished`."""
     key = ""
+    needs = (("shapely", MISSING_SHAPELY),)   # (package folder in the wheels, sentence when it's missing)
     _timer = None
 
-    def _launch(self, context, args, work_dir):
+    def _launch(self, context, args, work_dir, env_extra=None):
         wheels = runner.wheels_site_packages()
-        if not runner.ensure_wheels(wheels, refresh=bpy.ops.extensions.repo_refresh_all):
-            self.report({"ERROR"}, MISSING_SHAPELY)
-            return {"CANCELLED"}
-        runner.ACTIVE[self.key] = runner.Run(args, work_dir=work_dir, extra_paths=[wheels])
+        for package, missing in self.needs:
+            if not runner.ensure_wheels(wheels, refresh=bpy.ops.extensions.repo_refresh_all, package=package):
+                self.report({"ERROR"}, missing)
+                return {"CANCELLED"}
+        runner.ACTIVE[self.key] = runner.Run(args, work_dir=work_dir, extra_paths=[wheels], env_extra=env_extra)
         runner.STATUS[self.key] = "Starting…"
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.25, window=context.window)
@@ -163,7 +231,8 @@ class _FetcherOperator:
         if run is None:  # cancelled from the panel, by a file load or by unregister
             self._stop(context)
             return {"CANCELLED"}
-        if event.type == "ESC":
+        # Only the press: the release of an Esc that closed a menu, a text field or a move would cancel the run too.
+        if event.type == "ESC" and event.value == "PRESS":
             runner.cancel(self.key)
             self._stop(context)
             self.report({"WARNING"}, "Cancelled.")
@@ -427,12 +496,59 @@ class GHOSTTOWN_OT_save_photo(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class GHOSTTOWN_OT_street_look(_FetcherOperator, bpy.types.Operator):
+    bl_idname = "ghosttown.street_look"
+    bl_label = "Apply Street Look"
+    bl_description = "Give the picked site's buildings colours, glass and storefronts read from Mapillary street photos"
+    bl_options = {"REGISTER", "UNDO"}
+    key = "look"
+    needs = (("shapely", MISSING_SHAPELY), ("PIL", MISSING_PILLOW))
+
+    @classmethod
+    def poll(cls, context):
+        return "look" not in runner.ACTIVE
+
+    def invoke(self, context, event):
+        launch, problem = look_launch(context, prefs.cache_dir(context))
+        if problem:
+            self.report({"ERROR"}, problem)
+            return {"CANCELLED"}
+        self.root_name = launch["root"]
+        return self._launch(context, launch["args"], launch["work_dir"], env_extra=launch["env"])
+
+    def finished(self, context, result):
+        root = bpy.data.collections.get(self.root_name)
+        if root is None or not root.get("ctx_root"):
+            self.report({"ERROR"}, "The site was removed while Street Look ran.")
+            return {"CANCELLED"}
+        return {"FINISHED"} if apply_look(context, root, result["look"], self.report) else {"CANCELLED"}
+
+
+class GHOSTTOWN_OT_add_sky(bpy.types.Operator):
+    bl_idname = "ghosttown.add_sky"
+    bl_label = "Add Sky"
+    bl_description = "Use a sky texture world and a sun lamp, so glass has something to reflect"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        return look_build.can_add_sky(context.scene)
+
+    def execute(self, context):
+        look_build.add_sky(context.scene)
+        self.report({"INFO"}, f"Added the {look_build.SKY_WORLD} world and a sun.")
+        return {"FINISHED"}
+
+
 class GHOSTTOWN_OT_cancel(bpy.types.Operator):
     bl_idname = "ghosttown.cancel"
     bl_label = "Cancel"
     bl_description = "Stop the running fetch"
 
+    # Each panel's button stops only its own run; without a key (the F3 search) every run stops.
+    key: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+
     def execute(self, context):
-        runner.cancel("build")
-        runner.cancel("find")
+        for key in [self.key] if self.key else ["build", "find", "look"]:
+            runner.cancel(key)
         return {"FINISHED"}

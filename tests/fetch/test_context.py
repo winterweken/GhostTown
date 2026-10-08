@@ -83,8 +83,9 @@ def test_iter_elements_ground_then_buildings_then_trees_then_parcels():
 
 
 def test_schema_modules_are_stdlib_only():
-    code = ("import sys; sys.modules['numpy'] = None; sys.modules['shapely'] = None; "
-            "import ghosttown_fetch, ghosttown_fetch.request, ghosttown_fetch.context; print('ok')")
+    code = ("import sys; sys.modules['numpy'] = None; sys.modules['shapely'] = None; sys.modules['PIL'] = None; "
+            "import ghosttown_fetch, ghosttown_fetch.request, ghosttown_fetch.context, ghosttown_fetch.look_schema; "
+            "print('ok')")
     env = {**os.environ, "PYTHONPATH": GHOSTTOWN_DIR}
     out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=60)
     assert out.stdout.strip() == "ok", out.stderr
