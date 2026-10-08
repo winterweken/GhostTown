@@ -235,7 +235,7 @@ def test_the_panel_icon_loads_and_unloads_with_the_add_on():
     ghosttown.register()
     try:
         assert os.path.isfile(ui.ICON_FILE) and ui.icon_loaded()
-        assert tuple(ui._previews["ghosttown"].image_size) == (64, 64)
+        assert tuple(ui._previews["ghosttown"].image_size) == (32, 32)   # the kit's white 32 px panel icon
     finally:
         ghosttown.unregister()
     assert not ui.icon_loaded() and ui.icon_id() == 0
