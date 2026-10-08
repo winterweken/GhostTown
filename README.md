@@ -147,9 +147,9 @@ Switching never downloads anything again, and each site in a file keeps its own 
 ### Street Look
 
 Street Look gives a site's buildings colours and materials read from Mapillary's street photos: a dark
-storefront, a brick or concrete body, glass with mullions, a cap, at measured heights, with windows spaced by
-the floor height it finds. It is a separate step after Build Context and needs your own free Mapillary token:
-create one at mapillary.com/dashboard/developers and paste it in Preferences › Add-ons › Ghost Town ›
+storefront, a brick-coloured or concrete-grey body, glass with mullions, a cap, at measured heights, with windows
+spaced by the floor height it finds. It is a separate step after Build Context and needs your own free Mapillary
+token: create one at mapillary.com/dashboard/developers and paste it in Preferences › Add-ons › Ghost Town ›
 **Mapillary token** (or set `GHOSTTOWN_MAPILLARY_TOKEN`). The token is saved in Blender's preferences like any
 other setting; the field only hides it on screen.
 
@@ -224,27 +224,28 @@ More detail is in [CREDITS.md](CREDITS.md).
 heights are derived from aerial data, some are guessed, and lot lines are approximate. Check anything
 you rely on against a survey.
 
-**Privacy.** Apart from Street Look (below), Ghost Town contacts only `gis.toronto.ca` and the City's open data portal
-(`ckan0.cf.opendata.inter.prod-toronto.ca`), `datacube.services.geo.ca` and `overpass-api.de`, and, only with
-**LiDAR roofs** ticked, `ws.geoservices.lrc.gov.on.ca`, and only when you press the search button or Build
-Context. It sends what the query needs (the address you search for, or the location and radius you build) and
-nothing else. Answers are cached on your computer for 30 days. The City's 3D Massing model is downloaded
-once per yearly edition (81 MB, about 300 MB unpacked in the cache folder) and kept until a newer edition
-comes out. It lives in the cache folder (Preferences › Cache folder; by default the extension's own folder);
-deleting its `toronto_massing` folder is safe, and the next Toronto build downloads it again. With
-**Aerial photo** ticked, the photo comes from `gis.toronto.ca` with the build and is kept inside the .blend
-file, which adds up to about 5 MB. LiDAR answers (10–30 MB a site) are cached like the rest, and LiDAR roofs
-are kept inside the .blend file, about 20 to 30 MB for a dense 300 m site (less with Compress, in File › Save
-As or Preferences › Save & Load).
+**Privacy.** Apart from the Mapillary servers Street Look adds (below), Ghost Town contacts only `gis.toronto.ca`
+and the City's open data portal (`ckan0.cf.opendata.inter.prod-toronto.ca`), `datacube.services.geo.ca` and
+`overpass-api.de`, and, only with **LiDAR roofs** ticked, `ws.geoservices.lrc.gov.on.ca`, and only when you press
+the search button, Build Context or Apply Street Look. It sends what the query needs (the address you search for, or
+the location and radius you build) and nothing else. Answers are cached on your computer for 30 days. The City's 3D
+Massing model is downloaded once per yearly edition (81 MB, about 300 MB unpacked in the cache folder) and kept
+until a newer edition comes out. It lives in the cache folder (Preferences › Cache folder; by default the
+extension's own folder); deleting its `toronto_massing` folder is safe, and the next Toronto build downloads it
+again. With **Aerial photo** ticked, the photo comes from `gis.toronto.ca` with the build and is kept inside the
+.blend file, which adds up to about 5 MB. LiDAR answers (10–30 MB a site) are cached like the rest, and LiDAR roofs
+are kept inside the .blend file, about 20 to 30 MB for a dense 300 m site (less with Compress, in File › Save As or
+Preferences › Save & Load).
 
 **Apply Street Look** contacts `graph.mapillary.com` (photo listings and labels) and Mapillary's image servers
-on `fbcdn.net`, and only then. `graph.mapillary.com` receives the area around the site, the ids of the photos
+on `fbcdn.net`, and only then. Inside Canada it also asks `datacube.services.geo.ca` for ground heights over the
+same area, as Build Context does. `graph.mapillary.com` receives the area around the site, the ids of the photos
 read and your Mapillary token, which Ghost Town sends only in a request header and never stores in a .blend
 file; the image servers receive only the link for each photo read. Each user registers their own free
 application with Mapillary, so the request limits are theirs. Photos and labels are cached on your computer for
-30 days, in the cache folder set in Preferences › Add-ons › Ghost Town (delete it to clear them); the photos
-are the blurred thumbnails Mapillary serves, kept as they are; only the colours and heights read from them
-reach the .blend file.
+30 days, in the cache folder set in Preferences › Add-ons › Ghost Town (delete its `mapillary` folder to clear
+them; the whole cache folder also holds the City's massing model); the photos are the blurred thumbnails
+Mapillary serves, kept as they are; only the colours and heights read from them reach the .blend file.
 
 Ghost Town is an independent project. It is not affiliated with or endorsed by the City of Toronto,
 Natural Resources Canada, the Province of Ontario, OpenStreetMap or Mapillary.
@@ -284,7 +285,7 @@ sidebar panel ─▶ request.json ─▶ fetcher process ─▶ context.json ─
 - `ghosttown/ghosttown_fetch/` is plain Python (numpy, shapely and Pillow, no Blender). Each data source is one
   module in `sources/`, which is where new cities and layers go.
 - `ghosttown/*.py` is the extension: panel, operators, the process runner and the scene builder.
-- Street Look is a second fetcher command, `look`: it reads `look_request.json` and writes `look.json`, with
+- Street Look is another fetcher command, `look`: it reads `look_request.json` and writes `look.json`, with
   the Mapillary token in the process's environment only.
 
 ## Roadmap

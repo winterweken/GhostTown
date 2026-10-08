@@ -247,13 +247,13 @@ site's median road luminance, clamped to 0.5–2×. Photos with fewer than 500 r
   > 0.7. With fewer views, glass if blue minus red > 0.04 × max(luminance ÷ 0.1, 1). Known blind spot: lower-floor
   glass that mirrors the same street from every angle reads as opaque.
 - Floor height: the repeat of horizontal edges in each straightened wall, searched over 2.8–6 m. For each wall, the
-  edge strength of each row is autocorrelated, and the strongest lag in the window is the wall's spacing. It counts
-  only at a strict local maximum inside the window (never its first or last lag, which are only the slope of
-  something outside it) and only when the correlation there is at least max(0.3, 3 / √rows) of its value at lag
-  0, rows being the rows with data. A wall with less than 12 m of rows with data, a plain gradient (the same edge
-  strength on every row) or no such peak (a featureless or smoothly shaded wall) counts for nothing. The floor
-  height is the mean of the walls that agree, accepted only when at least 2 walls agree within 0.25 m; otherwise
-  3.5 m.
+  edge strength of each row is autocorrelated, and the wall's spacing is the highest lag of the autocorrelation
+  within 2.8–6 m. It counts only if that lag is an interior one (never the first or last lag of the window, which
+  are only the slope of something outside it), above the lag before it and not below the next, and at least the noise
+  level, max(0.3, 3 / √rows) of the value at lag 0, rows being the rows with data. A wall with less than 12 m of rows
+  with data, a plain gradient (the same edge strength on every row) or no such peak (a featureless or smoothly
+  shaded wall) counts for nothing. The floor height is the mean of the walls that agree, accepted only when at least
+  2 walls agree within 0.25 m; otherwise 3.5 m.
 - Window and mullion spacing are not measured in version 1: 1.5 m on glass, 3.0 m on opaque walls.
 
 ### 6.8 Defaults and confidence
@@ -315,7 +315,8 @@ site's median road luminance, clamped to 0.5–2×. Photos with fewer than 500 r
   its environment. It is sent only as an `Authorization: OAuth` header, never in a URL.
 - New servers, contacted only when Apply is pressed: `graph.mapillary.com` (listings, metadata, labels) and
   Mapillary's image servers on `fbcdn.net` (photos). `graph.mapillary.com` receives the site's tile boxes, photo ids
-  and the token; the image servers receive only the link for each photo, never the token. The README's privacy
+  and the token; the image servers receive only the link for each photo, never the token. Inside Canada, Apply also
+  asks `datacube.services.geo.ca`, which Build already uses, for ground heights (5.2). The README's privacy
   paragraph and its list of servers are updated.
 - Photos and labels are cached by image id (Mapillary's download links expire) for the usual 30 days.
 - Only derived values reach the .blend file, so CC BY-SA share-alike does not extend to users' files; the credit
@@ -333,14 +334,21 @@ From the Terms (https://www.mapillary.com/terms, 2024-02-15) and the API documen
 - Rate limits, per application: 60,000 entity calls a minute (photos, labels), 10,000 search calls. A run makes about
   90 searches (100 m tiles, 8 at a time) and at most 500 photo and 500 label calls: far under both. A bbox must be
   under 0.01 square degrees and returns at most 2,000 results (a denser tile would be cut; paging not verified).
-- Attribution: §3(b) gives other users' content CC BY-SA (4.0, by the deed it links). §11 asks for the Mapillary logo
-  and a link to https://www.mapillary.com when extracted data (the labels) is integrated; §7 reserves the logo
-  (https://www.mapillary.com/press-kit). README's table and CREDITS.md now name the labels and link the homepage.
+  Throttling answers an OAuthException (code 4, subcode 1349210) with no documented HTTP status; a 2022 forum report
+  shows 403 (https://forum.mapillary.com/t/hitting-request-limit/5820).
+- Attribution: §3(b) gives other users' content CC BY-SA unless Mapillary indicates otherwise (4.0, by the deed it
+  links, https://creativecommons.org/licenses/by-sa/4.0/). §11 asks for the Mapillary logo and a link to
+  https://www.mapillary.com when extracted data (the labels) is integrated; §7 reserves the logo
+  (https://www.mapillary.com/press-kit). The help centre's model credit links the title to the image and the username
+  to the profile (https://help.mapillary.com/hc/en-us/articles/115001770409-CC-BY-SA-license-for-open-data); the
+  fixtures README credits each photo by image page and username. README's table and CREDITS.md now name the labels
+  and link the homepage.
 - Fixture photos: CC BY-SA 4.0 permits resized copies with a note of modification
   (https://creativecommons.org/licenses/by-sa/4.0/legalcode.en; a downscale being technical is our reading), and
   photos beside GPL-3 code are a collection, not an adaptation
-  (https://wiki.creativecommons.org/wiki/ShareAlike_interpretation): the six stay CC BY-SA 4.0, not claimed by the
-  GPL-3 LICENSE. No page states a licence for the labels.
+  (https://wiki.creativecommons.org/wiki/ShareAlike_interpretation). CC's GPLv3 page says its one-way route is not for
+  general use (https://wiki.creativecommons.org/wiki/ShareAlike_compatibility:_GPLv3), so the six stay CC BY-SA 4.0,
+  not claimed by the GPL-3 LICENSE. No page states a licence for the labels.
 - Tokens: the header form is documented; §11 has each application register its own client_id, so each user's limits
   are their own. Not verified: whether Meta's Platform Terms reach Mapillary tokens.
 
@@ -442,4 +450,4 @@ Peak memory (maximum resident set size) over the five runs: 1,801 MB, at 320 Bay
   look in Blender. Eroding the building label by a few pixels and refusing sky-coloured top zones are the first
   things to try.
 - The token sits in plain text in Blender's user preferences.
-- Pillow adds about 3–5 MB to each platform package.
+- Pillow's wheels are 4.7–7.6 MB, so each platform package grows by that much.
