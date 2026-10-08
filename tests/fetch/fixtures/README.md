@@ -20,3 +20,9 @@ Recorded with `uv run python tools/record_fixtures.py`. Answers are gzipped exac
   corner within 60 m of 351 King St E, and six Mapillary street photos (512 px) with their labels, recorded by
   `tools/record_look_fixture.py`. Contains information licensed under the Open Government Licence – Toronto.
   Street photos © Mapillary contributors, CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/
+  - 465172451218605: https://www.mapillary.com/app/?pKey=465172451218605 by kevo (resized to 512 px)
+  - 778110916399372: https://www.mapillary.com/app/?pKey=778110916399372 by jarekp (resized to 512 px)
+  - 285566829854674: https://www.mapillary.com/app/?pKey=285566829854674 by kevo (resized to 512 px)
+  - 866962730524181: https://www.mapillary.com/app/?pKey=866962730524181 by kevo (resized to 512 px)
+  - 2945761572361391: https://www.mapillary.com/app/?pKey=2945761572361391 by to_ (resized to 512 px)
+  - 475750006841564: https://www.mapillary.com/app/?pKey=475750006841564 by kevo (resized to 512 px)

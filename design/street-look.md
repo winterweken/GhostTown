@@ -204,14 +204,18 @@ the wall lies inside or under another solid.
 
 ### 6.4 Choose photos for the whole site
 
-- A greedy pick that shares photos between buildings, scoring each photo by wall area covered × sharpness (capped
-  at 20 px/m) × recency.
-- Up to 4 photos per building, until the budget is spent.
-- Priority: detail buildings first, then by distance from the address. A building's only usable photo is never
-  dropped for budget.
-- Photos are read for at most as many buildings as the budget, in that order; the rest get the guessed look.
-  More could not all get photos anyway, and it keeps a 1,000 m site about as quick as a small one. The photo
+- Priority: detail buildings first, then by distance from the address. Photos are read for at most as many
+  buildings as the budget (or as there are detail buildings, if more), in that order; the rest get the guessed
+  look. More could not all get photos anyway, and it keeps a 1,000 m site about as quick as a small one. The photo
   search reaches 200 m past the farthest of those buildings, capped at 1,000 m.
+- A greedy pick that shares photos between buildings. Each pick is the photo that adds the most wall area ×
+  sharpness (capped at 20 px/m) × recency, counting only points seen at 5 px/m or better. Points already covered
+  by a picked photo count half as much each time, and a photo already chosen for another building counts 1.5 times
+  as much.
+- Two passes over the buildings, in priority order. Pass one gives every building that has a usable photo its best
+  one, whatever the budget, so a building's only usable photo is never dropped for budget. Pass two adds photos,
+  up to 4 per building, while the budget lasts: a photo nobody has chosen yet costs one from the budget, and a
+  photo already chosen for another building is free.
 
 ### 6.5 Label check and masks
 
@@ -231,7 +235,9 @@ site's median road luminance, clamped to 0.5–2×. Photos with fewer than 500 r
 ### 6.7 Profile, zones, glass and floors
 
 - Straighten each visible wall in each photo at about 6 px/m (sample the photo at points on the wall plane).
-- Profile: calibrated linear colour per 3 m height band, the median per photo, then the median across photos.
+- Profile: calibrated linear colour per 3 m height band, the median per photo (a photo counts for a band from 20
+  of its pixels), then the median across photos. One photo suffices for a band (`MIN_PHOTOS_PER_BAND = 1`); the
+  confidence (6.8) carries how thin the evidence is.
 - Zones: split the bands where the kind changes, or where luminance changes by more than 30% or chromaticity
   (r, g, b divided by their sum) moves by more than 0.05 between neighbouring bands; merge runs shorter than 6 m;
   keep at most 4 zones by merging the most similar neighbours. A storefront base is set at the first band
@@ -240,8 +246,14 @@ site's median road luminance, clamped to 0.5–2×. Photos with fewer than 500 r
 - Glass or opaque: with ≥ 3 views of a 6 m band, glass if chromaticity spread > 0.12 and log-brightness spread
   > 0.7. With fewer views, glass if blue minus red > 0.04 × max(luminance ÷ 0.1, 1). Known blind spot: lower-floor
   glass that mirrors the same street from every angle reads as opaque.
-- Floor height: dominant spacing of horizontal edges in the straightened walls, searched over 2.8–6 m, accepted
-  only when at least 2 walls agree within 0.25 m; otherwise 3.5 m.
+- Floor height: the repeat of horizontal edges in each straightened wall, searched over 2.8–6 m. For each wall, the
+  edge strength of each row is autocorrelated, and the strongest lag in the window is the wall's spacing. It counts
+  only at a strict local maximum inside the window (never its first or last lag, which are only the slope of
+  something outside it) and only when the correlation there is at least max(0.3, 3 / √rows) of its value at lag
+  0, rows being the rows with data. A wall with less than 12 m of rows with data, a plain gradient (the same edge
+  strength on every row) or no such peak (a featureless or smoothly shaded wall) counts for nothing. The floor
+  height is the mean of the walls that agree, accepted only when at least 2 walls agree within 0.25 m; otherwise
+  3.5 m.
 - Window and mullion spacing are not measured in version 1: 1.5 m on glass, 3.0 m on opaque walls.
 
 ### 6.8 Defaults and confidence
@@ -302,13 +314,41 @@ site's median road luminance, clamped to 0.5–2×. Photos with fewer than 500 r
 - The token is stored in Blender's user preferences, never in a .blend file, and reaches the fetcher only through
   its environment. It is sent only as an `Authorization: OAuth` header, never in a URL.
 - New servers, contacted only when Apply is pressed: `graph.mapillary.com` (listings, metadata, labels) and
-  Mapillary's image servers on `fbcdn.net` (photos). They receive the site's tile boxes, photo ids and the token.
-  The README's privacy paragraph and its list of servers are updated.
+  Mapillary's image servers on `fbcdn.net` (photos). `graph.mapillary.com` receives the site's tile boxes, photo ids
+  and the token; the image servers receive only the link for each photo, never the token. The README's privacy
+  paragraph and its list of servers are updated.
 - Photos and labels are cached by image id (Mapillary's download links expire) for the usual 30 days.
 - Only derived values reach the .blend file, so CC BY-SA share-alike does not extend to users' files; the credit
   still applies. It appears in the panel, in the `Context origin` credits property, in README's data table and in
   CREDITS.md.
-- Open before release: check Mapillary's API terms on caching and rate limits.
+
+### Mapillary terms, checked 2026-10-07
+
+From the Terms (https://www.mapillary.com/terms, 2024-02-15) and the API documentation
+(https://www.mapillary.com/developer/api-documentation), each claim checked against the page it cites.
+
+- Caching: silent on keeping photos or labels and on retention; only the download links expire
+  (https://blog.mapillary.com/update/2021/06/23/getting-started-with-the-new-mapillary-api-v4.html). The 30-day
+  cache by image id, no link stored and photos kept as served (§5 forbids unblurring), fits: 30 days stays.
+- Rate limits, per application: 60,000 entity calls a minute (photos, labels), 10,000 search calls. A run makes about
+  90 searches (100 m tiles, 8 at a time) and at most 500 photo and 500 label calls: far under both. A bbox must be
+  under 0.01 square degrees and returns at most 2,000 results (a denser tile would be cut; paging not verified).
+- Attribution: §3(b) gives other users' content CC BY-SA (4.0, by the deed it links). §11 asks for the Mapillary logo
+  and a link to https://www.mapillary.com when extracted data (the labels) is integrated; §7 reserves the logo
+  (https://www.mapillary.com/press-kit). README's table and CREDITS.md now name the labels and link the homepage.
+- Fixture photos: CC BY-SA 4.0 permits resized copies with a note of modification
+  (https://creativecommons.org/licenses/by-sa/4.0/legalcode.en; a downscale being technical is our reading), and
+  photos beside GPL-3 code are a collection, not an adaptation
+  (https://wiki.creativecommons.org/wiki/ShareAlike_interpretation): the six stay CC BY-SA 4.0, not claimed by the
+  GPL-3 LICENSE. No page states a licence for the labels.
+- Tokens: the header form is documented; §11 has each application register its own client_id, so each user's limits
+  are their own. Not verified: whether Meta's Platform Terms reach Mapillary tokens.
+
+Open, both the user's call:
+
+- The Mapillary logo beside the credit (§11 asks for it; it is a trademark).
+- The recorded labels in `tests/fetch/fixtures/kingst/mapillary.json.gz`: ask support@mapillary.com; if the answer is
+  no, the labels leave the repo and the recorded test is reworked.
 
 ## 9. Failure handling
 
@@ -384,17 +424,22 @@ Peak memory (maximum resident set size) over the five runs: 1,801 MB, at 320 Bay
 
 ## 13. Risks and open questions
 
-- Mapillary's API terms (caching, rate limits): unverified.
+- Mapillary's terms: checked 2026-10-07 (section 8). Two items stay open: the Mapillary logo beside the credit, and
+  whether the recorded labels may stay in the repo.
 - Old photos: most usable photos at the test sites are from 2014–2019; buildings change. Recency weighting and
   "Not before" mitigate.
 - Colour fidelity: calibration is relative to the site, not absolute; Photo brightness is the user's control.
 - Zone errors: lower-floor glass can read as an opaque podium; foreground buildings missing from the massing
   (or not yet built) can still be sampled.
-- Facade reading on real photos, from the live run at 351 King St E (61 of 87 buildings from photos): the
-  dark storefront and brick podiums came out right, but the 84 m tower's glass above 36 m read as opaque
-  (three photos, whose colours varied too little for the glass test), and one building got a sky-blue top
-  zone, likely sky at the roofline passing the building label. `tools/look_accuracy.py` should track both
-  before release; eroding the building label by a few pixels and refusing sky-coloured top zones are the
-  first things to try.
+- Facade reading on real photos. In the first live run at 351 King St E (2026-10-07, the plan's code) the dark
+  storefront and brick podiums came out right, but the 84 m tower's glass above 36 m read as opaque (three photos,
+  whose colours varied too little for the glass test), and one building got a sky-blue top zone, likely sky at the
+  roofline passing the building label. The five-site run on the finished code (section 10) read 78 of 87 buildings
+  there from photos, but the tower at the address as four opaque zones (0–30 · 30–42 · 42–60 · 60– m), with no
+  storefront and no glass, so the glass weak spot stands. None of the five address buildings in that run has a
+  storefront zone; why is not yet known. `tools/look_accuracy.py` prints only the zone kinds and heights of the
+  building at the address, never colours: it shows whether the glass is found, not a sky-blue top, which takes a
+  look in Blender. Eroding the building label by a few pixels and refusing sky-coloured top zones are the first
+  things to try.
 - The token sits in plain text in Blender's user preferences.
 - Pillow adds about 3–5 MB to each platform package.
