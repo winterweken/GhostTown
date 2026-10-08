@@ -17,7 +17,9 @@ Ghost Town downloads open data at build time. Credit the sources you use in anyt
   carry two lines: "Street photos © Mapillary contributors, CC BY-SA 4.0" and "Labels from Mapillary ·
   https://www.mapillary.com". The six resized photos in `tests/fetch/fixtures/kingst/` are CC BY-SA 4.0, not GPL-3
   (see `tests/fetch/fixtures/README.md` for each photo's credit), beside Mapillary's labels and listing records for
-  those photos, whose redistribution is open (see that README).
+  those photos, whose redistribution is open (see that README). The Mapillary logo in the README is Mapillary's
+  own, shown unmodified from https://github.com/mapillary/mapillary_press under CC BY-ND 4.0
+  (https://creativecommons.org/licenses/by-nd/4.0/).
 
 The add-on also lists the credits for each build in its panel and stores them on the context
 collection (`credits` custom property).
