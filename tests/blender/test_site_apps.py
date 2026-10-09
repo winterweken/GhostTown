@@ -214,6 +214,54 @@ def test_a_carried_box_is_remembered_in_the_new_frame():
     assert _close(centre, (30.0, 10.0), tol=1e-3)
 
 
+def _ten_metres_east():
+    doc = load_fixture("mini_context.json")
+    lon, lat = Frame(doc["centre"]["lat"], doc["centre"]["lon"]).to_lonlat(10.0, 0.0)
+    return {"lat": lat, "lon": lon}
+
+
+def _hang(child, parent):
+    """Parent `child` to `parent` where it stands, with no parent inverse, so its own transform is in the
+    parent's turned and scaled space."""
+    bpy.context.view_layer.update()
+    world = child.matrix_world.copy()
+    child.parent = parent
+    child.matrix_parent_inverse.identity()
+    child.matrix_world = world
+
+
+def _world_xy(ob):
+    bpy.context.view_layer.update()
+    return ob.matrix_world.translation[:2]
+
+
+def test_a_box_hung_from_a_turned_and_scaled_empty_is_carried_in_world_space():
+    _build([_site("A")])
+    (box,) = _boxes()
+    empty = bpy.data.objects.new("Rig", None)
+    bpy.context.scene.collection.objects.link(empty)
+    empty.location = (5.0, -3.0, 0.0)
+    empty.rotation_euler = (0.0, 0.0, math.radians(90.0))
+    empty.scale = (2.0, 2.0, 2.0)
+    _hang(box, empty)
+    _build(None, centre=_ten_metres_east())
+    assert _close(_world_xy(box), (30.0, 10.0), tol=1e-3)
+    assert _close(_world_xy(empty), (5.0, -3.0), tol=1e-6)      # the user's empty is theirs: left where it was
+    (centre,) = _remembered()
+    assert _close(centre, (30.0, 10.0), tol=1e-3)
+
+
+def test_a_box_hung_from_another_box_moves_with_it_once():
+    _build([_site("A"), _site("B", centre=(-40.0, 10.0))])
+    a, b = sorted(_boxes(), key=lambda ob: ob["ctx_app_main"])
+    _hang(b, a)
+    _build(None, centre=_ten_metres_east())
+    assert _close(_world_xy(a), (30.0, 10.0), tol=1e-3)
+    assert _close(_world_xy(b), (-50.0, 10.0), tol=1e-3)
+    assert _close(sorted(_remembered())[0], (-50.0, 10.0), tol=1e-3)
+    assert _close(sorted(_remembered())[1], (30.0, 10.0), tol=1e-3)
+
+
 def test_an_untouched_box_outside_a_smaller_circle_is_left_alone():
     _build([_site("A", centre=(140.0, 0.0), w=10.0, d=10.0)])
     (box,) = _boxes()

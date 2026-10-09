@@ -8,6 +8,7 @@ import datetime
 import json
 
 import bpy
+import mathutils
 
 from . import materials
 from .ghosttown_fetch import APPLICATION_GROUPS, app_boxes
@@ -94,13 +95,26 @@ def _measure(ob):
             "verts": verts, "other": ob.parent is not None or ob.rotation_mode != "XYZ"}
 
 
+def _ancestors(ob):
+    while ob.parent is not None:
+        ob = ob.parent
+        yield ob
+
+
+def _world(ob):
+    """Where an object stands in the scene. matrix_world is not refreshed until the next depsgraph update, so for
+    a box, or anything hanging from one, it can still hold the place the box had before this build moved it: those
+    are worked out from their own transforms and their parents'. Anything else keeps its matrix_world."""
+    if ob.get(BOX_SITE) is None and not any(p.get(BOX_SITE) is not None for p in _ancestors(ob)):
+        return ob.matrix_world
+    if ob.parent is None:
+        return ob.matrix_basis
+    return _world(ob.parent) @ ob.matrix_parent_inverse @ ob.matrix_basis
+
+
 def _centre(ob):
-    """Where the box stands in plan: the middle of its vertices, else its origin. Worked out from the box's own
-    transform and its parent's, not from matrix_world, which Blender does not refresh until the next depsgraph
-    update and so still holds the place the box had before this build moved it."""
-    basis = ob.matrix_basis
-    if ob.parent is not None:
-        basis = ob.parent.matrix_world @ ob.matrix_parent_inverse @ basis
+    """Where the box stands in plan: the middle of its vertices, else its origin."""
+    basis = _world(ob)
     if ob.type == "MESH" and len(ob.data.vertices):
         pts = [basis @ v.co for v in ob.data.vertices]
     else:
@@ -251,6 +265,21 @@ def _remove(ob):
         bpy.data.meshes.remove(data)
 
 
+def _move(ob, delta, carried):
+    """Move a box by `delta` in the scene. A box hanging from another box that moves goes with it; one hanging from
+    something else (an empty of the user's, say) takes the delta in its parent's turned and scaled space, and is
+    left where it is when that space has no size to move in."""
+    if any(p in carried for p in _ancestors(ob)):
+        return
+    if ob.parent is None:
+        ob.location = ob.location + mathutils.Vector(delta)
+        return
+    linear = (_world(ob.parent) @ ob.matrix_parent_inverse).to_3x3()
+    if abs(linear.determinant()) < 1e-12:
+        return
+    ob.location = ob.location + linear.inverted() @ mathutils.Vector(delta)
+
+
 def _carry(scene, coll, label, doc):
     """Carry the boxes, and the collection's memory of them, from the frame they were placed in into this
     build's, when the site is built again around another centre or on other ground."""
@@ -264,9 +293,9 @@ def _carry(scene, coll, label, doc):
         return                                      # no frame recorded yet: nothing to carry
     if max(abs(dx), abs(dy), abs(dz)) < 1e-6:
         return
-    for ob in boxes(scene, label):
-        if ob.parent is None:
-            ob.location = (ob.location.x + dx, ob.location.y + dy, ob.location.z + dz)
+    carried = boxes(scene, label)
+    for ob in carried:
+        _move(ob, (dx, dy, dz), carried)
         placed = _json(ob, "ctx_app_placed", {})
         if isinstance(placed.get("location"), list) and len(placed["location"]) == 3:
             x, y, z = placed["location"]
