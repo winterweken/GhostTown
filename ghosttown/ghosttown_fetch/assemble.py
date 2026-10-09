@@ -207,8 +207,10 @@ def _applications(doc, net, frame, radius, terrain, parcel_answer, massing_year,
         if parcel_answer is None:
             parcel_answer = _named("parcels", lambda: toronto.fetch_parcels(net, lat, lon, radius))
         address_answer = _named("addresses", lambda: toronto.fetch_address_points(net, lat, lon, radius))
+        progress(f"{APPLICATIONS_STAGE}: the City's tables", 73)
         table = _named("table", lambda: toronto_applications.get_table(net, iso))
         year = _massing_year(net, massing_year, today)
+        progress(f"{APPLICATIONS_STAGE}: building permits", 74)
         live_rows = _named("permits", lambda: toronto_permits.get_live(
             net, construction.years_before(iso, construction.LIVE_YEARS), iso))
         done_rows = _named("permits", lambda: toronto_permits.get_completed(net, f"{year}-01-01", iso))

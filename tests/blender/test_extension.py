@@ -1076,7 +1076,7 @@ def test_development_applications_are_asked_for_only_when_ticked():
     assert "applications" in ops.request_layers(Settings("43.65, -79.38", fetch_applications=True))
 
 
-def _apps_site():
+def _apps_doc():
     doc = load_fixture("mini_context.json")
     doc["applications"] = [{
         "id": "app:A", "group": "review", "numbers": ["A"], "main": "A", "centre_m": [40.0, 10.0],
@@ -1086,9 +1086,30 @@ def _apps_site():
                           "address": "25 KING ST W", "description": "", "source": "application",
                           "floor_area_m2": 0.0, "url": "http://app.toronto.ca/AIC/index.do?folderRsn=abc"}]}]
     doc["applications_date"] = "2026-10-09"
+    return doc
+
+
+def _apps_site():
+    doc = _apps_doc()
     root = scene_build.build(bpy.context.scene, doc)
     bpy.context.scene.ghosttown.site = root
     return root, doc
+
+
+def test_importing_a_context_with_applications_makes_the_boxes_and_reports_them():
+    ghosttown.register()
+    try:
+        reports = []
+        root = ops.import_into_scene(bpy.context, _write_context(_apps_doc(), tempfile.mkdtemp()),
+                                     lambda level, text: reports.append((next(iter(level)), text)))
+        scene = bpy.context.scene
+        assert root is not None and site_apps.find(scene, root["ctx_label"]) is not None
+        assert len(site_apps.boxes(scene, root["ctx_label"])) == 1
+        assert scene.ghosttown.summary.endswith(", 1 application box")
+        assert any(level == "INFO" and text.startswith("Development applications (City of Toronto, ")
+                   for level, text in reports)
+    finally:
+        ghosttown.unregister()
 
 
 def test_bring_back_forgets_the_deleted_boxes():
@@ -1227,6 +1248,25 @@ def test_the_applications_box_lists_an_active_boxs_applications_and_opens_only_c
         assert _labels(_drawn(None)) == ["Development applications 2026-10-09", "Under review: 1"]
         other = bpy.data.objects.new("Elsewhere", None)
         assert _labels(_drawn(other)) == _labels(_drawn(None))   # an object that is not this site's box adds nothing
+    finally:
+        ghosttown.unregister()
+
+
+def test_the_applications_box_wraps_a_long_title_and_address_to_the_panel():
+    ghosttown.register()
+    try:
+        root, _ = _apps_site()
+        (box,) = site_apps.boxes(bpy.context.scene, root["ctx_label"])
+        apps = site_apps.applications_of(box)
+        apps[0].update(type="Official Plan and Zoning By-law Amendment", status="Under Review (resubmission)",
+                       address="25 KING ST W; 27 KING ST W; 29 KING ST W; 31 KING ST W; 33 KING ST W")
+        box["ctx_app_applications"] = json.dumps(apps)
+        text = _labels(_drawn(box))
+        assert all(len(t) <= 57 for t in text)                       # the panel is 57 characters wide here
+        assert " ".join(t for t in text if "KING" in t) == apps[0]["address"]
+        title = [t for t in text[3:] if "KING" not in t]
+        assert len(title) == 2 and " ".join(title) == "A · Official Plan and Zoning By-law Amendment · " \
+                                                       "Under Review (resubmission) · 2024-01-01"
     finally:
         ghosttown.unregister()
 

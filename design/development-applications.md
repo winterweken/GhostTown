@@ -240,8 +240,9 @@ When the site has an Applications collection, an **Applications** box shows:
 - **Bring back deleted boxes (N)** when N > 0.
 
 When the active object is a box, it also shows its status and height source, then each application or permit:
-number · type · status · date, its address, its description wrapped to the panel's width, and **Open in City AIC**
-(`wm.url_open`) when it has a `toronto.ca` link. The link is checked again when the button is clicked.
+number · type · status · date, its address, its description, and **Open in City AIC** (`wm.url_open`) when it has a
+`toronto.ca` link. The link is checked again when the button is clicked. Each application's description is wrapped
+to the panel's width, up to 8 lines (a ninth line shows as "…"); the title and address lines are wrapped to it too.
 
 ### 6.3 Notes
 
@@ -254,6 +255,11 @@ BHPlus's summary and notes, worded for Ghost Town's build report:
 - Outside Toronto, as info.
 - Houses left out, applications placed from the table, permits that couldn't be placed, points inside no parcel,
   an unknown status label, and two boxes for one site, each only when it applies.
+- A context whose development applications are older than the boxes' (its `applications_date` before the
+  collection's `ctx_app_date`) leaves the boxes as they are, as info: "This context's development applications
+  (2026-10-01) are older than the boxes' (2026-10-09), so the boxes were left as they are."
+- A build with no `applications` block and no `applications` note, while the site has boxes, says as info:
+  "Development applications weren't fetched this time (the tick was off), so the boxes were left as they are."
 
 ## 7. Testing
 

@@ -51,7 +51,8 @@ Each build makes one collection, `Context · <site>`:
 - **Development applications** (Toronto, asked for): a see-through box on every nearby site with an open
   development application, a building going up or one just finished, coloured by where it stands: under
   construction, recently built, appealed, under review, approved, or Committee of Adjustment. Each box sits on its
-  lot and is as tall as the City's description or building permit says. See [Use](#use).
+  lot and is as tall as the City's description or building permit says, or one storey when nothing says.
+  Applications filed on the same lot become one box, as tall as the tallest stated plan. See [Use](#use).
 - **Street Look** (a step after the build, with your own Mapillary token): facades coloured from street
   photos, with storefront, wall, glass and cap zones and window patterns, plus floor bands and mullions on
   a few buildings you pick. See [Street Look](#street-look).
@@ -113,7 +114,8 @@ executable first. Install the zip as above.
    measured roofs. It is a large download, and the province's server can take a minute to answer the
    first request. Tick **Development applications** to put a box on every nearby site with an open development
    application, under construction or finished since the City's 3D Massing (City of Toronto applications and
-   building permits; houses left out). The first build of the day takes a few seconds more.
+   building permits; houses left out). The first build of the day downloads the City's tables and can take up to
+   a minute more.
 6. Press **Build Context**. A 300 m site takes about 10 seconds and a 1000 m site about 20. With **LiDAR
    roofs** ticked a build takes a few minutes more, because the province's server is slow to send the LiDAR
    (a 300 m site in Hamilton took about 4 minutes). Cancel or Esc stops it, and Ctrl+Z removes a finished
@@ -142,14 +144,6 @@ When the site has LiDAR roofs:
 - **For Revit** shows the site's triangle count. Past the budget in Preferences (500,000 to start) it
   says: Heavy for Revit: use Fitted or Flat roofs, or lower Roof detail, before exporting.
 
-When the site has development application boxes, **Development applications** lists them by status, each with its
-colour (change it there to restyle every box of that status). Select a box to see its applications and permits,
-their status, date and description, and **Open in City AIC** for the City's page about each. Reshape a box as you
-like: grab, rotate, scale (the **Scale Cage** tool moves one side at a time) or edit its mesh. Building the site
-again refreshes each box's status and keeps the shape you gave it; a box whose applications all closed is removed,
-or turned grey (**Closed**) if you changed it. A box you delete stays deleted; **Bring Back Deleted Boxes** makes
-the next build put them back.
-
 ![Houses in Wismer, Markham switching between flat, LiDAR and fitted roofs in Ghost Town](media/roofs-markham.gif)
 
 *Wismer, Markham, 150 m radius with LiDAR roofs: the houses switch between flat tops, the LiDAR surface
@@ -157,6 +151,14 @@ and fitted roofs, and the triangle count for Revit follows. The LiDAR download, 
 here. Data: OpenStreetMap, Natural Resources Canada and Geospatial Ontario.*
 
 Switching never downloads anything again, and each site in a file keeps its own choices.
+
+When the site has development application boxes, **Development applications** lists them by status, each with its
+colour (change it there to restyle every box of that status). Select a box to see its applications and permits,
+their status, date and description, and **Open in City AIC** for the City's page about each application. Reshape a
+box as you like: grab, rotate, scale (the **Scale Cage** tool moves one side at a time) or edit its mesh. Building
+the site again refreshes each box's status and keeps the shape you gave it; a box whose applications all closed is
+removed, or turned grey (**Closed**) if you changed it. A box you delete stays deleted; **Bring Back Deleted Boxes**
+makes the next build put them back.
 
 ### Street Look
 

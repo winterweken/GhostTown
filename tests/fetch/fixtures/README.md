@@ -36,3 +36,5 @@ entries below name the other recorders, and say where an answer was cut down or 
   (`cot_geospatial11/FeatureServer/60`) and property boundaries (`cot_geospatial27/FeatureServer/36`) around King
   St W and Bay St, recorded on 2026-10-08 for BHPlus's Build Context (its `kingbay_application.json.gz` and
   `kingbay_parcel.json.gz`). Contains information licensed under the Open Government Licence – Toronto.
+  The City planners' contact fields (ASSIGNEDPLANNER, ASSIGNEDPLANNER2, PLANNEREMAIL, PLANNERPHONE) were
+  removed.

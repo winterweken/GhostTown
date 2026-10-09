@@ -78,7 +78,8 @@ def completed(rows, year):
 
 
 def floor_area(row):
-    """The permit's floor area in m², its uses added up; a value that is not a finite number counts 0."""
+    """The permit's floor area in m², its uses added up; a value that is not a finite number counts 0, and so
+    does a total too large to be one."""
     total = 0.0
     for field in FLOOR_FIELDS:
         value = row.get(field)
@@ -89,7 +90,7 @@ def floor_area(row):
                 continue
         if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value > 0:
             total += float(value)
-    return total
+    return total if math.isfinite(total) else 0.0
 
 
 def _number(value):

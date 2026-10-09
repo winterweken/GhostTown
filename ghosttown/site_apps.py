@@ -17,6 +17,10 @@ SITE_PROP = "ctx_apps"            # on the Applications collection: the site lab
 BOX_SITE = "ctx_app_site"         # on each box: the same label
 MAX_NAME = 63
 LEFT = "{name} shares its applications with another box, which took the update; it was left as it is."
+OLDER = ("This context's development applications ({doc_date}) are older than the boxes' ({coll_date}), so the "
+         "boxes were left as they are.")
+NOT_FETCHED = ("Development applications weren't fetched this time (the tick was off), so the boxes were left as "
+               "they are.")
 
 
 def _json(block, key, default):
@@ -63,7 +67,10 @@ def detach(scene, label):
 
 
 def boxes(scene, label):
-    """The site's box objects in this scene, wherever the user moved them, oldest first."""
+    """The site's box objects in this scene, wherever the user moved them, oldest first ([] for a label that is
+    not a non-empty string, which would match every object that has no mark at all)."""
+    if not isinstance(label, str) or not label:
+        return []
     found = [ob for ob in scene.objects if ob.get(BOX_SITE) == label]
     return sorted(found, key=lambda ob: (str(ob.get("ctx_app_made", "")), ob.name))
 
@@ -152,11 +159,21 @@ def status_counts(scene, coll):
     return [(g, groups.count(g)) for g in APPLICATION_GROUPS + (app_boxes.CLOSED,) if g in groups]
 
 
+def _word(word):
+    """One word of an address in street capitals: 33RD -> 33rd, MCCAUL -> McCaul, QUEEN'S -> Queen's (str.title
+    would make them 33Rd, Mccaul and Queen'S)."""
+    if word[:1].isdigit():
+        return word.lower()
+    if word[:2].upper() == "MC" and len(word) > 2:
+        return "Mc" + word[2:3].upper() + word[3:].lower()
+    return word[:1].upper() + word[1:].lower()
+
+
 def _place_name(site):
-    """The lead application's first address, in title case, else its number."""
+    """The lead application's first address, in street capitals, else its number."""
     lead = next((a for a in site["applications"] if a["number"] == site["main"]), site["applications"][0])
     address = lead["address"].split("; ")[0].strip()
-    return address.title() if address else lead["number"]
+    return " ".join(_word(w) for w in address.split()) if address else lead["number"]
 
 
 def _rename(ob):
@@ -279,10 +296,26 @@ def apply(scene, root, doc, coll):
     if coll.name in scene.collection.children:
         scene.collection.children.unlink(coll)         # detach() kept it here until now
     try:
-        return _refresh(scene, coll, label, doc, sites)
+        sites, said = _to_act_on(scene, coll, label, doc)
+        return _refresh(scene, coll, label, doc, sites) + said
     except Exception as e:                              # the boxes are the user's work: never stop the build
         return [("WARNING", f"The development application boxes couldn't be updated ({type(e).__name__}: "
                             f"{str(e)[:80]}); they were left as they are.")]
+
+
+def _to_act_on(scene, coll, label, doc):
+    """(sites, lines): the applications this build acts on, None when it leaves the boxes as they are, and the
+    line that says so when the user would wonder why: a context older than the boxes, or none fetched."""
+    sites = doc.get("applications")
+    doc_date, coll_date = doc.get("applications_date"), coll.get("ctx_app_date")
+    if sites is not None:
+        if all(isinstance(d, str) and d for d in (doc_date, coll_date)) and doc_date < coll_date:
+            return None, [("INFO", OLDER.format(doc_date=doc_date, coll_date=coll_date))]
+        return sites, []
+    noted = any(isinstance(n, dict) and n.get("code") == "applications" for n in doc.get("notes", []))
+    if noted or not boxes(scene, label):
+        return None, []
+    return None, [("INFO", NOT_FETCHED)]
 
 
 def _refresh(scene, coll, label, doc, sites):

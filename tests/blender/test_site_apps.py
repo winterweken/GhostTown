@@ -25,11 +25,11 @@ def _site(number, *more, group="review", centre=(40.0, 10.0), w=30.0, d=20.0, h=
                               "source": source, "floor_area_m2": 0.0, "url": LINK} for n in numbers]}
 
 
-def _doc(sites, centre=None, radius=None):
+def _doc(sites, centre=None, radius=None, date="2026-10-09"):
     doc = load_fixture("mini_context.json")
     if sites is not None:
         doc["applications"] = sites
-        doc["applications_date"] = "2026-10-09"
+        doc["applications_date"] = date
     if centre is not None:
         doc["centre"] = centre
     if radius is not None:
@@ -37,14 +37,14 @@ def _doc(sites, centre=None, radius=None):
     return doc
 
 
-def _build(sites, lines=None, centre=None, radius=None, levels=None):
+def _build(sites, lines=None, centre=None, radius=None, levels=None, date="2026-10-09"):
     """Build the mini site; `lines` collects the text reported, `levels` (level, text) pairs."""
     def report(level, text):
         if lines is not None:
             lines.append(text)
         if levels is not None:
             levels.append((next(iter(level)), text))
-    return scene_build.build(bpy.context.scene, _doc(sites, centre, radius),
+    return scene_build.build(bpy.context.scene, _doc(sites, centre, radius, date),
                              report=report if lines is not None or levels is not None else None)
 
 
@@ -235,7 +235,7 @@ def test_find_needs_a_real_label():
     scene = bpy.context.scene
     scene.collection.children.link(bpy.data.collections.new("Some other collection"))   # without the Applications mark
     for label in (None, "", 5, ["Context"]):
-        assert site_apps.find(scene, label) is None
+        assert site_apps.find(scene, label) is None and site_apps.boxes(scene, label) == []
     assert site_apps.find(scene, SITE) is not None and site_apps.find(scene, "No such site") is None
 
 
@@ -327,3 +327,49 @@ def test_apply_reports_a_failure_as_a_warning():
     assert any(level == "WARNING" and "couldn't be updated" in text and "ValueError" in text
                for level, text in levels)
     assert site_apps.find(bpy.context.scene, SITE) in root.children_recursive     # linked into the new site
+
+
+def test_a_box_is_named_for_its_address_in_street_capitals():
+    _build([_site("A", address="33RD ST; 2 MCCAUL ST")])
+    (box,) = _boxes()
+    assert box.name == "Under review · 33rd St" and box["ctx_app_place"] == "33rd St"
+    for address, name in (("2 MCCAUL ST", "2 McCaul St"), ("1 QUEEN'S PARK W", "1 Queen's Park W"),
+                          ("10 ST. CLAIR AVE E", "10 St. Clair Ave E"), ("25-27 MC ST", "25-27 Mc St"),
+                          ("MCKENZIE AVE", "McKenzie Ave")):
+        assert site_apps._place_name(_site("B", address=address)) == name
+
+
+def test_a_context_older_than_the_boxes_leaves_them_as_they_are():
+    _build([_site("A")])
+    (box,) = _boxes()
+    levels = []
+    _build([_site("A", group="approved")], levels=levels, date="2026-10-01")
+    assert _boxes() == [box] and box["ctx_app_group"] == "review"
+    assert ("INFO", "This context's development applications (2026-10-01) are older than the boxes' (2026-10-09), "
+                    "so the boxes were left as they are.") in levels
+    assert site_apps.find(bpy.context.scene, SITE)["ctx_app_date"] == "2026-10-09"
+    levels = []
+    _build([_site("A", group="approved")], levels=levels, date="2026-10-09")        # the same day is not older
+    assert box["ctx_app_group"] == "approved" and not any("older" in text for _, text in levels)
+
+
+def test_a_build_without_applications_says_so_when_it_leaves_boxes():
+    _build([_site("A")])
+    (box,) = _boxes()
+    levels = []
+    _build(None, levels=levels)
+    assert _boxes() == [box]
+    assert levels == [("INFO", "Development applications weren't fetched this time (the tick was off), so the "
+                               "boxes were left as they are.")]
+    levels = []
+    doc = _doc(None)
+    doc["notes"].append({"level": "warn", "code": "applications", "text": "The applications failed."})
+    scene_build.build(bpy.context.scene, doc, report=lambda level, text: levels.append((next(iter(level)), text)))
+    assert levels == []                                  # the context's own note says why
+
+
+def test_a_site_that_never_had_boxes_has_nothing_to_say_about_them():
+    levels = []
+    _build(None, levels=levels)
+    _build(None, levels=levels)
+    assert levels == []

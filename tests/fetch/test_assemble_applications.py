@@ -206,7 +206,7 @@ def test_the_applications_stage_comes_in_order(tmp_path):
     net = FakeNet({"toronto": _city(), ckan.SOURCE: answer(TABLES),
                    "nrcan": east_slope_tiff(Frame(LAT0, LON0), half=200.0), "osm": OSM})
     assemble(_req(tmp_path), net, progress=lambda stage, pct: stages.append(pct), now=NOW)
-    assert stages == sorted(stages) and 72 in stages
+    assert stages == sorted(stages) and {72, 73, 74} <= set(stages)
 
 
 def test_an_unexpected_error_costs_only_the_applications(tmp_path, monkeypatch):

@@ -146,9 +146,11 @@ def _applications_box(layout, context, coll):
     width = hint_width(context)
     for a in site_apps.applications_of(ob):
         col = detail.column(align=True)
-        col.label(text=" · ".join(str(a.get(k, "")) for k in ("number", "type", "status", "submitted") if a.get(k)))
-        if a.get("address"):
-            col.label(text=str(a["address"]))
+        title = " · ".join(str(a.get(k, "")) for k in ("number", "type", "status", "submitted") if a.get(k))
+        for line in textwrap.wrap(title, width):
+            col.label(text=line)
+        for line in textwrap.wrap(str(a.get("address", "")), width):
+            col.label(text=line)
         lines = textwrap.wrap(str(a.get("description", "")), width)
         for line in lines[:MAX_DESCRIPTION_LINES]:
             col.label(text=line)
