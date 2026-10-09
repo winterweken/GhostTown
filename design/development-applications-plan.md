@@ -17,8 +17,8 @@ each box are a pure function in `ghosttown_fetch/app_boxes.py`, so plain pytest 
 (`bpy`, headless tests through `tests/blender/run.py`).
 
 **Spec:** `design/development-applications.md` (approved 2026-10-09). The port's reference is the BHPlus repo at
-`/Users/inscrip/code/BHPlus`, commit `60d801e` (`main`), directory `BH+.extension/lib/bh_context/`. Read a file
-there with `git -C /Users/inscrip/code/BHPlus show 60d801e:"BH+.extension/lib/bh_context/<file>"`.
+`../BHPlus`, commit `60d801e` (`main`), directory `BH+.extension/lib/bh_context/`. Read a file
+there with `git -C ../BHPlus show 60d801e:"BH+.extension/lib/bh_context/<file>"`.
 
 ## Global Constraints
 
@@ -1137,7 +1137,7 @@ Expected: FAIL with `ImportError: cannot import name 'construction'`.
 Create `ghosttown/ghosttown_fetch/construction.py` from BHPlus with the commands below, then edit it:
 
 ```bash
-git -C /Users/inscrip/code/BHPlus show 60d801e:"BH+.extension/lib/bh_context/construction.py" > ghosttown/ghosttown_fetch/construction.py
+git -C ../BHPlus show 60d801e:"BH+.extension/lib/bh_context/construction.py" > ghosttown/ghosttown_fetch/construction.py
 ```
 
 Edits, all of them:
@@ -1451,8 +1451,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ```bash
 mkdir -p tests/fetch/fixtures/kingbay
-git -C /Users/inscrip/code/BHPlus show 60d801e:tests/fixtures/site_context/kingbay_application.json.gz > tests/fetch/fixtures/kingbay/applications.json.gz
-git -C /Users/inscrip/code/BHPlus show 60d801e:tests/fixtures/site_context/kingbay_parcel.json.gz > tests/fetch/fixtures/kingbay/parcels.json.gz
+git -C ../BHPlus show 60d801e:tests/fixtures/site_context/kingbay_application.json.gz > tests/fetch/fixtures/kingbay/applications.json.gz
+git -C ../BHPlus show 60d801e:tests/fixtures/site_context/kingbay_parcel.json.gz > tests/fetch/fixtures/kingbay/parcels.json.gz
 gunzip -t tests/fetch/fixtures/kingbay/*.json.gz
 ```
 
