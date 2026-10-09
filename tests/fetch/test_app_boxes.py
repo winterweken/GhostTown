@@ -20,8 +20,9 @@ def _site(number, *more, group="review", centre=(10.0, 0.0), w=30.0, d=20.0, h=4
                               "url": ""} for n in numbers]}
 
 
-def _box(*numbers, centre=(10.0, 0.0), touched=False, closed=False):
-    return {"numbers": list(numbers), "centre_m": list(centre), "touched": touched, "closed": closed}
+def _box(*numbers, key=None, centre=(10.0, 0.0), touched=False, closed=False):
+    return {"key": key or numbers[0], "numbers": list(numbers), "centre_m": list(centre), "touched": touched,
+            "closed": closed}
 
 
 def _gone(*numbers, centre=(10.0, 0.0)):
@@ -89,15 +90,30 @@ def test_a_deleted_box_outside_this_builds_circle_stays_deleted():
 
 
 def test_one_site_two_boxes_the_changed_one_wins_and_the_other_is_left():
-    old, edited = _box("A"), _box("A", touched=True)
+    old, edited = _box("A", key="old"), _box("A", key="edited", touched=True)
     site = _site("A")
-    _only(app_boxes.plan([site], [old, edited], [], 300), update=[(edited, site)], left=[(old, site)])
+    got = app_boxes.plan([site], [old, edited], [], 300)
+    (winner, won), = got["update"]
+    (loser, lost), = got["left"]
+    assert winner is edited and won is site
+    assert loser is old and lost is site
+    _only(got, update=[(edited, site)], left=[(old, site)])
 
 
 def test_one_site_two_untouched_boxes_the_older_wins():
-    old, copy = _box("A"), _box("A")
+    old, copy = _box("A", key="old"), _box("A", key="copy")
     site = _site("A")
-    _only(app_boxes.plan([site], [old, copy], [], 300), update=[(old, site)], left=[(copy, site)])
+    got = app_boxes.plan([site], [old, copy], [], 300)
+    (winner, won), = got["update"]
+    (loser, lost), = got["left"]
+    assert winner is old and won is site
+    assert loser is copy and lost is site
+    _only(got, update=[(old, site)], left=[(copy, site)])
+    got = app_boxes.plan([site], [copy, old], [], 300)       # the caller's order is the age: the first listed wins
+    (winner, won), = got["update"]
+    (loser, lost), = got["left"]
+    assert winner is copy and won is site
+    assert loser is old and lost is site
 
 
 def test_one_box_split_into_two_sites_follows_the_first_and_the_other_gets_a_new_box():
@@ -118,6 +134,25 @@ def test_an_edited_box_whose_application_closed_follows_the_permit_on_its_spot()
 def test_an_untouched_box_follows_it_too_rather_than_a_second_box_beside_it():
     box, site = _box("A"), _permit_site(group="built")
     _only(app_boxes.plan([site], [box], [], 300), update=[(box, site)])
+
+
+def test_two_boxes_on_a_permit_spot_the_changed_one_takes_it_else_the_older():
+    site = _permit_site()                                    # 30 x 20 at (12, 1): both boxes below stand on it
+    old = _box("P", key="old", centre=(10.0, 0.0))
+    edited = _box("Q", key="edited", centre=(14.0, 1.0), touched=True)
+    got = app_boxes.plan([site], [old, edited], [], 300)     # the changed one takes the spot, the other goes
+    (winner, won), = got["update"]
+    assert winner is edited and won is site
+    (gone,) = got["remove"]
+    assert gone is old
+    _only(got, update=[(edited, site)], remove=[old])
+    plain = _box("Q", key="plain", centre=(14.0, 1.0))
+    got = app_boxes.plan([site], [old, plain], [], 300)      # neither changed: the older takes the spot
+    (winner, won), = got["update"]
+    assert winner is old and won is site
+    (gone,) = got["remove"]
+    assert gone is plain
+    _only(got, update=[(old, site)], remove=[plain])
 
 
 def test_the_spot_is_the_permit_sites_turned_rectangle():
