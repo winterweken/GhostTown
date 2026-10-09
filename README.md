@@ -52,7 +52,8 @@ Each build makes one collection, `Context · <site>`:
   development application, a building going up or one just finished, coloured by where it stands: under
   construction, recently built, appealed, under review, approved, or Committee of Adjustment. Each box sits on its
   lot and is as tall as the City's description or building permit says, or one storey when nothing says.
-  Applications filed on the same lot become one box, as tall as the tallest stated plan. See [Use](#use).
+  Applications and permits filed on the same lot become one box, as tall as the newest of them that states a
+  height, a building permit's own height first. See [Use](#use).
 - **Street Look** (a step after the build, with your own Mapillary token): facades coloured from street
   photos, with storefront, wall, glass and cap zones and window patterns, plus floor bands and mullions on
   a few buildings you pick. See [Street Look](#street-look).
