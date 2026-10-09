@@ -11,6 +11,7 @@ at its number, unplaced (counted for a note).
 
 Ported from BHPlus bh_context/construction.py (60d801e).
 """
+import math
 import re
 
 from .sources import ckan
@@ -77,7 +78,7 @@ def completed(rows, year):
 
 
 def floor_area(row):
-    """The permit's floor area in m², its uses added up; a value that is not a number counts 0."""
+    """The permit's floor area in m², its uses added up; a value that is not a finite number counts 0."""
     total = 0.0
     for field in FLOOR_FIELDS:
         value = row.get(field)
@@ -86,7 +87,7 @@ def floor_area(row):
                 value = float(value)
             except ValueError:
                 continue
-        if isinstance(value, (int, float)) and not isinstance(value, bool) and value == value and value > 0:
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value > 0:
             total += float(value)
     return total
 

@@ -5,7 +5,7 @@ import urllib.parse
 
 import pytest
 
-from ghosttown_fetch import DEFAULT_LAYERS
+from ghosttown_fetch import DEFAULT_LAYERS, applications
 from ghosttown_fetch import context as ctx
 from ghosttown_fetch import request as rq
 from ghosttown_fetch.assemble import assemble
@@ -207,3 +207,32 @@ def test_the_applications_stage_comes_in_order(tmp_path):
                    "nrcan": east_slope_tiff(Frame(LAT0, LON0), half=200.0), "osm": OSM})
     assemble(_req(tmp_path), net, progress=lambda stage, pct: stages.append(pct), now=NOW)
     assert stages == sorted(stages) and 72 in stages
+
+
+def test_an_unexpected_error_costs_only_the_applications(tmp_path, monkeypatch):
+    def boom(*args, **kwargs):
+        raise ValueError("boom")
+    monkeypatch.setattr(applications, "build", boom)
+    doc, _ = _run(tmp_path)
+    assert "applications" not in doc and "applications_date" not in doc
+    assert {"toronto:parcel:55", "toronto:parcel:56", "toronto:parcel:57"} <= {el["id"] for el in doc["elements"]}
+    (note,) = _notes(doc)
+    assert note["level"] == "warn" and "ValueError" in note["text"] and "left as they are" in note["text"]
+
+
+def test_malformed_sites_are_not_written(tmp_path, monkeypatch):
+    monkeypatch.setattr(applications, "build", lambda *args, **kwargs: {"blocks": [{"id": "bad"}], "no_parcel": 0,
+                                                                         "unknown": []})
+    doc, _ = _run(tmp_path)
+    assert "applications" not in doc and "applications_date" not in doc
+    (note,) = _notes(doc)
+    assert note["level"] == "warn" and "malformed" in note["text"] and "left as they are" in note["text"]
+    assert ctx.validate(doc) == []
+
+
+def test_a_permit_with_an_impossible_floor_area_does_not_stop_the_build(tmp_path):
+    huge = dict(_permit("24 555555 BLD", "901", "Inspection", "2024-05-01", text=""), RESIDENTIAL="1e999")
+    doc, _ = _run(tmp_path, tables=answer(dict(TABLES, **{toronto_permits.LIVE: [huge]})))
+    assert ctx.validate(doc) == [] and _notes(doc) and all(n["level"] == "info" for n in _notes(doc))
+    (site,) = [s for s in doc["applications"] if "24 555555 BLD" in s["numbers"]]
+    assert site["group"] == "construction" and site["height_from"] == "not stated"

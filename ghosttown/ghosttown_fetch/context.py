@@ -97,7 +97,7 @@ def validate(doc):
     if doc.get("lidar") is not None:
         problems += _lidar_problems(doc["lidar"])
     if "applications" in doc:
-        problems += _applications_problems(doc)
+        problems += applications_problems(doc["applications"], doc.get("applications_date"))
     for el in doc["elements"]:
         problems += _element_problems(el)
         if len(problems) >= _MAX_PROBLEMS:
@@ -260,8 +260,8 @@ def _application_problem(site):
     return None
 
 
-def _applications_problems(doc):
-    sites = doc["applications"]
+def applications_problems(sites, date):
+    """Plain-sentence problems with an "applications" list and the day it was fetched; empty means fine."""
     if not isinstance(sites, list):
         return ["The applications must be a list."]
     problems, ids, owner = [], set(), {}
@@ -276,7 +276,6 @@ def _applications_problems(doc):
         for number in site["numbers"]:
             if owner.setdefault(number, i) != i:
                 problems.append(f"Application {number} is in two sites.")
-    date = doc.get("applications_date")
     if not (isinstance(date, str) and _DAY.fullmatch(date)):
         problems.append("The applications need the day they were fetched, as YYYY-MM-DD.")
     return problems

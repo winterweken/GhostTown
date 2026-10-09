@@ -240,6 +240,15 @@ def _applications(doc, net, frame, radius, terrain, parcel_answer, massing_year,
     except shapely.errors.ShapelyError:
         ctx.note(doc, "warn", "applications", APPLICATIONS_FAILED.format(reason=APPLICATIONS_UNHANDLED))
         return
+    except Exception as e:  # anything else costs only the applications, never the build
+        ctx.note(doc, "warn", "applications",
+                 APPLICATIONS_FAILED.format(reason=f"they couldn't be worked out ({type(e).__name__}: {str(e)[:80]})."))
+        return
+    problems = ctx.applications_problems(found["blocks"], iso)
+    if problems:
+        ctx.note(doc, "warn", "applications",
+                 APPLICATIONS_FAILED.format(reason=f"the sites came out malformed ({problems[0]})"))
+        return
     doc["applications"] = found["blocks"]
     doc["applications_date"] = iso
     ctx.add_source(doc, "toronto")

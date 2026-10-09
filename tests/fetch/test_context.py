@@ -247,6 +247,14 @@ def test_applications_need_their_day_and_must_be_a_list():
     assert ctx.validate(_apps_doc({})) == ["The applications must be a list."]
 
 
+def test_applications_problems_checks_a_list_and_its_day_without_a_document():
+    assert ctx.applications_problems([], "2026-10-09") == []
+    assert ctx.applications_problems([_app_site()], "2026-10-09") == []
+    (problem,) = ctx.applications_problems([_app_site(group="rumoured")], "2026-10-09")
+    assert "unknown group" in problem
+    assert ctx.applications_problems([], None) == ["The applications need the day they were fetched, as YYYY-MM-DD."]
+
+
 @pytest.mark.parametrize("url, want", [
     ("http://app.toronto.ca/AIC/index.do?folderRsn=abc", "http://app.toronto.ca/AIC/index.do?folderRsn=abc"),
     ("https://secure.toronto.ca/x", "https://secure.toronto.ca/x"), ("https://toronto.ca/", "https://toronto.ca/"),

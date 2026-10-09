@@ -77,6 +77,12 @@ def test_the_floor_area_adds_every_use_and_counts_text_as_zero():
     assert construction.floor_area(_row()) == 0.0
 
 
+def test_a_floor_area_that_is_not_finite_counts_zero():
+    assert construction.floor_area(_row(RESIDENTIAL="1e999", MERCANTILE="inf", ASSEMBLY="nan", INDUSTRIAL=50.0)) \
+        == 50.0
+    assert construction.floor_area(_row(RESIDENTIAL=float("inf"), MERCANTILE=float("nan"))) == 0.0
+
+
 def test_a_permit_is_at_its_address_point_by_id():
     assert ADDRESSES.locate(_row(geo="30123040", num="1")).coords[0] == (30.0, 10.0)
 
