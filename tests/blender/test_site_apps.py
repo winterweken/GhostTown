@@ -1,0 +1,176 @@
+"""Development application boxes in Blender (design/development-applications.md §5): made, refreshed, kept,
+greyed, removed, remembered when deleted and carried across a rebuild."""
+import json
+import math
+
+import bpy
+
+from ghosttown import scene_build, site_apps, site_use
+from ghosttown.ghosttown_fetch import BUILDING_KINDS
+from ghosttown.ghosttown_fetch.frame import Frame
+from helpers import closed_and_outward, load_fixture, mesh_arrays
+
+SITE = "320 Bay St"
+LINK = "http://app.toronto.ca/AIC/index.do?folderRsn=abc"
+
+
+def _site(number, *more, group="review", centre=(40.0, 10.0), w=30.0, d=20.0, h=45.0, angle=0.0,
+          address="25 KING ST W"):
+    numbers = sorted((number,) + more)
+    return {"id": "app:" + numbers[0], "group": group, "numbers": numbers, "main": number,
+            "centre_m": list(centre), "angle_deg": angle, "width_m": w, "depth_m": d, "height_m": h, "base_m": -0.3,
+            "height_from": "description: 14 storeys",
+            "applications": [{"number": n, "type": "OZ", "status": "Under Review", "submitted": "2024-01-01",
+                              "address": address, "description": "a 14-storey building with retail at grade",
+                              "source": "application", "floor_area_m2": 0.0, "url": LINK} for n in numbers]}
+
+
+def _doc(sites, centre=None):
+    doc = load_fixture("mini_context.json")
+    if sites is not None:
+        doc["applications"] = sites
+        doc["applications_date"] = "2026-10-09"
+    if centre is not None:
+        doc["centre"] = centre
+    return doc
+
+
+def _build(sites, lines=None, centre=None):
+    report = None if lines is None else (lambda level, text: lines.append(text))
+    return scene_build.build(bpy.context.scene, _doc(sites, centre), report=report)
+
+
+def _boxes():
+    return site_apps.boxes(bpy.context.scene, SITE)
+
+
+def _height(ob):
+    zs = [v.co.z for v in ob.data.vertices]
+    return max(zs) - min(zs)
+
+
+def _close(a, b, tol=1e-4):
+    return all(math.isclose(x, y, abs_tol=tol) for x, y in zip(a, b))
+
+
+def test_a_build_with_applications_makes_one_see_through_box_per_site():
+    root = _build([_site("A", angle=30.0)])
+    coll = root.children[f"Applications · {SITE}"]
+    (box,) = coll.objects
+    assert box.name == "Under review · 25 King St W" and box["ctx_app_group"] == "review"
+    assert len(box.data.vertices) == 8 and closed_and_outward(*mesh_arrays(box))
+    assert _close(box.location, (40.0, 10.0, -0.3)) and math.isclose(box.rotation_euler.z, math.radians(30.0),
+                                                                     abs_tol=1e-6)
+    assert math.isclose(_height(box), 45.0, abs_tol=1e-4)
+    mat = box.data.materials[0]
+    assert mat.name == "Context - Application (Under review)" and math.isclose(mat.diffuse_color[3], 0.7,
+                                                                               abs_tol=1e-6)
+    assert json.loads(box["ctx_app_numbers"]) == ["A"] and box["ctx_app_height_from"] == "description: 14 storeys"
+    assert site_apps.applications_of(box)[0]["url"] == LINK
+    assert box not in site_use.made_objects(root, BUILDING_KINDS)    # Street Look and the roof switches pass it by
+
+
+def test_a_build_without_applications_makes_no_collection():
+    root = _build(None)
+    assert not any(c.get(site_apps.SITE_PROP) for c in root.children_recursive)
+
+
+def test_a_rebuild_refreshes_the_status_and_resizes_an_untouched_box():
+    _build([_site("A")])
+    (box,) = _boxes()
+    lines = []
+    _build([_site("A", group="approved", h=60.0)], lines)
+    assert _boxes() == [box] and box.name == "Approved · 25 King St W"
+    assert math.isclose(_height(box), 60.0, abs_tol=1e-4)
+    assert box.data.materials[0].name == "Context - Application (Approved)"
+    assert lines[0] == "Development applications (City of Toronto, 2026-10-09): 1 site from 1 application: 1 approved."
+
+
+def test_a_box_the_user_scaled_keeps_its_shape_and_takes_the_new_status():
+    _build([_site("A")])
+    (box,) = _boxes()
+    box.scale.x = 2.0
+    lines = []
+    _build([_site("A", group="approved", h=60.0)], lines)
+    assert box.scale.x == 2.0 and math.isclose(_height(box), 45.0, abs_tol=1e-4)
+    assert box.data.materials[0].name == "Context - Application (Approved)"
+    assert "1 box kept at the size you gave it." in lines[0]
+
+
+def test_a_closed_box_is_removed_untouched_and_turns_grey_when_changed():
+    _build([_site("A"), _site("B", centre=(-40.0, 10.0), address="1 BAY ST")])
+    edited = next(ob for ob in _boxes() if ob["ctx_app_main"] == "B")
+    edited.location.x += 5.0
+    _build([])
+    assert _boxes() == [edited] and edited.name == "Closed · 1 Bay St" and edited["ctx_app_group"] == "closed"
+    assert edited.data.materials[0].name == "Context - Application (Closed)"
+
+
+def test_a_deleted_box_stays_deleted_until_brought_back():
+    _build([_site("A")])
+    (box,) = _boxes()
+    bpy.data.objects.remove(box)
+    _build([_site("A")])
+    assert _boxes() == []
+    coll = site_apps.find(bpy.context.scene, SITE)
+    assert site_apps.deleted_count(bpy.context.scene, coll) == 1
+    assert site_apps.bring_back(bpy.context.scene, coll) == 1
+    assert site_apps.deleted_count(bpy.context.scene, coll) == 0
+    _build([_site("A")])
+    assert len(_boxes()) == 1
+
+
+def test_a_build_that_did_not_look_leaves_every_box_and_carries_it():
+    _build([_site("A")])
+    (box,) = _boxes()
+    box.location.y += 3.0
+    root = _build(None)
+    assert _boxes() == [box] and list(root.children[f"Applications · {SITE}"].objects) == [box]
+    assert math.isclose(box.location.y, 13.0, abs_tol=1e-4)
+
+
+def test_a_box_renamed_and_moved_into_the_users_collection_is_updated_there():
+    _build([_site("A")])
+    (box,) = _boxes()
+    mine = bpy.data.collections.new("My boxes")
+    bpy.context.scene.collection.children.link(mine)
+    mine.objects.link(box)
+    for coll in list(box.users_collection):
+        if coll != mine:
+            coll.objects.unlink(box)
+    box.name = "my tower"
+    _build([_site("A", group="appealed")])
+    assert _boxes() == [box] and [c.name for c in box.users_collection] == ["My boxes"]
+    assert box.name == "my tower" and box["ctx_app_group"] == "appealed"
+
+
+def test_a_duplicated_box_is_left_as_it_is_and_named():
+    _build([_site("A")])
+    (box,) = _boxes()
+    copy = box.copy()
+    copy.data = box.data.copy()
+    box.users_collection[0].objects.link(copy)
+    lines = []
+    _build([_site("A", group="approved")], lines)
+    assert sorted(ob["ctx_app_group"] for ob in _boxes()) == ["approved", "review"]
+    assert box["ctx_app_group"] == "approved"
+    assert any(copy.name in line and "left as it is" in line for line in lines)
+
+
+def test_a_restyled_status_material_keeps_its_colour():
+    _build([_site("A")])
+    mat = bpy.data.materials["Context - Application (Under review)"]
+    mat.diffuse_color = (1.0, 0.0, 0.0, 0.5)
+    _build([_site("A")])
+    assert _close(mat.diffuse_color, (1.0, 0.0, 0.0, 0.5))
+
+
+def test_a_site_built_again_around_another_centre_carries_its_boxes():
+    _build([_site("A")])
+    (box,) = _boxes()
+    doc = load_fixture("mini_context.json")
+    lon, lat = Frame(doc["centre"]["lat"], doc["centre"]["lon"]).to_lonlat(10.0, 0.0)
+    _build(None, centre={"lat": lat, "lon": lon})
+    assert _close(box.location[:2], (30.0, 10.0), tol=1e-3)
+    _build([_site("A", group="approved", centre=(30.0, 10.0), h=60.0)], centre={"lat": lat, "lon": lon})
+    assert box["ctx_app_group"] == "approved" and math.isclose(_height(box), 60.0, abs_tol=1e-4)   # still untouched

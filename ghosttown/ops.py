@@ -6,7 +6,7 @@ import time
 import bpy
 from bpy.props import EnumProperty, IntProperty, StringProperty
 
-from . import georef, look_build, prefs, runner, scene_build, site_photo, site_use
+from . import georef, look_build, prefs, runner, scene_build, site_apps, site_photo, site_use
 from .ghosttown_fetch import context as ctx
 from .ghosttown_fetch import look_schema as ls
 from .ghosttown_fetch import request as rq
@@ -132,11 +132,17 @@ def import_into_scene(context, path, report):
         if lidar.get("fitted") and "fitted" not in choices:
             report({"WARNING"}, "The fitted roofs file is missing or unreadable beside the context file, "
                                 "so the buildings have no fitted roofs.")
+    apps = site_apps.find(context.scene, root["ctx_label"])
+    if apps is not None:
+        n = len(site_apps.boxes(context.scene, root["ctx_label"]))
+        settings.summary += f", {n} application box{'' if n == 1 else 'es'}"
     site_use.count_triangles(root, context.evaluated_depsgraph_get())
     settings.credits = "\n".join(dict.fromkeys(s["credit"] for s in doc["sources"]))
     for note in doc["notes"]:
         if note["level"] == "warn":
             report({"WARNING"}, note["text"])
+        elif note["code"] == "applications":
+            report({"INFO"}, note["text"])
     report({"INFO"}, f"Built {root.name}: {settings.summary}")
     return root
 
