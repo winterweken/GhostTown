@@ -1,4 +1,4 @@
-"""A plain file cache: <root>/<source>/<sha1(key)>, used for max_age_days; prune() deletes what is older."""
+"""A plain file cache: <root>/<source>/<sha1(key)>, used for max_age_days (or less, for one read); prune() deletes what is older."""
 import hashlib
 import os
 import tempfile
@@ -14,10 +14,13 @@ class Cache:
     def _path(self, source, key):
         return os.path.join(self.root, source, hashlib.sha1(key.encode("utf-8")).hexdigest())
 
-    def read(self, source, key):
+    def read(self, source, key, max_age_days=None):
+        """The stored bytes, or None when missing or older than the cache's age (or `max_age_days`, for a source
+        that changes faster)."""
         path = self._path(source, key)
+        max_age_s = self.max_age_s if max_age_days is None else max_age_days * 86400
         try:
-            if self.clock() - os.path.getmtime(path) > self.max_age_s:
+            if self.clock() - os.path.getmtime(path) > max_age_s:
                 return None
             with open(path, "rb") as f:
                 return f.read()

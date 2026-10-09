@@ -39,3 +39,14 @@ def test_prune_deletes_a_sources_files_older_than_the_age(tmp_path):
     assert c.read("mapillary", "recent") == b"recent" and len(os.listdir(tmp_path / "mapillary")) == 1
     assert len(os.listdir(tmp_path / "osm")) == 1   # other sources are left alone
     c.prune("nothing-yet")                          # a folder that doesn't exist is fine
+
+
+def test_a_read_can_ask_for_a_shorter_age(tmp_path):
+    now = [1_000_000.0]
+    c = Cache(str(tmp_path), max_age_days=30, clock=lambda: now[0])
+    c.write("toronto", "k", b"x")
+    now[0] += 0.5 * 86400
+    assert c.read("toronto", "k", max_age_days=1) == b"x"
+    now[0] += 0.6 * 86400
+    assert c.read("toronto", "k", max_age_days=1) is None
+    assert c.read("toronto", "k") == b"x"      # the cache's own 30 days still hold for other readers

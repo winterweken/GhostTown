@@ -13,15 +13,20 @@ class FakeNet:
         self.timeouts = []
         self.headers = []
         self.requests = []   # (url, headers) of each call, kept together: the pool's threads may interleave
+        self.keys = []
+        self.ages = []       # max_age_days of each call (None for the cache's own age)
         self.pruned = []
         self.slept = []
 
-    def get(self, url, *, source, data=None, check=None, timeout=120, keep=True, headers=None, key=None):
+    def get(self, url, *, source, data=None, check=None, timeout=120, keep=True, headers=None, key=None,
+            max_age_days=None):
         self.calls.append((url, source, data))
         self.keeps.append(keep)
         self.timeouts.append(timeout)
         self.headers.append(dict(headers or {}))
         self.requests.append((url, dict(headers or {})))
+        self.keys.append(key)
+        self.ages.append(max_age_days)
         answer = self.answers[source]
         if callable(answer):
             answer = answer(url, data)

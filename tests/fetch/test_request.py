@@ -62,5 +62,14 @@ def test_read_round_trip(tmp_path):
 
 
 def test_lidar_roofs_are_a_layer_asked_for_by_name():
-    assert "lidar" in LAYERS and set(LAYERS) - set(DEFAULT_LAYERS) == {"lidar"}
+    assert "lidar" in LAYERS and set(LAYERS) - set(DEFAULT_LAYERS) == {"lidar", "applications"}
     assert rq.validate(good(layers=list(DEFAULT_LAYERS) + ["lidar"])) == []
+
+
+def test_development_applications_are_a_layer_asked_for():
+    from ghosttown_fetch import APPLICATION_GROUPS, GROUP_LABELS
+    assert "applications" in LAYERS and "applications" not in DEFAULT_LAYERS
+    assert rq.validate(good(layers=list(DEFAULT_LAYERS) + ["applications"])) == []
+    assert APPLICATION_GROUPS == ("construction", "built", "appealed", "review", "approved", "coa")
+    assert [GROUP_LABELS[g] for g in APPLICATION_GROUPS] == [
+        "Under construction", "Recently built", "Appealed", "Under review", "Approved", "C of A"]

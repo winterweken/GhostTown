@@ -75,11 +75,13 @@ Ported from BHPlus `sources/city.py` (the `"application"` layer), `sources/ckan.
 |---|---|---|
 | Application points | radius query on the circle | 1 day |
 | Applications table | CKAN `datastore_search`, whole City, every row, fields without `DESCRIPTION` (about 3 MB) | 1 day |
-| The table's descriptions | one `datastore_search` filtered to the `FOLDERRSN`s kept | the run |
+| The table's descriptions | one `datastore_search` filtered to the `FOLDERRSN`s kept, with their `APPLICATION_URL` | 1 day |
 | Live permits | `WORK` "New Building", `STATUS` Inspection or Permit Issued, `sort=ISSUED_DATE desc`, read to the cutoff | 1 day |
 | Completed permits | `WORK` "New Building", `STATUS` Closed, `sort=COMPLETED_DATE desc`, read to the cutoff | 1 day |
 | Address points | radius query on the circle | 7 days |
 | Parcels | as the Parcels layer, fetched even when Parcels is unticked | as today (30 days) |
+
+CKAN pages are cached by their URL and the day, so the pages of one read come from one day.
 
 `Net.get` gains a `max_age_days` argument that overrides the cache's 30 days for one call, and `Cache.read` takes
 the same. Each CKAN source stops after 50,000 rows, and every answer is checked for shape before it is used or
@@ -146,8 +148,8 @@ Each site is BHPlus's block, plus `"url"` on each application:
 `"comments"` string is not written: the panel shows the applications themselves (§6.2).
 
 `context.py` validates the block both ways (what the fetcher writes and what the add-on reads), as BHPlus
-`context_doc` does, with the new groups and keys. The doc's `sources` gain the applications' fetch dates:
-`"city-applications"` and `"city-permits"`.
+`context_doc` does, with the new groups and keys. Beside the list, `"applications_date"` is the day of the run
+(`YYYY-MM-DD`): the data is at most a day older, the caches' age. The City is credited as `toronto`.
 
 ## 5. The boxes in Blender
 
@@ -179,8 +181,10 @@ Each site is BHPlus's block, plus `"url"` on each application:
   placed the box, ISO date and time, which decides "the older" in §5.3), and `ctx_app_placed`: the location,
   rotation, scale and 24 vertex coordinates Ghost Town last gave the box.
 - **On the collection:** `ctx_app_boxes` (each box's numbers as the last build left them, which is how a deleted
-  box is noticed), `ctx_app_deleted` (one list of numbers per box the user deleted) and `ctx_app_date` (the
-  applications' fetch date, for the panel).
+  box is noticed) and `ctx_app_deleted` (the boxes the user deleted) each hold `{"numbers": [...], "centre_m": [x, y]}`
+  per box (the centre is how a permit site on a deleted box's spot stays away), `ctx_app_date` is the applications'
+  fetch date, for the panel, and `ctx_app_frame` (`{"centre": {lat, lon}, "ground": metres or null}`) is the frame
+  the boxes were placed in.
 - **Editing** is plain Blender: grab, rotate, scale, the Scale Cage tool's one-sided handles, and Edit Mode.
 - **Not a building:** boxes carry no `ctx_kind` and no `ctx_id`, so Street Look, Roof shapes, LiDAR roofs and
   photo-on-roofs, which look for building kinds, pass them by. They export with the rest of the collection.
