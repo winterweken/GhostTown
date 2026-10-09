@@ -39,8 +39,8 @@ class FakeNet:
     def cached(self, source, key, check=None):
         return None
 
-    def prune(self, source):
-        self.pruned.append(source)
+    def prune(self, source, max_age_days=None):
+        self.pruned.append((source, max_age_days))
 
     def sleep(self, seconds):
         self.slept.append(seconds)

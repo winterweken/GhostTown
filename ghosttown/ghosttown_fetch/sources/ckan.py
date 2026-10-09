@@ -12,7 +12,7 @@ import urllib.parse
 from ..net import SourceError
 
 SEARCH = "https://ckan0.cf.opendata.inter.prod-toronto.ca/api/3/action/datastore_search"
-SOURCE = "toronto"
+SOURCE = "toronto_tables"   # its own cache folder, pruned a day after each read (the City's other answers keep 30 days)
 PAGE_SIZE = 10000
 MAX_ROWS = 50000
 MAX_AGE_DAYS = 1          # the City refreshes these tables daily
@@ -56,26 +56,32 @@ def _page(body, what):
     return result
 
 
-def read(net, resource, what, today, *, filters=None, fields=None, sort=None, stop=None, max_rows=MAX_ROWS):
+def read(net, resource, what, today, *, filters=None, fields=None, sort=None, stop=None, max_rows=MAX_ROWS,
+         nonempty=False):
     """Every row of `resource` matching `filters`, in `sort` order, until `stop(row)` is true (that row and every
     one after it are left unread). `what` names the table in the errors ("building permits"); `today`
-    ('YYYY-MM-DD') keys the cached pages."""
+    ('YYYY-MM-DD') keys the cached pages; `nonempty` refuses a table the City has no rows in at all. The pages
+    of earlier days are pruned before the first is read."""
     rows, offset, total = [], 0, None
+    net.prune(SOURCE, max_age_days=MAX_AGE_DAYS)
 
     def check(body):
-        _page(body, what)
+        # Net.get runs this on every answer before it is cached, so a refused page is never kept, not even for the day.
+        result = _page(body, what)
+        if total is not None and result["total"] != total:
+            raise SourceError(f"The City's {what} changed while they were read; try again later.")
+        if not result["records"] and offset < result["total"]:
+            raise SourceError(f"The City's Open Data portal sent fewer rows of its {what} than it said it has; "
+                              "try again later.")
+        if nonempty and result["total"] == 0:
+            raise SourceError(f"The City's Open Data portal sent no rows for its {what}; try again later.")
 
     while True:
         url = search_url(resource, offset, filters, fields, sort)
         result = _page(net.get(url, source=SOURCE, check=check, key=url + "\n" + today, max_age_days=MAX_AGE_DAYS),
                        what)
         records = result["records"]
-        if total is not None and result["total"] != total:
-            raise SourceError(f"The City's {what} changed while they were read; try again later.")
         total = result["total"]
-        if not records and offset < total:
-            raise SourceError(f"The City's Open Data portal sent fewer rows of its {what} than it said it has; "
-                              "try again later.")
         for row in records:
             if stop is not None and stop(row):
                 return rows

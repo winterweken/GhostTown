@@ -12,7 +12,7 @@ FIELDS = ("APPLICATION#", "APPLICATION_TYPE", "STATUS", "DATE_SUBMITTED", "X", "
 
 def get_table(net, today):
     """Every row, read in row-id order so the pages neither skip nor repeat a row; an empty table is refused."""
-    return ckan.none_is_wrong(ckan.read(net, RESOURCE, WHAT, today, fields=FIELDS, sort="_id"), WHAT)
+    return ckan.none_is_wrong(ckan.read(net, RESOURCE, WHAT, today, fields=FIELDS, sort="_id", nonempty=True), WHAT)
 
 
 def descriptions(net, folders, today):

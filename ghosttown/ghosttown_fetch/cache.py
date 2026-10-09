@@ -27,8 +27,10 @@ class Cache:
         except OSError:
             return None
 
-    def prune(self, source):
-        """Delete the files in `source`'s folder older than max_age_days, which reads no longer use."""
+    def prune(self, source, max_age_days=None):
+        """Delete the files in `source`'s folder older than `max_age_days` (the cache's age when None), which reads
+        no longer use."""
+        max_age_s = self.max_age_s if max_age_days is None else max_age_days * 86400
         folder = os.path.join(self.root, source)
         try:
             names = os.listdir(folder)
@@ -38,7 +40,7 @@ class Cache:
         for name in names:
             path = os.path.join(folder, name)
             try:
-                if os.path.isfile(path) and now - os.path.getmtime(path) > self.max_age_s:
+                if os.path.isfile(path) and now - os.path.getmtime(path) > max_age_s:
                     os.unlink(path)
             except OSError:
                 pass

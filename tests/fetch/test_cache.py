@@ -41,6 +41,17 @@ def test_prune_deletes_a_sources_files_older_than_the_age(tmp_path):
     c.prune("nothing-yet")                          # a folder that doesn't exist is fine
 
 
+def test_prune_can_ask_for_a_shorter_age(tmp_path):
+    c = Cache(str(tmp_path), max_age_days=30)
+    day = 86400
+    for source, key, age in (("toronto_tables", "two", 2), ("toronto_tables", "half", 0.5), ("osm", "two", 2)):
+        c.write(source, key, key.encode())
+        os.utime(c._path(source, key), (c.clock() - age * day,) * 2)
+    c.prune("toronto_tables", max_age_days=1)
+    assert c.read("toronto_tables", "half") == b"half" and len(os.listdir(tmp_path / "toronto_tables")) == 1
+    assert len(os.listdir(tmp_path / "osm")) == 1   # other sources are left alone
+
+
 def test_a_read_can_ask_for_a_shorter_age(tmp_path):
     now = [1_000_000.0]
     c = Cache(str(tmp_path), max_age_days=30, clock=lambda: now[0])

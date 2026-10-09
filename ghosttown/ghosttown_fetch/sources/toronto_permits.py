@@ -22,8 +22,8 @@ def _before(value, since):
 
 def _get(net, resource, filters, field, since, today):
     return ckan.none_is_wrong(ckan.read(net, resource, WHAT, today, filters=filters, fields=FIELDS,
-                                        sort=field + " desc, _id", stop=lambda row: _before(row.get(field), since)),
-                              WHAT)
+                                        sort=field + " desc, _id", stop=lambda row: _before(row.get(field), since),
+                                        nonempty=True), WHAT)
 
 
 def get_live(net, since, today):

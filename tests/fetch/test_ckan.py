@@ -1,23 +1,30 @@
 """ghosttown_fetch.sources.ckan, toronto_applications and toronto_permits: the City's Open Data tables, read page by
 page, stopped at a date, shape-checked and cached for the day. Ported from BHPlus tests/test_context_ckan.py."""
 import json
+import os
+import time
 
 import pytest
 
-from ghosttown_fetch.net import SourceError
+from ghosttown_fetch.net import Net, SourceError
 from ghosttown_fetch.sources import ckan, toronto_applications, toronto_permits
 from ckan_samples import answer, query
-from fakes import FakeNet
+from fakes import FakeNet, Transport
 
 TODAY = "2026-10-09"
 
 
 def _net(serve):
-    return FakeNet({"toronto": serve})
+    return FakeNet({ckan.SOURCE: serve})
 
 
 def _raw(page):
     return lambda url, data: page if isinstance(page, bytes) else json.dumps(page).encode("utf-8")
+
+
+def _ok(records, total):
+    """A (status, body) answer from Transport: one page of the City's table."""
+    return 200, json.dumps({"result": {"records": records, "total": total}}).encode("utf-8")
 
 
 def test_the_search_url_names_the_resource_filters_fields_and_order():
@@ -150,3 +157,50 @@ def test_a_city_wide_list_that_comes_back_empty_is_refused(get):
     net = _net(answer({toronto_applications.RESOURCE: [], toronto_permits.LIVE: [], toronto_permits.DONE: []}))
     with pytest.raises(SourceError, match="no rows"):
         get(net)
+
+
+def test_a_read_prunes_its_own_folder_at_a_day():
+    net = _net(answer({"abc": [{"N": 1}]}))
+    ckan.read(net, "abc", "test rows", TODAY)
+    assert net.pruned == [(ckan.SOURCE, 1)]
+
+
+def test_a_read_deletes_the_days_older_than_a_day_from_its_folder(tmp_path):
+    net = Net(str(tmp_path), transport=Transport(_ok([{"N": 1}], 1)))
+    old = net.cache._path(ckan.SOURCE, "last week")
+    net.cache.write(ckan.SOURCE, "last week", b"x")
+    os.utime(old, (time.time() - 2 * 86400,) * 2)
+    assert ckan.read(net, "abc", "test rows", TODAY) == [{"N": 1}]
+    assert not os.path.exists(old)
+
+
+def test_a_table_whose_total_changes_is_refused_and_its_second_page_is_not_kept(tmp_path, monkeypatch):
+    monkeypatch.setattr(ckan, "PAGE_SIZE", 10)
+    rows = [{"N": i} for i in range(25)]
+    t = Transport(_ok(rows[:10], 25), _ok(rows[10:20], 30), _ok(rows[10:20], 25), _ok(rows[20:], 25))
+    net = Net(str(tmp_path), transport=t)
+    with pytest.raises(SourceError, match="changed"):
+        ckan.read(net, "abc", "test rows", TODAY)
+    assert ckan.read(net, "abc", "test rows", TODAY) == rows
+    assert [query(c[0])["offset"] for c in t.calls] == ["0", "10", "10", "20"]   # page one kept; two asked again
+
+
+def test_a_short_page_is_refused_and_not_kept(tmp_path, monkeypatch):
+    monkeypatch.setattr(ckan, "PAGE_SIZE", 10)
+    rows = [{"N": i} for i in range(25)]
+    t = Transport(_ok(rows[:10], 25), _ok([], 25), _ok(rows[10:20], 25), _ok(rows[20:], 25))
+    net = Net(str(tmp_path), transport=t)
+    with pytest.raises(SourceError, match="fewer rows"):
+        ckan.read(net, "abc", "test rows", TODAY)
+    assert ckan.read(net, "abc", "test rows", TODAY) == rows
+    assert [query(c[0])["offset"] for c in t.calls] == ["0", "10", "10", "20"]
+
+
+def test_an_empty_city_wide_table_is_refused_and_not_kept(tmp_path):
+    rows = [{"APPLICATION#": "26 1 STE 10 SA", "FOLDERRSN": "1"}]
+    t = Transport(_ok([], 0), _ok(rows, 1))
+    net = Net(str(tmp_path), transport=t)
+    with pytest.raises(SourceError, match="no rows"):
+        toronto_applications.get_table(net, TODAY)
+    assert toronto_applications.get_table(net, TODAY) == rows
+    assert len(t.calls) == 2

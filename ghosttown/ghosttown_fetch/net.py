@@ -124,9 +124,10 @@ class Net:
                 break
         raise SourceError(problem + "; try again in a minute.", status=status, body=answer)
 
-    def prune(self, source):
-        """Delete `source`'s stored answers once they are older than the cache's age, so they don't stay on disk."""
-        self.cache.prune(source)
+    def prune(self, source, max_age_days=None):
+        """Delete `source`'s stored answers once they are older than `max_age_days` (the cache's age when None), so
+        they don't stay on disk."""
+        self.cache.prune(source, max_age_days)
 
     def cached(self, source, key, check=None):
         """A stored answer by cache key, or None (also when fresh, expired or failing its check)."""
