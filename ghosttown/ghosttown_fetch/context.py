@@ -193,15 +193,20 @@ def _element_problems(el):
 
 def city_link(url):
     """`url`, trimmed, when it is an http(s) address on toronto.ca or one of its subdomains, else "": the only
-    links the Site panel opens."""
+    links the Site panel opens. A backslash, a space or other control character, a user name or a host that is not
+    ASCII is refused, since a browser may read such a URL as going somewhere else."""
     if not isinstance(url, str):
         return ""
     url = url.strip()
+    if any(c == "\\" or ord(c) <= 0x20 or ord(c) == 0x7F for c in url):
+        return ""
     try:
         parts = urllib.parse.urlsplit(url)
         host = (parts.hostname or "").lower()
         parts.port  # raises ValueError for a port that is not a number: then it is no City address
     except ValueError:
+        return ""
+    if "@" in parts.netloc or not parts.netloc.isascii():  # no user name, and the host as written is ASCII
         return ""
     if parts.scheme in ("http", "https") and (host == "toronto.ca" or host.endswith(".toronto.ca")):
         return url

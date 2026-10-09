@@ -252,7 +252,12 @@ def test_applications_need_their_day_and_must_be_a_list():
     ("https://secure.toronto.ca/x", "https://secure.toronto.ca/x"), ("https://toronto.ca/", "https://toronto.ca/"),
     (" https://www.toronto.ca/a ", "https://www.toronto.ca/a"),
     ("https://toronto.ca.evil.com/x", ""), ("https://eviltoronto.ca/x", ""), ("ftp://app.toronto.ca/x", ""),
-    ("javascript:alert(1)", ""), ("", ""), (None, ""), ("http://[::1", "")])
+    ("javascript:alert(1)", ""), ("", ""), (None, ""), ("http://[::1", ""),
+    ("https://evil.com\\@toronto.ca/x", ""), ("https://user@toronto.ca/x", ""), ("https://toronto.ca@evil.com/", ""),
+    ("https://www.toronto.ca/a b", ""), ("https://www.toronto.ca/a\tb", ""),
+    ("https://xn--toronto-9ya.ca/", ""), ("https://torontö.ca/", ""),
+    ("HTTPS://WWW.TORONTO.CA/a", "HTTPS://WWW.TORONTO.CA/a"),
+    ("https://toronto.ca:443/x", "https://toronto.ca:443/x"), ("https://toronto.ca./x", "")])
 def test_only_links_on_toronto_ca_are_kept(url, want):
     assert ctx.city_link(url) == want
 
