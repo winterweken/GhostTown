@@ -33,9 +33,10 @@ PARCELS = (CITY, 36)
 
 
 def fetch_parcels(net, lat, lon, radius_m):
-    """Lot lines only: CONDO parcels overlap the COMMON ones they sit on."""
+    """Lot lines only: CONDO parcels overlap the COMMON ones they sit on. DATE_EXPIRY tells a current parcel from
+    a retired one, which the development application boxes need."""
     return arcgis.query(net, *PARCELS, arcgis.radius_params(
-        lat, lon, radius_m, out_fields="OBJECTID,PARCELID,ADDRESS_NUMBER,LINEAR_NAME_FULL",
+        lat, lon, radius_m, out_fields="OBJECTID,PARCELID,ADDRESS_NUMBER,LINEAR_NAME_FULL,DATE_EXPIRY",
         where="FEATURE_TYPE = 'COMMON'"))
 
 
@@ -75,3 +76,24 @@ def fetch_ground(net, lat, lon, radius_m, frame, kinds=None, skipped=None):
                 if found:
                     pieces.setdefault(kind, []).extend(found)
     return pieces
+
+
+APPLICATIONS = ("cot_geospatial11", 60)   # the IBMS Application Information Centre's development application points
+APPLICATION_FIELDS = ("OBJECTID,APPLICATION_NUMBER,FOLDERTYPE,FOLDERRSN,STATUS_GROUP,STATUS_DESC,SUBMIT_DATE,"
+                      "FOLDERDESCRIPTION,FULL_ADDRESS,AIC_URL")
+APPLICATIONS_MAX_AGE_DAYS = 1             # the City updates them daily, and a rebuild must show today's statuses
+ADDRESSES = (CITY, 101)                   # address points: where a building permit is
+ADDRESS_FIELDS = "OBJECTID,ADDRESS_POINT_ID,LO_NUM,LINEAR_NAME,LINEAR_NAME_TYPE,LINEAR_NAME_DIR"
+ADDRESSES_MAX_AGE_DAYS = 7                # a new building's address points come with it
+
+
+def fetch_applications(net, lat, lon, radius_m):
+    """Every development application point in the circle: one per address per application, open or closed."""
+    return arcgis.query(net, *APPLICATIONS, arcgis.radius_params(lat, lon, radius_m, out_fields=APPLICATION_FIELDS),
+                        max_age_days=APPLICATIONS_MAX_AGE_DAYS)
+
+
+def fetch_address_points(net, lat, lon, radius_m):
+    """Every City address point in the circle."""
+    return arcgis.query(net, *ADDRESSES, arcgis.radius_params(lat, lon, radius_m, out_fields=ADDRESS_FIELDS),
+                        max_age_days=ADDRESSES_MAX_AGE_DAYS)

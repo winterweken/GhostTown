@@ -5,18 +5,27 @@ ground, trees and parcels; elsewhere, OpenStreetMap supplies buildings on plain 
 the terrain in Canada. Each source runs on its own: a failure becomes a warning note, and only a run
 where every data source failed raises NothingFetched. Real-world outlines occasionally defeat the
 geometry library; that too costs only the layer it happens in. In Ontario, with LiDAR roofs asked for,
-Geospatial Ontario's LiDAR gives every building a second, measured roof, written beside the context."""
+Geospatial Ontario's LiDAR gives every building a second, measured roof, written beside the context.
+In Toronto, with Development applications asked for, the City's application points, applications table,
+building permits, address points and parcels become the development application sites, written only when every
+one of those sources answered, so a build that couldn't look at them all leaves the boxes alone."""
+import datetime
 import os
+import time
 
 import numpy as np
 import shapely
+from shapely.geometry import Point
 
-from . import BUILDING_KINDS, buildings, fitted_roofs, ground, lidar_roofs, parcels, region, survey, trees
+from . import (BUILDING_KINDS, applications, buildings, construction, fitted_roofs, ground, lidar_roofs, parcels,
+               region, survey, trees)
 from . import context as ctx
 from . import terrain as terrain_mod
 from .frame import Frame
+from .geom import to_local
 from .net import SourceError
-from .sources import ontario_lidar, osm, toronto, toronto_massing, toronto_photo
+from .sources import (ontario_lidar, osm, toronto, toronto_applications, toronto_massing, toronto_permits,
+                      toronto_photo)
 
 KIND_LAYERS = {"road": "roads", "sidewalk": "sidewalks", "parking": "parking", "rail": "rail",
                "green": "green", "water": "water"}
@@ -138,8 +147,116 @@ def _fitted(doc, heights, cell, out_dir, progress):
     ctx.note(doc, "info", "fitted", fitted_roofs.note_text(counts))
 
 
-def assemble(request, net, *, progress=None):
+APPLICATIONS_STAGE = "Development applications"
+APPLICATIONS_FAILED = "Development applications weren't refreshed, so any boxes were left as they are: {reason}"
+NO_APPLICATIONS = "Development applications are fetched for sites in the City of Toronto only."
+APPLICATIONS_UNHANDLED = "a parcel shape couldn't be handled."
+APPLICATION_SOURCES = {"boundary": "the City of Toronto boundary",
+                       "map": "the City's development applications map",
+                       "parcels": "the City's property boundaries", "addresses": "the City's address points",
+                       "table": "the City's development applications table",
+                       "permits": "the City's building permits"}
+NOTE_TABLE = ("{n} development application{s} {were} placed from the City's applications table, which its map "
+              "doesn't show yet.")
+NOTE_HOUSES = "{n} building permit{s} for new houses around the site {were} left out."
+NOTE_UNPLACED = ("{n} building permit{s} around the site couldn't be placed: the City's address points don't have "
+                 "{its} address{es}.")
+NOTE_NO_PARCEL = "{n} development application{s} {were} left out: not inside any parcel."
+NOTE_STATUS = ("The City gave {labels} as a development application status, which Ghost Town doesn't know yet, so "
+               "it is shown as Under review.")
+
+
+def _counted(n):
+    """The words a note about `n` things reads: n, s, were, its, es."""
+    one = n == 1
+    return {"n": n, "s": "" if one else "s", "were": "was" if one else "were", "its": "its" if one else "their",
+            "es": "" if one else "es"}
+
+
+def _named(what, fetch):
+    """fetch(), its failure said as from `what` (APPLICATION_SOURCES), so the note names the source."""
+    try:
+        return fetch()
+    except SourceError as e:
+        raise SourceError(f"{APPLICATION_SOURCES[what]} couldn't be fetched ({str(e).rstrip('.')}).") from e
+
+
+def _massing_year(net, year, today):
+    """The 3D Massing edition recently built reaches back to: the one this build used, else the newest the City
+    lists, else last year."""
+    if year:
+        return int(year)
+    try:
+        return int(toronto_massing.newest_edition(net).year)
+    except (SourceError, ValueError, KeyError, TypeError):
+        return today.year - 1
+
+
+def _applications(doc, net, frame, radius, terrain, parcel_answer, massing_year, now, progress):
+    """The development application sites (design/development-applications.md §4), written as context.json's
+    "applications" only when every source answered: otherwise one warning and no list, so the add-on leaves the
+    boxes as they are. Ported from BHPlus assemble._applications (60d801e)."""
+    progress(APPLICATIONS_STAGE, 72)
+    today = datetime.date.fromtimestamp(now)
+    iso = today.isoformat()
+    lat, lon = frame.lat0, frame.lon0
+    circle = Point(0.0, 0.0).buffer(radius, quad_segs=64)
+    try:
+        boundary = _named("boundary", lambda: region.fetch_boundary(net))
+        map_answer = _named("map", lambda: toronto.fetch_applications(net, lat, lon, radius))
+        if parcel_answer is None:
+            parcel_answer = _named("parcels", lambda: toronto.fetch_parcels(net, lat, lon, radius))
+        address_answer = _named("addresses", lambda: toronto.fetch_address_points(net, lat, lon, radius))
+        table = _named("table", lambda: toronto_applications.get_table(net, iso))
+        year = _massing_year(net, massing_year, today)
+        live_rows = _named("permits", lambda: toronto_permits.get_live(
+            net, construction.years_before(iso, construction.LIVE_YEARS), iso))
+        done_rows = _named("permits", lambda: toronto_permits.get_completed(net, f"{year}-01-01", iso))
+        city = to_local(boundary, frame)
+        shapely.prepare(city)
+        shapely.prepare(circle)
+
+        def keep(g):
+            return circle.contains(g) and city.contains(g)
+
+        map_points = applications.features(map_answer, frame)
+        folders = {applications.folder_of(p.get("FOLDERRSN")) for _, p in map_points} - {""}
+        from_table = [(g, sp) for g, sp in applications.table_points(table, frame, folders) if keep(g)]
+        described = _named("table", lambda: toronto_applications.descriptions(
+            net, {sp["folderrsn"] for _, sp in from_table}, iso))
+        for _, sp in from_table:
+            text, link = described.get(sp["folderrsn"], ("", ""))
+            sp["description"], sp["url"] = text, ctx.city_link(link)
+        addresses = construction.Addresses(applications.features(address_answer, frame))
+        live, live_houses, live_lost = construction.points(construction.live(live_rows, iso), "construction",
+                                                           addresses, keep)
+        done, done_houses, done_lost = construction.points(construction.completed(done_rows, year), "built",
+                                                           addresses, keep)
+        found = applications.build(map_points, applications.features(parcel_answer, frame), terrain, keep,
+                                   now * 1000.0, clip=circle, more=from_table + live + done)
+    except SourceError as e:
+        ctx.note(doc, "warn", "applications", APPLICATIONS_FAILED.format(reason=str(e)))
+        return
+    except shapely.errors.ShapelyError:
+        ctx.note(doc, "warn", "applications", APPLICATIONS_FAILED.format(reason=APPLICATIONS_UNHANDLED))
+        return
+    doc["applications"] = found["blocks"]
+    doc["applications_date"] = iso
+    ctx.add_source(doc, "toronto")
+    boxed = {n for b in found["blocks"] for n in b["numbers"]}
+    for count, text in ((len({sp["number"] for _, sp in from_table} & boxed), NOTE_TABLE),
+                        (live_houses + done_houses, NOTE_HOUSES), (live_lost + done_lost, NOTE_UNPLACED),
+                        (found["no_parcel"], NOTE_NO_PARCEL)):
+        if count:
+            ctx.note(doc, "info", "applications", text.format(**_counted(count)))
+    if found["unknown"]:
+        labels = ", ".join(f'"{label}"' for label in found["unknown"])
+        ctx.note(doc, "info", "applications", NOTE_STATUS.format(labels=labels))
+
+
+def assemble(request, net, *, progress=None, now=None):
     progress = progress or (lambda stage, pct: None)
+    now = time.time() if now is None else now
     lat, lon = request["centre"]["lat"], request["centre"]["lon"]
     radius, layers = request["radius_m"], request["layers"]
     frame = Frame(lat, lon)
@@ -189,13 +306,14 @@ def assemble(request, net, *, progress=None):
             ctx.note(doc, "warn", code, f"{what} couldn't be built from the source geometry ({str(e)[:80]}).")
             return []
 
-    pieces = {}
+    pieces, massing_year, parcel_answer = {}, None, None
     if where == "toronto":
         if "buildings" in layers:
             found = attempt("City buildings", 25, "city_buildings", "toronto",
                             lambda: _city_buildings(net, request, frame, radius, progress, doc))
             if found is not None:
                 how, data, year = found
+                massing_year = year if how == "massing" else None
                 if how == "massing":
                     make = lambda: buildings.from_massing(data, terrain, radius, year)  # noqa: E731
                 else:
@@ -219,6 +337,7 @@ def assemble(request, net, *, progress=None):
             found = attempt("City parcels", 65, "city_parcels", "toronto",
                             lambda: toronto.fetch_parcels(net, lat, lon, radius))
             if found is not None:
+                parcel_answer = found
                 doc["elements"].extend(built("city_parcels", "City parcels",
                                              lambda: parcels.from_toronto(found, frame, terrain, radius)))
     elif "buildings" in layers:
@@ -229,6 +348,12 @@ def assemble(request, net, *, progress=None):
 
     if tried and failed == tried:
         raise NothingFetched(" ".join(n["text"] for n in doc["notes"] if n["level"] == "warn"))
+
+    if "applications" in layers:
+        if where == "toronto":
+            _applications(doc, net, frame, radius, terrain, parcel_answer, massing_year, now, progress)
+        else:
+            ctx.note(doc, "info", "applications", NO_APPLICATIONS)
 
     if where == "toronto" and "photo" in layers:
         progress("Site photo", 75)
