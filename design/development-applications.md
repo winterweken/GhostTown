@@ -209,10 +209,11 @@ The decisions are a pure function, ported from BHPlus `boxes.plan` and kept stan
 - **A new site:** a new box, in the Applications collection.
 - **A box none of whose numbers is in a site:** removed if untouched; if touched, it stays and becomes
   **Closed** (grey), its applications kept.
-- **A box the user deleted** (a box the last build placed that is no longer in the scene): stays deleted. Its
-  numbers join `ctx_app_deleted`, and a site sharing any of them is not made. **Bring back deleted boxes (N)**
-  (§6.2, N the number of deleted boxes) clears the list, and the next build makes them again. If the user deletes the whole
-  Applications collection, the memory goes with it and the next build starts afresh.
+- **A box the user deleted** (a box the last build placed that is no longer in the scene): stays deleted. The
+  collection remembers it as its numbers and where it stood (`ctx_app_deleted` holds `{"numbers": [...],
+  "centre_m": [x, y]}` entries, §5.1), and a site sharing any of those numbers is not made. **Bring back deleted
+  boxes (N)** (§6.2, N the number of deleted boxes) clears the list, and the next build makes them again. If the
+  user deletes the whole Applications collection, the memory goes with it and the next build starts afresh.
 - **No `applications` block** (layer unticked, outside the City, a source failed): every box is left exactly as
   it is, carried into the new site collection, and the notes say why.
 - **A box outside this build's circle** (a rebuild at a smaller radius): left as it is.
@@ -232,21 +233,23 @@ construction or recently built (City applications and building permits; houses l
 
 When the site has an Applications collection, an **Applications** box shows:
 
-- one row per status present: its material's colour as an editable swatch, its label and the number of sites;
+- one row per status present: an editable swatch, its label and the number of sites. The swatch is the material's
+  viewport colour, and the material's Base Color follows it through drivers, so a change shows in Solid view,
+  Material Preview and renders alike;
 - the date of the data;
 - **Bring back deleted boxes (N)** when N > 0.
 
 When the active object is a box, it also shows its status and height source, then each application or permit:
 number · type · status · date, its address, its description wrapped to the panel's width, and **Open in City AIC**
-(`wm.url_open`) when it has a link.
+(`wm.url_open`) when it has a `toronto.ca` link. The link is checked again when the button is clicked.
 
 ### 6.3 Notes
 
 BHPlus's summary and notes, worded for Ghost Town's build report:
 
-- "Development applications (City of Toronto, 2026-10-09; building permits 2026-10-09): 9 sites from 12
-  applications: 2 under construction, 1 recently built, 3 under review, 2 approved, 1 C of A. 1 kept at the size
-  you gave it; 1 closed box removed, 1 turned grey (Closed)."
+- "Development applications (City of Toronto, 2026-10-09): 9 sites from 10 applications and 2 building permits: 2
+  under construction, 1 recently built, 3 under review, 2 approved, 1 C of A. 1 box kept at the size you gave it. 1
+  closed box removed. 1 turned grey (Closed)."
 - A source that failed (§4.2), as a warning.
 - Outside Toronto, as info.
 - Houses left out, applications placed from the table, permits that couldn't be placed, points inside no parcel,

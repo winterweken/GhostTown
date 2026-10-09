@@ -48,6 +48,10 @@ Each build makes one collection, `Context · <site>`:
 - **Parcels:** lot lines draped 15 cm above the ground.
 - **Aerial photo** (Toronto): the City's newest aerial photo of the site, kept inside the .blend file,
   for the ground and low roofs. See [Use](#use).
+- **Development applications** (Toronto, asked for): a see-through box on every nearby site with an open
+  development application, a building going up or one just finished, coloured by where it stands: under
+  construction, recently built, appealed, under review, approved, or Committee of Adjustment. Each box sits on its
+  lot and is as tall as the City's description or building permit says. See [Use](#use).
 - **Street Look** (a step after the build, with your own Mapillary token): facades coloured from street
   photos, with storefront, wall, glass and cap zones and window patterns, plus floor bands and mullions on
   a few buildings you pick. See [Street Look](#street-look).
@@ -107,7 +111,9 @@ executable first. Install the zip as above.
    of the site with the build. It is kept inside the .blend file. Tick **LiDAR roofs (slower)** in Ontario
    to fetch the province's LiDAR and give buildings outside the City of Toronto's 3D Massing model
    measured roofs. It is a large download, and the province's server can take a minute to answer the
-   first request.
+   first request. Tick **Development applications** to put a box on every nearby site with an open development
+   application, under construction or finished since the City's 3D Massing (City of Toronto applications and
+   building permits; houses left out). The first build of the day takes a few seconds more.
 6. Press **Build Context**. A 300 m site takes about 10 seconds and a 1000 m site about 20. With **LiDAR
    roofs** ticked a build takes a few minutes more, because the province's server is slow to send the LiDAR
    (a 300 m site in Hamilton took about 4 minutes). Cancel or Esc stops it, and Ctrl+Z removes a finished
@@ -135,6 +141,14 @@ When the site has LiDAR roofs:
 - **Roof detail** simplifies LiDAR roofs, from 100 % down to 5 %, without moving walls or eaves.
 - **For Revit** shows the site's triangle count. Past the budget in Preferences (500,000 to start) it
   says: Heavy for Revit: use Fitted or Flat roofs, or lower Roof detail, before exporting.
+
+When the site has development application boxes, **Development applications** lists them by status, each with its
+colour (change it there to restyle every box of that status). Select a box to see its applications and permits,
+their status, date and description, and **Open in City AIC** for the City's page about each. Reshape a box as you
+like: grab, rotate, scale (the **Scale Cage** tool moves one side at a time) or edit its mesh. Building the site
+again refreshes each box's status and keeps the shape you gave it; a box whose applications all closed is removed,
+or turned grey (**Closed**) if you changed it. A box you delete stays deleted; **Bring Back Deleted Boxes** makes
+the next build put them back.
 
 ![Houses in Wismer, Markham switching between flat, LiDAR and fitted roofs in Ghost Town](media/roofs-markham.gif)
 
