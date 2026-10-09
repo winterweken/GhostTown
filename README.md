@@ -229,7 +229,7 @@ you used. The panel lists them after every build.
 
 | Source | Used for | Credit |
 |---|---|---|
-| City of Toronto open data | Buildings (3D Massing, newest yearly edition), aerial photo, ground, trees, parcels, addresses, city boundary | Contains information licensed under the Open Government Licence – Toronto |
+| City of Toronto open data | Buildings (3D Massing, newest yearly edition), aerial photo, ground, trees, parcels, addresses, city boundary, development applications, building permits | Contains information licensed under the Open Government Licence – Toronto |
 | Natural Resources Canada (HRDEM) | Terrain | Contains information licensed under the Open Government Licence – Canada |
 | Geospatial Ontario (lidar-derived surface and terrain models) | LiDAR roofs in Ontario | Contains information licensed under the Open Government Licence – Ontario |
 | OpenStreetMap | Buildings outside Toronto | © OpenStreetMap contributors (ODbL) |
@@ -249,7 +249,7 @@ you rely on against a survey.
 and the City's open data portal (`ckan0.cf.opendata.inter.prod-toronto.ca`), `datacube.services.geo.ca` and
 `overpass-api.de`, and, only with **LiDAR roofs** ticked, `ws.geoservices.lrc.gov.on.ca`, and only when you press
 the search button, Build Context or Apply Street Look. It sends what the query needs (the address you search for, or
-the location and radius you build) and nothing else. Answers are cached on your computer for 30 days. The City's 3D
+the location and radius you build) and nothing else. Answers are cached on your computer for 30 days; with **Development applications** ticked, the City's application points and its applications and building permits tables are kept for a day (about 17 MB, cleared by the next day's build) and its address points for a week. The City's 3D
 Massing model is downloaded once per yearly edition (81 MB, about 300 MB unpacked in the cache folder) and kept
 until a newer edition comes out. It lives in the cache folder (Preferences › Add-ons › Ghost Town › Cache folder,
 which shows where it is; by default
