@@ -81,13 +81,25 @@ def _measure(ob):
 
 
 def _centre(ob):
-    """Where the box stands in plan: the middle of its vertices, else its origin."""
-    mw = ob.matrix_world
+    """Where the box stands in plan: the middle of its vertices, else its origin. Worked out from the box's own
+    transform and its parent's, not from matrix_world, which Blender does not refresh until the next depsgraph
+    update and so still holds the place the box had before this build moved it."""
+    basis = ob.matrix_basis
+    if ob.parent is not None:
+        basis = ob.parent.matrix_world @ ob.matrix_parent_inverse @ basis
     if ob.type == "MESH" and len(ob.data.vertices):
-        pts = [mw @ v.co for v in ob.data.vertices]
+        pts = [basis @ v.co for v in ob.data.vertices]
     else:
-        pts = [mw.translation]
+        pts = [basis.translation]
     return [sum(p.x for p in pts) / len(pts), sum(p.y for p in pts) / len(pts)]
+
+
+def _placed(ob):
+    """What Ghost Town recorded when it placed the box, or None when the record is missing or damaged, which
+    app_boxes.touched counts as changed."""
+    placed = _json(ob, "ctx_app_placed", {})
+    keys = ("location", "rotation", "scale", "verts")
+    return placed if all(isinstance(placed.get(key), list) for key in keys) else None
 
 
 def _deleted(coll, present):
@@ -250,7 +262,7 @@ def apply(scene, root, doc, coll):
     _carry(scene, coll, label, doc)
     present = boxes(scene, label)
     states = [{"object": ob, "numbers": numbers_of(ob), "centre_m": _centre(ob),
-               "touched": app_boxes.touched(_json(ob, "ctx_app_placed", {}) or None, _measure(ob)),
+               "touched": app_boxes.touched(_placed(ob), _measure(ob)),
                "closed": ob.get("ctx_app_group") == app_boxes.CLOSED} for ob in present]
     outcome = app_boxes.plan(sites, states, _deleted(coll, present), doc["radius_m"])
     if not outcome["looked"]:

@@ -15,29 +15,37 @@ LINK = "http://app.toronto.ca/AIC/index.do?folderRsn=abc"
 
 
 def _site(number, *more, group="review", centre=(40.0, 10.0), w=30.0, d=20.0, h=45.0, angle=0.0,
-          address="25 KING ST W"):
+          address="25 KING ST W", source="application"):
     numbers = sorted((number,) + more)
     return {"id": "app:" + numbers[0], "group": group, "numbers": numbers, "main": number,
             "centre_m": list(centre), "angle_deg": angle, "width_m": w, "depth_m": d, "height_m": h, "base_m": -0.3,
             "height_from": "description: 14 storeys",
             "applications": [{"number": n, "type": "OZ", "status": "Under Review", "submitted": "2024-01-01",
                               "address": address, "description": "a 14-storey building with retail at grade",
-                              "source": "application", "floor_area_m2": 0.0, "url": LINK} for n in numbers]}
+                              "source": source, "floor_area_m2": 0.0, "url": LINK} for n in numbers]}
 
 
-def _doc(sites, centre=None):
+def _doc(sites, centre=None, radius=None):
     doc = load_fixture("mini_context.json")
     if sites is not None:
         doc["applications"] = sites
         doc["applications_date"] = "2026-10-09"
     if centre is not None:
         doc["centre"] = centre
+    if radius is not None:
+        doc["radius_m"] = radius
     return doc
 
 
-def _build(sites, lines=None, centre=None):
+def _build(sites, lines=None, centre=None, radius=None):
     report = None if lines is None else (lambda level, text: lines.append(text))
-    return scene_build.build(bpy.context.scene, _doc(sites, centre), report=report)
+    return scene_build.build(bpy.context.scene, _doc(sites, centre, radius), report=report)
+
+
+def _remembered():
+    """The centres the Applications collection remembers for the boxes in the scene."""
+    coll = site_apps.find(bpy.context.scene, SITE)
+    return [e["centre_m"] for e in json.loads(coll["ctx_app_boxes"])]
 
 
 def _boxes():
@@ -174,3 +182,42 @@ def test_a_site_built_again_around_another_centre_carries_its_boxes():
     assert _close(box.location[:2], (30.0, 10.0), tol=1e-3)
     _build([_site("A", group="approved", centre=(30.0, 10.0), h=60.0)], centre={"lat": lat, "lon": lon})
     assert box["ctx_app_group"] == "approved" and math.isclose(_height(box), 60.0, abs_tol=1e-4)   # still untouched
+
+
+def test_a_fresh_box_is_remembered_where_it_stands():
+    _build([_site("A")])
+    (centre,) = _remembered()
+    assert _close(centre, (40.0, 10.0), tol=1e-3)
+
+
+def test_a_deleted_box_keeps_a_permit_site_on_its_spot_away():
+    _build([_site("A")])
+    (box,) = _boxes()
+    bpy.data.objects.remove(box)
+    _build([_site("21 1 BLD", group="built", centre=(41.0, 10.0), source="permit")])
+    assert _boxes() == []
+
+
+def test_a_carried_box_is_remembered_in_the_new_frame():
+    _build([_site("A")])
+    doc = load_fixture("mini_context.json")
+    lon, lat = Frame(doc["centre"]["lat"], doc["centre"]["lon"]).to_lonlat(10.0, 0.0)
+    _build(None, centre={"lat": lat, "lon": lon})
+    (centre,) = _remembered()
+    assert _close(centre, (30.0, 10.0), tol=1e-3)
+
+
+def test_an_untouched_box_outside_a_smaller_circle_is_left_alone():
+    _build([_site("A", centre=(140.0, 0.0), w=10.0, d=10.0)])
+    (box,) = _boxes()
+    _build([], radius=100.0)
+    assert _boxes() == [box]
+
+
+def test_a_box_with_a_damaged_record_counts_as_changed():
+    _build([_site("A")])
+    (box,) = _boxes()
+    box["ctx_app_placed"] = json.dumps({"location": list(box.location)})   # the right place, but no rotation, scale or mesh
+    _build([_site("A", group="approved", h=60.0)])
+    assert _boxes() == [box] and math.isclose(_height(box), 45.0, abs_tol=1e-4)
+    assert box.data.materials[0].name == "Context - Application (Approved)"
