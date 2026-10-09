@@ -107,9 +107,9 @@ def build(scene, doc, folder=None, *, keep_look=True, report=None):
     root.objects.link(origin)
     made.append(origin.name)
     root["ctx_objects"] = json.dumps(made)
-    for line in site_apps.apply(scene, root, doc, apps):
+    for level, line in site_apps.apply(scene, root, doc, apps):
         if report is not None:
-            report({"INFO"}, line)
+            report({level}, line)
     lidar = doc.get("lidar")
     if lidar and folder:
         path = os.path.join(folder, lidar["file"])

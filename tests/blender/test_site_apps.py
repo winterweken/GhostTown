@@ -37,9 +37,15 @@ def _doc(sites, centre=None, radius=None):
     return doc
 
 
-def _build(sites, lines=None, centre=None, radius=None):
-    report = None if lines is None else (lambda level, text: lines.append(text))
-    return scene_build.build(bpy.context.scene, _doc(sites, centre, radius), report=report)
+def _build(sites, lines=None, centre=None, radius=None, levels=None):
+    """Build the mini site; `lines` collects the text reported, `levels` (level, text) pairs."""
+    def report(level, text):
+        if lines is not None:
+            lines.append(text)
+        if levels is not None:
+            levels.append((next(iter(level)), text))
+    return scene_build.build(bpy.context.scene, _doc(sites, centre, radius),
+                             report=report if lines is not None or levels is not None else None)
 
 
 def _remembered():
@@ -89,6 +95,7 @@ def test_a_rebuild_refreshes_the_status_and_resizes_an_untouched_box():
     lines = []
     _build([_site("A", group="approved", h=60.0)], lines)
     assert _boxes() == [box] and box.name == "Approved · 25 King St W"
+    assert site_apps.find(bpy.context.scene, SITE).name not in bpy.context.scene.collection.children   # only in the site
     assert math.isclose(_height(box), 60.0, abs_tol=1e-4)
     assert box.data.materials[0].name == "Context - Application (Approved)"
     assert lines[0] == "Development applications (City of Toronto, 2026-10-09): 1 site from 1 application: 1 approved."
@@ -266,3 +273,57 @@ def test_a_status_material_that_exists_is_left_as_it_is():
     assert box.data.materials[0] is mat and len(mat.node_tree.animation_data.drivers) == before
     assert _close(mat.diffuse_color[:3], (0.2, 0.3, 0.4))
 
+
+
+def test_a_build_that_fails_after_detach_keeps_the_boxes_in_the_scene():
+    _build([_site("A")])
+    (box,) = _boxes()
+    coll = site_apps.find(bpy.context.scene, SITE)
+    real = scene_build._building_object
+
+    def broken(el):
+        raise RuntimeError("the build stopped halfway")
+    scene_build._building_object = broken
+    try:
+        try:
+            _build([_site("A")])
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("the patched build should have failed")
+    finally:
+        scene_build._building_object = real
+    scene = bpy.context.scene
+    assert box.name in scene.objects and coll.users > 0
+    assert coll in scene.collection.children_recursive and _boxes() == [box]
+
+
+def test_a_box_record_too_damaged_to_read_still_finishes_the_build():
+    _build([_site("A")])
+    (box,) = _boxes()
+    damaged = json.loads(box["ctx_app_placed"])
+    damaged["scale"] = ["a", "b", "c"]
+    box["ctx_app_placed"] = json.dumps(damaged)
+    levels = []
+    root = _build([_site("A", group="approved", h=60.0)], levels=levels)
+    assert root is not None and _boxes() == [box]
+    assert box["ctx_app_group"] == "approved" or any(level == "WARNING" for level, _ in levels)
+
+
+def test_apply_reports_a_failure_as_a_warning():
+    _build([_site("A")])
+    (box,) = _boxes()
+    real = site_apps.app_boxes.plan
+
+    def broken(*args, **kwargs):
+        raise ValueError("no plan today")
+    site_apps.app_boxes.plan = broken
+    levels = []
+    try:
+        root = _build([_site("A", group="approved")], levels=levels)
+    finally:
+        site_apps.app_boxes.plan = real
+    assert root is not None and _boxes() == [box] and box["ctx_app_group"] == "review"
+    assert any(level == "WARNING" and "couldn't be updated" in text and "ValueError" in text
+               for level, text in levels)
+    assert site_apps.find(bpy.context.scene, SITE) in root.children_recursive     # linked into the new site

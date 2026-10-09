@@ -47,14 +47,18 @@ def find(scene, label):
 
 
 def detach(scene, label):
-    """Take the site's Applications collection out of every collection in this scene, so removing the old site
-    collection leaves it alone; returns it, or None."""
+    """Take the site's Applications collection out of the old site collection, and out of every other collection
+    but the scene's own, so removing the old site collection leaves it alone; returns it, or None. It stays
+    linked to the scene collection until apply() links it into the new site collection, so a build that stops
+    in between leaves the boxes in the scene instead of in no collection at all."""
     coll = find(scene, label)
     if coll is None:
         return None
-    for parent in [scene.collection, *scene.collection.children_recursive]:
+    for parent in list(scene.collection.children_recursive):
         if parent != coll and coll.name in parent.children:
             parent.children.unlink(coll)
+    if coll.name not in scene.collection.children:
+        scene.collection.children.link(coll)
     return coll
 
 
@@ -97,12 +101,21 @@ def _centre(ob):
     return [sum(p.x for p in pts) / len(pts), sum(p.y for p in pts) / len(pts)]
 
 
+def _numbers(values, count):
+    return (isinstance(values, list) and len(values) == count
+            and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in values))
+
+
 def _placed(ob):
-    """What Ghost Town recorded when it placed the box, or None when the record is missing or damaged, which
-    app_boxes.touched counts as changed."""
+    """What Ghost Town recorded when it placed the box, or None when the record is missing or damaged (a vector
+    that is not three numbers, a mesh that is not a list of points), which app_boxes.touched counts as changed."""
     placed = _json(ob, "ctx_app_placed", {})
-    keys = ("location", "rotation", "scale", "verts")
-    return placed if all(isinstance(placed.get(key), list) for key in keys) else None
+    verts = placed.get("verts")
+    if not all(_numbers(placed.get(key), 3) for key in ("location", "rotation", "scale")):
+        return None
+    if not isinstance(verts, list) or not all(_numbers(v, 3) for v in verts):
+        return None
+    return placed
 
 
 def _deleted(coll, present):
@@ -252,8 +265,9 @@ def _carry(scene, coll, label, doc):
 def apply(scene, root, doc, coll):
     """Carry out a build's plan for the site's boxes, and link the Applications collection into the new site
     collection `root`. `coll` is what detach() took out of the old site collection, or None. Returns the lines to
-    report: the summary first, then one for each box left as it is; [] when the build did not look at the
-    applications."""
+    report as (level, text), level "INFO" or "WARNING": the summary first, then one for each box left as it is;
+    [] when the build did not look at the applications. A failure after the collection is linked leaves the
+    boxes as they are and comes back as a warning, so the rest of the build goes on."""
     label = root["ctx_label"]
     sites = doc.get("applications")
     if coll is None:
@@ -262,6 +276,16 @@ def apply(scene, root, doc, coll):
         coll = bpy.data.collections.new(COLL_PREFIX + label)
         coll[SITE_PROP] = label
     root.children.link(coll)
+    if coll.name in scene.collection.children:
+        scene.collection.children.unlink(coll)         # detach() kept it here until now
+    try:
+        return _refresh(scene, coll, label, doc, sites)
+    except Exception as e:                              # the boxes are the user's work: never stop the build
+        return [("WARNING", f"The development application boxes couldn't be updated ({type(e).__name__}: "
+                            f"{str(e)[:80]}); they were left as they are.")]
+
+
+def _refresh(scene, coll, label, doc, sites):
     _carry(scene, coll, label, doc)
     present = boxes(scene, label)
     states = [{"object": ob, "numbers": numbers_of(ob), "centre_m": _centre(ob),
@@ -283,4 +307,5 @@ def apply(scene, root, doc, coll):
         _remove(state["object"])
     _remember(coll, boxes(scene, label), outcome["deleted"])
     coll["ctx_app_date"] = doc.get("applications_date", "")
-    return [app_boxes.summary(sites, outcome, doc.get("applications_date", ""))] + [LEFT.format(name=n) for n in left]
+    return [("INFO", app_boxes.summary(sites, outcome, doc.get("applications_date", "")))] + [
+        ("INFO", LEFT.format(name=n)) for n in left]
