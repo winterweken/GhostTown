@@ -221,3 +221,48 @@ def test_a_box_with_a_damaged_record_counts_as_changed():
     _build([_site("A", group="approved", h=60.0)])
     assert _boxes() == [box] and math.isclose(_height(box), 45.0, abs_tol=1e-4)
     assert box.data.materials[0].name == "Context - Application (Approved)"
+
+
+def test_find_needs_a_real_label():
+    _build([_site("A")])
+    scene = bpy.context.scene
+    scene.collection.children.link(bpy.data.collections.new("Some other collection"))   # without the Applications mark
+    for label in (None, "", 5, ["Context"]):
+        assert site_apps.find(scene, label) is None
+    assert site_apps.find(scene, SITE) is not None and site_apps.find(scene, "No such site") is None
+
+
+def _principled(mat, depsgraph=None):
+    mat = mat if depsgraph is None else mat.evaluated_get(depsgraph)
+    return next(n for n in mat.node_tree.nodes if n.bl_idname == "ShaderNodeBsdfPrincipled")
+
+
+def test_the_swatch_colour_drives_the_rendered_base_colour_without_scripts():
+    _build([_site("A")])
+    (box,) = _boxes()
+    mat = box.data.materials[0]
+    base_colour = f'nodes["{_principled(mat).name}"].inputs[0].default_value'   # Base Color is the first input
+    drivers = [f for f in mat.node_tree.animation_data.drivers if f.data_path == base_colour]
+    assert sorted(f.array_index for f in drivers) == [0, 1, 2]
+    for f in drivers:
+        (variable,) = f.driver.variables
+        target = variable.targets[0]
+        assert f.driver.type == "AVERAGE" and variable.type == "SINGLE_PROP"   # plain drivers: no script, no auto-run
+        assert target.id_type == "MATERIAL" and target.id == mat
+        assert target.data_path == f"diffuse_color[{f.array_index}]"
+    mat.diffuse_color = (1.0, 0.0, 0.0, 0.7)
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    depsgraph.update()
+    assert _close(_principled(mat, depsgraph).inputs["Base Color"].default_value[:3], (1.0, 0.0, 0.0))
+
+
+def test_a_status_material_that_exists_is_left_as_it_is():
+    _build([_site("A")])
+    (box,) = _boxes()
+    mat = box.data.materials[0]
+    mat.diffuse_color = (0.2, 0.3, 0.4, 0.7)
+    before = len(mat.node_tree.animation_data.drivers)
+    _build([_site("A")])
+    assert box.data.materials[0] is mat and len(mat.node_tree.animation_data.drivers) == before
+    assert _close(mat.diffuse_color[:3], (0.2, 0.3, 0.4))
+

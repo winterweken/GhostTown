@@ -1120,3 +1120,159 @@ def test_open_application_opens_only_a_city_link():
     finally:
         ops.open_url = real
         ghosttown.unregister()
+
+
+def test_a_site_without_its_label_has_no_applications_to_bring_back():
+    from types import SimpleNamespace
+
+    ghosttown.register()
+    try:
+        root, _ = _apps_site()
+        assert bpy.ops.ghosttown.apps_bring_back.poll()
+        del root["ctx_label"]
+        assert site_apps.find(bpy.context.scene, root.get("ctx_label")) is None
+        assert not bpy.ops.ghosttown.apps_bring_back.poll()
+        reports = []
+        op = SimpleNamespace(report=lambda *a: reports.append(a))
+        assert ops.GHOSTTOWN_OT_apps_bring_back.execute(op, bpy.context) == {"CANCELLED"} and not reports
+    finally:
+        ghosttown.unregister()
+
+
+class _Layout:
+    """A layout that writes down what is drawn on it: ("label", text), ("prop", name), ("operator", id, text)."""
+
+    def __init__(self, log):
+        self.log = log
+
+    def _child(self, kind, **kw):
+        self.log.append((kind,))
+        return _Layout(self.log)
+
+    def box(self):
+        return self._child("box")
+
+    def column(self, **kw):
+        return self._child("column")
+
+    def row(self, **kw):
+        return self._child("row")
+
+    def split(self, **kw):
+        return self._child("split")
+
+    def label(self, text="", **kw):
+        self.log.append(("label", text))
+
+    def prop(self, owner, name, **kw):
+        self.log.append(("prop", name, owner))
+
+    def operator(self, idname, text="", **kw):
+        from types import SimpleNamespace
+        op = SimpleNamespace()
+        self.log.append(("operator", idname, text, op))
+        return op
+
+
+def _drawn(active=None):
+    """What the applications box of the picked site draws when `active` is the active object."""
+    from types import SimpleNamespace
+    from ghosttown import ui
+
+    scene = bpy.context.scene
+    context = SimpleNamespace(scene=scene, active_object=active, region=SimpleNamespace(width=400),
+                              preferences=SimpleNamespace(system=SimpleNamespace(ui_scale=1.0)))
+    log = []
+    ui._applications_box(_Layout(log), context, site_apps.find(scene, scene.ghosttown.site["ctx_label"]))
+    return log
+
+
+def _labels(log):
+    return [entry[1] for entry in log if entry[0] == "label"]
+
+
+def _operators(log):
+    return [entry for entry in log if entry[0] == "operator"]
+
+
+def test_the_applications_box_lists_the_statuses_and_the_date():
+    ghosttown.register()
+    try:
+        _apps_site()
+        log = _drawn()
+        assert _labels(log) == ["Development applications 2026-10-09", "Under review: 1"]
+        (swatch,) = [e for e in log if e[0] == "prop"]
+        assert swatch[1] == "diffuse_color" and swatch[2].name == "Context - Application (Under review)"
+        assert not _operators(log)
+    finally:
+        ghosttown.unregister()
+
+
+def test_the_applications_box_lists_an_active_boxs_applications_and_opens_only_city_links():
+    ghosttown.register()
+    try:
+        root, _ = _apps_site()
+        (box,) = site_apps.boxes(bpy.context.scene, root["ctx_label"])
+        apps = site_apps.applications_of(box)
+        elsewhere = dict(apps[0], number="B", url="https://example.com/not-the-city", address="",
+                         description="word " * 200)
+        box["ctx_app_applications"] = json.dumps(apps + [elsewhere])
+        log = _drawn(box)
+        text = _labels(log)
+        assert "Under review · not stated" in text and "A · OZ · Under Review · 2024-01-01" in text
+        assert "25 KING ST W" in text and "B · OZ · Under Review · 2024-01-01" in text
+        assert text.count("…") == 1 and sum(1 for t in text if t.startswith("word")) == 8   # long text is cut
+        (opener,) = _operators(log)
+        assert opener[1] == "ghosttown.open_application" and opener[3].number == "A"
+        assert _labels(_drawn(None)) == ["Development applications 2026-10-09", "Under review: 1"]
+        other = bpy.data.objects.new("Elsewhere", None)
+        assert _labels(_drawn(other)) == _labels(_drawn(None))   # an object that is not this site's box adds nothing
+    finally:
+        ghosttown.unregister()
+
+
+def test_the_applications_box_offers_bring_back_with_the_count():
+    ghosttown.register()
+    try:
+        root, _ = _apps_site()
+        (box,) = site_apps.boxes(bpy.context.scene, root["ctx_label"])
+        bpy.data.objects.remove(box)
+        log = _drawn()
+        (bring,) = _operators(log)
+        assert bring[1] == "ghosttown.apps_bring_back" and bring[2] == "Bring Back Deleted Boxes (1)"
+        assert _labels(log) == ["Development applications 2026-10-09"]
+    finally:
+        ghosttown.unregister()
+
+
+def test_the_applications_box_survives_a_box_edited_to_junk():
+    ghosttown.register()
+    try:
+        root, _ = _apps_site()
+        (box,) = site_apps.boxes(bpy.context.scene, root["ctx_label"])
+        box["ctx_app_applications"] = json.dumps([1, {"number": 5, "url": None}])
+        del box["ctx_app_group"]
+        _drawn(box)
+        box["ctx_app_applications"] = "not json"
+        box["ctx_app_height_from"] = 7
+        _drawn(box)
+    finally:
+        ghosttown.unregister()
+
+
+def test_the_site_panel_draws_for_a_site_that_lost_its_label():
+    from types import SimpleNamespace
+    from ghosttown import ui
+
+    ghosttown.register()
+    try:
+        root, _ = _apps_site()
+        del root["ctx_label"]
+        context = SimpleNamespace(scene=bpy.context.scene, active_object=None, region=SimpleNamespace(width=400),
+                                  preferences=bpy.context.preferences)
+        log = []
+        ui.GHOSTTOWN_PT_site.draw(SimpleNamespace(layout=_Layout(log)), context)
+        assert not any(t.startswith("Development applications") for t in _labels(log))
+    finally:
+        ghosttown.unregister()
+

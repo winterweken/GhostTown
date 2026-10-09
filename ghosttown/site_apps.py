@@ -36,7 +36,10 @@ def _entry_ok(e):
 
 
 def find(scene, label):
-    """The site's Applications collection in this scene, or None."""
+    """The site's Applications collection in this scene, or None (also for a label that is not a non-empty
+    string, which would match a collection that has no mark at all)."""
+    if not isinstance(label, str) or not label:
+        return None
     for coll in scene.collection.children_recursive:
         if coll.get(SITE_PROP) == label:
             return coll

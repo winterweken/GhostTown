@@ -520,7 +520,10 @@ class GHOSTTOWN_OT_apps_bring_back(bpy.types.Operator):
         return _apps(context) is not None
 
     def execute(self, context):
-        n = site_apps.bring_back(context.scene, _apps(context))
+        coll = _apps(context)
+        if coll is None:
+            return {"CANCELLED"}
+        n = site_apps.bring_back(context.scene, coll)
         self.report({"INFO"}, f"The next Build Context brings back {n} box{'' if n == 1 else 'es'}.")
         return {"FINISHED"}
 

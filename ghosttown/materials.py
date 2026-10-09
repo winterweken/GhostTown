@@ -66,7 +66,9 @@ def _linear(c):
 
 def application_material(group):
     """The see-through material of a development application box's status, made once with its colour (BHPlus's
-    palette); one that exists already is used as it is, so the user's restyling stays."""
+    palette); one that exists already is used as it is, so the user's restyling stays. The Site panel's swatch
+    edits the material's viewport colour, so the Principled node's Base Color follows it through drivers (plain
+    ones, no scripts), and Material Preview and renders restyle with it."""
     name = application_name(group)
     mat = bpy.data.materials.get(name)
     if mat is not None:
@@ -82,7 +84,21 @@ def application_material(group):
                 node.inputs["Base Color"].default_value = rgb + (1.0,)
                 node.inputs["Alpha"].default_value = app_boxes.ALPHA
                 node.inputs["Roughness"].default_value = PLAIN_ROUGHNESS
+                _follow_viewport_colour(mat, node.inputs["Base Color"])
     return mat
+
+
+def _follow_viewport_colour(mat, socket):
+    """Drive the socket's red, green and blue from the material's own diffuse_color."""
+    for channel in range(3):
+        driver = socket.driver_add("default_value", channel).driver
+        driver.type = "AVERAGE"
+        variable = driver.variables.new()
+        variable.type = "SINGLE_PROP"
+        target = variable.targets[0]
+        target.id_type = "MATERIAL"
+        target.id = mat
+        target.data_path = f"diffuse_color[{channel}]"
 
 
 def street_look_group():
