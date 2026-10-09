@@ -6,7 +6,7 @@ import tempfile
 import bpy
 
 import ghosttown
-from ghosttown import look_build, materials, ops, props, runner, scene_build, site_use
+from ghosttown import look_build, materials, ops, props, runner, scene_build, site_apps, site_use
 from ghosttown.ghosttown_fetch import look_schema as ls
 from ghosttown.ghosttown_fetch import request as rq
 from helpers import FIXTURES, load_fixture, photo_doc
@@ -15,9 +15,11 @@ SLEEPER = [sys.executable, "-c", "import time; time.sleep(30)"]
 
 
 class Settings:
-    def __init__(self, location, site_name="", radius="300", fetch_photo=True, fetch_lidar=False):
+    def __init__(self, location, site_name="", radius="300", fetch_photo=True, fetch_lidar=False,
+                 fetch_applications=False):
         self.location, self.site_name, self.radius, self.fetch_photo = location, site_name, radius, fetch_photo
         self.fetch_lidar = fetch_lidar
+        self.fetch_applications = fetch_applications
 
 
 def test_register_and_unregister_twice():
@@ -1066,4 +1068,55 @@ def test_a_finished_look_that_cannot_be_applied_cancels_and_changes_nothing():
             assert len(reports) == 1 and reports[0][0] == {"ERROR"} and said in reports[0][1], text
             assert look_build.LOOK_PROP not in root and look_build.SUMMARY_PROP not in root
     finally:
+        ghosttown.unregister()
+
+
+def test_development_applications_are_asked_for_only_when_ticked():
+    assert "applications" not in ops.request_layers(Settings("43.65, -79.38"))
+    assert "applications" in ops.request_layers(Settings("43.65, -79.38", fetch_applications=True))
+
+
+def _apps_site():
+    doc = load_fixture("mini_context.json")
+    doc["applications"] = [{
+        "id": "app:A", "group": "review", "numbers": ["A"], "main": "A", "centre_m": [40.0, 10.0],
+        "angle_deg": 0.0, "width_m": 30.0, "depth_m": 20.0, "height_m": 45.0, "base_m": -0.3,
+        "height_from": "not stated",
+        "applications": [{"number": "A", "type": "OZ", "status": "Under Review", "submitted": "2024-01-01",
+                          "address": "25 KING ST W", "description": "", "source": "application",
+                          "floor_area_m2": 0.0, "url": "http://app.toronto.ca/AIC/index.do?folderRsn=abc"}]}]
+    doc["applications_date"] = "2026-10-09"
+    root = scene_build.build(bpy.context.scene, doc)
+    bpy.context.scene.ghosttown.site = root
+    return root, doc
+
+
+def test_bring_back_forgets_the_deleted_boxes():
+    ghosttown.register()
+    try:
+        root, _ = _apps_site()
+        (box,) = site_apps.boxes(bpy.context.scene, root["ctx_label"])
+        bpy.data.objects.remove(box)
+        assert bpy.ops.ghosttown.apps_bring_back() == {"FINISHED"}
+        assert site_apps.deleted_count(bpy.context.scene, site_apps.find(bpy.context.scene, root["ctx_label"])) == 0
+    finally:
+        ghosttown.unregister()
+
+
+def test_open_application_opens_only_a_city_link():
+    ghosttown.register()
+    opened, real = [], ops.open_url
+    ops.open_url = opened.append
+    try:
+        root, _ = _apps_site()
+        (box,) = site_apps.boxes(bpy.context.scene, root["ctx_label"])
+        bpy.context.view_layer.objects.active = box
+        assert bpy.ops.ghosttown.open_application(number="A") == {"FINISHED"}
+        apps = site_apps.applications_of(box)
+        apps[0]["url"] = "https://example.com/not-the-city"
+        box["ctx_app_applications"] = json.dumps(apps)
+        assert bpy.ops.ghosttown.open_application(number="A") == {"CANCELLED"}
+        assert opened == ["http://app.toronto.ca/AIC/index.do?folderRsn=abc"]
+    finally:
+        ops.open_url = real
         ghosttown.unregister()

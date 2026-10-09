@@ -16,6 +16,8 @@ _CLASSES = (
     ops.GHOSTTOWN_OT_use_roofs,
     ops.GHOSTTOWN_OT_use_roof_shapes,
     ops.GHOSTTOWN_OT_save_photo,
+    ops.GHOSTTOWN_OT_apps_bring_back,
+    ops.GHOSTTOWN_OT_open_application,
     ops.GHOSTTOWN_OT_street_look,
     ops.GHOSTTOWN_OT_add_sky,
     ops.GHOSTTOWN_OT_cancel,

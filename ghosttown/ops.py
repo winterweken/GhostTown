@@ -59,8 +59,10 @@ def _stamp(now=None):
 
 
 def request_layers(settings):
-    """Every layer, less the photo when the user turned it off; LiDAR roofs only when ticked."""
-    wanted = {"photo": getattr(settings, "fetch_photo", True), "lidar": getattr(settings, "fetch_lidar", False)}
+    """Every layer, less the photo when the user turned it off; LiDAR roofs and development applications only when
+    ticked."""
+    wanted = {"photo": getattr(settings, "fetch_photo", True), "lidar": getattr(settings, "fetch_lidar", False),
+              "applications": getattr(settings, "fetch_applications", False)}
     return [layer for layer in LAYERS if wanted.get(layer, True)]
 
 
@@ -499,6 +501,55 @@ class GHOSTTOWN_OT_save_photo(bpy.types.Operator):
             return {"CANCELLED"}
         self.report({"INFO"}, f"Saved {os.path.basename(jpg)}. In Revit, set the image width to {width:g} m "
                               "and centre it on the origin.")
+        return {"FINISHED"}
+
+
+def _apps(context):
+    root = site_use.picked(context)
+    return None if root is None else site_apps.find(context.scene, root.get("ctx_label"))
+
+
+class GHOSTTOWN_OT_apps_bring_back(bpy.types.Operator):
+    bl_idname = "ghosttown.apps_bring_back"
+    bl_label = "Bring Back Deleted Boxes"
+    bl_description = "Forget which development application boxes you deleted, so the next Build Context makes them again"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        return _apps(context) is not None
+
+    def execute(self, context):
+        n = site_apps.bring_back(context.scene, _apps(context))
+        self.report({"INFO"}, f"The next Build Context brings back {n} box{'' if n == 1 else 'es'}.")
+        return {"FINISHED"}
+
+
+def open_url(url):
+    """Open a link in the user's browser: the one place Ghost Town does."""
+    bpy.ops.wm.url_open(url=url)
+
+
+class GHOSTTOWN_OT_open_application(bpy.types.Operator):
+    bl_idname = "ghosttown.open_application"
+    bl_label = "Open in City AIC"
+    bl_description = "Open this application on the City of Toronto's Application Information Centre"
+    bl_options = {"REGISTER"}
+
+    number: StringProperty(name="Application")
+
+    @classmethod
+    def poll(cls, context):
+        ob = context.active_object
+        return ob is not None and site_apps.BOX_SITE in ob
+
+    def execute(self, context):
+        link = next((ctx.city_link(a.get("url")) for a in site_apps.applications_of(context.active_object)
+                     if a.get("number") == self.number), "")
+        if not link:
+            self.report({"WARNING"}, "This application has no City of Toronto link.")
+            return {"CANCELLED"}
+        open_url(link)
         return {"FINISHED"}
 
 

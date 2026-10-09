@@ -83,6 +83,10 @@ class GhostTownSettings(bpy.types.PropertyGroup):
         description="Ontario: fetch the province's LiDAR and measure roofs from it, fitted and sampled, for "
                     "buildings the City of Toronto's 3D Massing model doesn't cover. "
                     "A large download; the first request can take a minute")
+    fetch_applications: BoolProperty(
+        name="Development applications", default=False,
+        description="Toronto: boxes on nearby sites with an open development application, under construction or "
+                    "recently built (City applications and building permits; houses left out)")
     site: PointerProperty(
         type=bpy.types.Collection, name="Site", poll=is_site, update=_site_picked,
         description="The Ghost Town site whose data the Site panel shows")
