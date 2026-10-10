@@ -47,3 +47,10 @@ def test_runaway_paging_stops():
     with pytest.raises(SourceError, match="too many"):
         arcgis.query(net, "cot_geospatial3", 2, {})
     assert len(net.calls) == arcgis.MAX_PAGES
+
+
+def test_query_hands_its_age_to_the_cache():
+    net = FakeNet({"toronto": lambda url, data: page(square(0, 0, 5, OBJECTID=1))})
+    arcgis.query(net, "cot_geospatial11", 60, arcgis.radius_params(43.65, -79.38, 150), max_age_days=1)
+    arcgis.query(net, "cot_geospatial3", 2, arcgis.radius_params(43.65, -79.38, 150))
+    assert net.ages == [1, None]

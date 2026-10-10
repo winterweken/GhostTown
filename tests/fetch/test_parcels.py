@@ -46,4 +46,4 @@ def test_fetch_parcels_asks_for_common_lots_only():
     url, _, data = net.calls[0]
     assert url.endswith("/cot_geospatial27/FeatureServer/36/query")
     assert form(data)["where"] == "FEATURE_TYPE = 'COMMON'"
-    assert form(data)["outFields"] == "OBJECTID,PARCELID,ADDRESS_NUMBER,LINEAR_NAME_FULL"
+    assert form(data)["outFields"] == "OBJECTID,PARCELID,ADDRESS_NUMBER,LINEAR_NAME_FULL,DATE_EXPIRY"

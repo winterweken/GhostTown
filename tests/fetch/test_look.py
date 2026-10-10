@@ -490,7 +490,7 @@ def test_expired_photos_and_labels_are_deleted_at_the_end_of_a_run(tmp_path):
     data = street()
     net = fake_net(data)
     look.run(request(tmp_path, data), net, TOKEN)
-    assert net.pruned == ["mapillary"]
+    assert net.pruned == [("mapillary", None)]
 
 
 THROTTLE_BODY = (b'{"error": {"message": "(#4) Application request limit reached", "type": "OAuthException", '

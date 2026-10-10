@@ -6,7 +6,7 @@ import tempfile
 import bpy
 
 import ghosttown
-from ghosttown import look_build, materials, ops, props, runner, scene_build, site_use
+from ghosttown import look_build, materials, ops, props, runner, scene_build, site_apps, site_use
 from ghosttown.ghosttown_fetch import look_schema as ls
 from ghosttown.ghosttown_fetch import request as rq
 from helpers import FIXTURES, load_fixture, photo_doc
@@ -15,9 +15,11 @@ SLEEPER = [sys.executable, "-c", "import time; time.sleep(30)"]
 
 
 class Settings:
-    def __init__(self, location, site_name="", radius="300", fetch_photo=True, fetch_lidar=False):
+    def __init__(self, location, site_name="", radius="300", fetch_photo=True, fetch_lidar=False,
+                 fetch_applications=False):
         self.location, self.site_name, self.radius, self.fetch_photo = location, site_name, radius, fetch_photo
         self.fetch_lidar = fetch_lidar
+        self.fetch_applications = fetch_applications
 
 
 def test_register_and_unregister_twice():
@@ -1067,3 +1069,250 @@ def test_a_finished_look_that_cannot_be_applied_cancels_and_changes_nothing():
             assert look_build.LOOK_PROP not in root and look_build.SUMMARY_PROP not in root
     finally:
         ghosttown.unregister()
+
+
+def test_development_applications_are_asked_for_only_when_ticked():
+    assert "applications" not in ops.request_layers(Settings("43.65, -79.38"))
+    assert "applications" in ops.request_layers(Settings("43.65, -79.38", fetch_applications=True))
+
+
+def _apps_doc():
+    doc = load_fixture("mini_context.json")
+    doc["applications"] = [{
+        "id": "app:A", "group": "review", "numbers": ["A"], "main": "A", "centre_m": [40.0, 10.0],
+        "angle_deg": 0.0, "width_m": 30.0, "depth_m": 20.0, "height_m": 45.0, "base_m": -0.3,
+        "height_from": "not stated",
+        "applications": [{"number": "A", "type": "OZ", "status": "Under Review", "submitted": "2024-01-01",
+                          "address": "25 KING ST W", "description": "", "source": "application",
+                          "floor_area_m2": 0.0, "url": "http://app.toronto.ca/AIC/index.do?folderRsn=abc"}]}]
+    doc["applications_date"] = "2026-10-09"
+    return doc
+
+
+def _apps_site():
+    doc = _apps_doc()
+    root = scene_build.build(bpy.context.scene, doc)
+    bpy.context.scene.ghosttown.site = root
+    return root, doc
+
+
+def test_importing_a_context_with_applications_makes_the_boxes_and_reports_them():
+    ghosttown.register()
+    try:
+        reports = []
+        root = ops.import_into_scene(bpy.context, _write_context(_apps_doc(), tempfile.mkdtemp()),
+                                     lambda level, text: reports.append((next(iter(level)), text)))
+        scene = bpy.context.scene
+        assert root is not None and site_apps.find(scene, root["ctx_label"]) is not None
+        assert len(site_apps.boxes(scene, root["ctx_label"])) == 1
+        assert scene.ghosttown.summary.endswith(", 1 application box")
+        assert any(level == "INFO" and text.startswith("Development applications (City of Toronto, ")
+                   for level, text in reports)
+    finally:
+        ghosttown.unregister()
+
+
+def test_bring_back_forgets_the_deleted_boxes():
+    ghosttown.register()
+    try:
+        root, _ = _apps_site()
+        (box,) = site_apps.boxes(bpy.context.scene, root["ctx_label"])
+        bpy.data.objects.remove(box)
+        assert bpy.ops.ghosttown.apps_bring_back() == {"FINISHED"}
+        assert site_apps.deleted_count(bpy.context.scene, site_apps.find(bpy.context.scene, root["ctx_label"])) == 0
+    finally:
+        ghosttown.unregister()
+
+
+def test_open_application_opens_only_a_city_link():
+    ghosttown.register()
+    opened, real = [], ops.open_url
+    ops.open_url = opened.append
+    try:
+        root, _ = _apps_site()
+        (box,) = site_apps.boxes(bpy.context.scene, root["ctx_label"])
+        bpy.context.view_layer.objects.active = box
+        assert bpy.ops.ghosttown.open_application(number="A") == {"FINISHED"}
+        apps = site_apps.applications_of(box)
+        apps[0]["url"] = "https://example.com/not-the-city"
+        box["ctx_app_applications"] = json.dumps(apps)
+        assert bpy.ops.ghosttown.open_application(number="A") == {"CANCELLED"}
+        assert opened == ["http://app.toronto.ca/AIC/index.do?folderRsn=abc"]
+    finally:
+        ops.open_url = real
+        ghosttown.unregister()
+
+
+def test_a_site_without_its_label_has_no_applications_to_bring_back():
+    from types import SimpleNamespace
+
+    ghosttown.register()
+    try:
+        root, _ = _apps_site()
+        assert bpy.ops.ghosttown.apps_bring_back.poll()
+        del root["ctx_label"]
+        assert site_apps.find(bpy.context.scene, root.get("ctx_label")) is None
+        assert not bpy.ops.ghosttown.apps_bring_back.poll()
+        reports = []
+        op = SimpleNamespace(report=lambda *a: reports.append(a))
+        assert ops.GHOSTTOWN_OT_apps_bring_back.execute(op, bpy.context) == {"CANCELLED"} and not reports
+    finally:
+        ghosttown.unregister()
+
+
+class _Layout:
+    """A layout that writes down what is drawn on it: ("label", text), ("prop", name), ("operator", id, text)."""
+
+    def __init__(self, log):
+        self.log = log
+
+    def _child(self, kind, **kw):
+        self.log.append((kind,))
+        return _Layout(self.log)
+
+    def box(self):
+        return self._child("box")
+
+    def column(self, **kw):
+        return self._child("column")
+
+    def row(self, **kw):
+        return self._child("row")
+
+    def split(self, **kw):
+        return self._child("split")
+
+    def label(self, text="", **kw):
+        self.log.append(("label", text))
+
+    def prop(self, owner, name, **kw):
+        self.log.append(("prop", name, owner))
+
+    def operator(self, idname, text="", **kw):
+        from types import SimpleNamespace
+        op = SimpleNamespace()
+        self.log.append(("operator", idname, text, op))
+        return op
+
+
+def _drawn(active=None):
+    """What the applications box of the picked site draws when `active` is the active object."""
+    from types import SimpleNamespace
+    from ghosttown import ui
+
+    scene = bpy.context.scene
+    context = SimpleNamespace(scene=scene, active_object=active, region=SimpleNamespace(width=400),
+                              preferences=SimpleNamespace(system=SimpleNamespace(ui_scale=1.0)))
+    log = []
+    ui._applications_box(_Layout(log), context, site_apps.find(scene, scene.ghosttown.site["ctx_label"]))
+    return log
+
+
+def _labels(log):
+    return [entry[1] for entry in log if entry[0] == "label"]
+
+
+def _operators(log):
+    return [entry for entry in log if entry[0] == "operator"]
+
+
+def test_the_applications_box_lists_the_statuses_and_the_date():
+    ghosttown.register()
+    try:
+        _apps_site()
+        log = _drawn()
+        assert _labels(log) == ["Development applications 2026-10-09", "Under review: 1"]
+        (swatch,) = [e for e in log if e[0] == "prop"]
+        assert swatch[1] == "diffuse_color" and swatch[2].name == "Context - Application (Under review)"
+        assert not _operators(log)
+    finally:
+        ghosttown.unregister()
+
+
+def test_the_applications_box_lists_an_active_boxs_applications_and_opens_only_city_links():
+    ghosttown.register()
+    try:
+        root, _ = _apps_site()
+        (box,) = site_apps.boxes(bpy.context.scene, root["ctx_label"])
+        apps = site_apps.applications_of(box)
+        elsewhere = dict(apps[0], number="B", url="https://example.com/not-the-city", address="",
+                         description="word " * 200)
+        box["ctx_app_applications"] = json.dumps(apps + [elsewhere])
+        log = _drawn(box)
+        text = _labels(log)
+        assert "Under review · not stated" in text and "A · OZ · Under Review · 2024-01-01" in text
+        assert "25 KING ST W" in text and "B · OZ · Under Review · 2024-01-01" in text
+        assert text.count("…") == 1 and sum(1 for t in text if t.startswith("word")) == 8   # long text is cut
+        (opener,) = _operators(log)
+        assert opener[1] == "ghosttown.open_application" and opener[3].number == "A"
+        assert _labels(_drawn(None)) == ["Development applications 2026-10-09", "Under review: 1"]
+        other = bpy.data.objects.new("Elsewhere", None)
+        assert _labels(_drawn(other)) == _labels(_drawn(None))   # an object that is not this site's box adds nothing
+    finally:
+        ghosttown.unregister()
+
+
+def test_the_applications_box_wraps_a_long_title_and_address_to_the_panel():
+    ghosttown.register()
+    try:
+        root, _ = _apps_site()
+        (box,) = site_apps.boxes(bpy.context.scene, root["ctx_label"])
+        apps = site_apps.applications_of(box)
+        apps[0].update(type="Official Plan and Zoning By-law Amendment", status="Under Review (resubmission)",
+                       address="25 KING ST W; 27 KING ST W; 29 KING ST W; 31 KING ST W; 33 KING ST W")
+        box["ctx_app_applications"] = json.dumps(apps)
+        text = _labels(_drawn(box))
+        assert all(len(t) <= 57 for t in text)                       # the panel is 57 characters wide here
+        assert " ".join(t for t in text if "KING" in t) == apps[0]["address"]
+        title = [t for t in text[3:] if "KING" not in t]
+        assert len(title) == 2 and " ".join(title) == "A · Official Plan and Zoning By-law Amendment · " \
+                                                       "Under Review (resubmission) · 2024-01-01"
+    finally:
+        ghosttown.unregister()
+
+
+def test_the_applications_box_offers_bring_back_with_the_count():
+    ghosttown.register()
+    try:
+        root, _ = _apps_site()
+        (box,) = site_apps.boxes(bpy.context.scene, root["ctx_label"])
+        bpy.data.objects.remove(box)
+        log = _drawn()
+        (bring,) = _operators(log)
+        assert bring[1] == "ghosttown.apps_bring_back" and bring[2] == "Bring Back Deleted Boxes (1)"
+        assert _labels(log) == ["Development applications 2026-10-09"]
+    finally:
+        ghosttown.unregister()
+
+
+def test_the_applications_box_survives_a_box_edited_to_junk():
+    ghosttown.register()
+    try:
+        root, _ = _apps_site()
+        (box,) = site_apps.boxes(bpy.context.scene, root["ctx_label"])
+        box["ctx_app_applications"] = json.dumps([1, {"number": 5, "url": None}])
+        del box["ctx_app_group"]
+        _drawn(box)
+        box["ctx_app_applications"] = "not json"
+        box["ctx_app_height_from"] = 7
+        _drawn(box)
+    finally:
+        ghosttown.unregister()
+
+
+def test_the_site_panel_draws_for_a_site_that_lost_its_label():
+    from types import SimpleNamespace
+    from ghosttown import ui
+
+    ghosttown.register()
+    try:
+        root, _ = _apps_site()
+        del root["ctx_label"]
+        context = SimpleNamespace(scene=bpy.context.scene, active_object=None, region=SimpleNamespace(width=400),
+                                  preferences=bpy.context.preferences)
+        log = []
+        ui.GHOSTTOWN_PT_site.draw(SimpleNamespace(layout=_Layout(log)), context)
+        assert not any(t.startswith("Development applications") for t in _labels(log))
+    finally:
+        ghosttown.unregister()
+

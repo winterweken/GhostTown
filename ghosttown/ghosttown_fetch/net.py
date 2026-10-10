@@ -81,15 +81,17 @@ class Net:
         self.transport = transport or urllib_transport
         self.sleep = sleep
 
-    def get(self, url, *, source, data=None, check=None, timeout=120, keep=True, headers=None, key=None):
+    def get(self, url, *, source, data=None, check=None, timeout=120, keep=True, headers=None, key=None,
+            max_age_days=None):
         """The answer's bytes. keep=False is for one-off downloads, like the City's 81 MB massing model,
         that skip the response cache because their caller keeps its own copy, and for answers that go
         stale, like signed links. `headers` are sent but never part of the cache key. `key` replaces the
-        URL as the cache key, for answers whose URL changes (signed links)."""
+        URL as the cache key, for answers whose URL changes (signed links). `max_age_days`, when given, is
+        how old a stored answer may be instead of the cache's 30 days."""
         if key is None:
             key = url if data is None else url + "\n" + data.decode("utf-8", "replace")
         if keep and not self.fresh:
-            body = self.cache.read(source, key)
+            body = self.cache.read(source, key, max_age_days)
             if body is not None and _still_good(body, check):
                 return body
         name = SOURCE_NAMES.get(source, source)
@@ -122,9 +124,10 @@ class Net:
                 break
         raise SourceError(problem + "; try again in a minute.", status=status, body=answer)
 
-    def prune(self, source):
-        """Delete `source`'s stored answers once they are older than the cache's age, so they don't stay on disk."""
-        self.cache.prune(source)
+    def prune(self, source, max_age_days=None):
+        """Delete `source`'s stored answers once they are older than `max_age_days` (the cache's age when None), so
+        they don't stay on disk."""
+        self.cache.prune(source, max_age_days)
 
     def cached(self, source, key, check=None):
         """A stored answer by cache key, or None (also when fresh, expired or failing its check)."""

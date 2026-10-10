@@ -28,15 +28,16 @@ def radius_params(lat, lon, radius_m, *, out_fields="*", where="1=1"):
     }
 
 
-def query(net, service, layer, params, *, source="toronto", accept=None):
+def query(net, service, layer, params, *, source="toronto", accept=None, max_age_days=None):
     """Every feature for one query. Page sizes are not reliable, so keep asking while the server
     says there is more and the last page was not empty. `accept(body)` may raise SourceError to
-    refuse an answer before it is cached."""
+    refuse an answer before it is cached. `max_age_days`: how long a stored page is used (the cache's
+    30 days when None)."""
     url = layer_url(service, layer)
     features, offset = [], 0
     for _ in range(MAX_PAGES):
         data = urllib.parse.urlencode({**params, "resultOffset": str(offset)}).encode("ascii")
-        page = _load(net.get(url, source=source, data=data, check=accept or check))
+        page = _load(net.get(url, source=source, data=data, check=accept or check, max_age_days=max_age_days))
         got = page.get("features") or []
         features += got
         more = page.get("exceededTransferLimit") or (page.get("properties") or {}).get("exceededTransferLimit")

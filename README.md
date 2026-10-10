@@ -13,7 +13,7 @@
 
 Type an address in Blender and get the city around it: buildings, terrain, roads, sidewalks,
 water, parks, trees and lot lines, built from open data as clean geometry you can take into Revit or
-any BIM tool.
+any BIM tool. In Toronto it can also show what is proposed and going up around the site.
 
 ![Ghost Town in Blender: searching for 1140 Dundas St W, building the site, and the blocks around Dundas and Ossington appearing on the City's aerial photo](media/build-toronto.gif)
 
@@ -22,7 +22,7 @@ between colours by kind and the aerial photo. The build is shortened here. Data:
 Natural Resources Canada (see [Data and credits](#data-and-credits)).*
 
 Ghost Town is a free, open-source extension for Blender 5.2 and later. It is at an early stage
-(version 0.4): Toronto is covered in depth, and the rest of the world gets buildings only.
+(version 0.5): Toronto is covered in depth, and the rest of the world gets buildings only.
 
 ## What you get
 
@@ -48,6 +48,13 @@ Each build makes one collection, `Context · <site>`:
 - **Parcels:** lot lines draped 15 cm above the ground.
 - **Aerial photo** (Toronto): the City's newest aerial photo of the site, kept inside the .blend file,
   for the ground and low roofs. See [Use](#use).
+- **Development applications** (Toronto, when ticked): a see-through box on every nearby site with an open
+  development application, a building going up or one just finished, coloured by where it stands: under
+  construction, recently built, appealed, under review, approved, or Committee of Adjustment. The boxes are in an
+  `Applications · <site>` collection. Each box sits on its lot and is as tall as the building permit or the
+  application's description says, else as the permit's floor area spread over the lot, else one storey.
+  Applications and permits filed on the same lot become one box, as tall as the newest of them that states a
+  height, a building permit's own height first. See [Use](#use).
 - **Street Look** (a step after the build, with your own Mapillary token): facades coloured from street
   photos, with storefront, wall, glass and cap zones and window patterns, plus floor bands and mullions on
   a few buildings you pick. See [Street Look](#street-look).
@@ -107,7 +114,10 @@ executable first. Install the zip as above.
    of the site with the build. It is kept inside the .blend file. Tick **LiDAR roofs (slower)** in Ontario
    to fetch the province's LiDAR and give buildings outside the City of Toronto's 3D Massing model
    measured roofs. It is a large download, and the province's server can take a minute to answer the
-   first request.
+   first request. Tick **Development applications** to put a box on every nearby site with an open development
+   application, under construction or finished since the City's 3D Massing (City of Toronto applications and
+   building permits; houses left out). The first build of the day downloads the City's tables and can take up to
+   a minute more.
 6. Press **Build Context**. A 300 m site takes about 10 seconds and a 1000 m site about 20. With **LiDAR
    roofs** ticked a build takes a few minutes more, because the province's server is slow to send the LiDAR
    (a 300 m site in Hamilton took about 4 minutes). Cancel or Esc stops it, and Ctrl+Z removes a finished
@@ -143,6 +153,14 @@ and fitted roofs, and the triangle count for Revit follows. The LiDAR download, 
 here. Data: OpenStreetMap, Natural Resources Canada and Geospatial Ontario.*
 
 Switching never downloads anything again, and each site in a file keeps its own choices.
+
+When the site has development application boxes, **Development applications** lists them by status, each with its
+colour (change it there to restyle every box of that status). Select a box to see its applications and permits,
+their status, date and description, and **Open in City AIC** for the City's page about each application. Reshape a
+box as you like: grab, rotate, scale (the **Scale Cage** tool moves one side at a time) or edit its mesh. Building
+the site again refreshes each box's status and keeps the shape you gave it; a box whose applications all closed is
+removed, or turned grey (**Closed**) if you changed it. A box you delete stays deleted; **Bring Back Deleted Boxes**
+makes the next build put them back.
 
 ### Street Look
 
@@ -186,6 +204,8 @@ metres, closed building solids, outlines cleaned of edges under 3 mm, and stable
 - Street Look changes how buildings render, not their materials' names. Its detail meshes sit in the
   `Detail · <site>` collection with the `Context - Facade detail` material and count toward the triangle
   figure; exclude that collection (untick it in the Outliner) to leave them out of an export.
+- Development application boxes are closed boxes with a `Context - Application (<status>)` material each,
+  in the `Applications · <site>` collection; exclude that collection to leave them out of an export.
 - LiDAR roofs export as meshes, which Revit imports as DirectShapes: heavier than prisms. Exporters apply
   Roof detail (modifiers are applied by default), so keep the site under the panel's budget, or use Fitted
   or Flat roofs.
@@ -212,7 +232,7 @@ you used. The panel lists them after every build.
 
 | Source | Used for | Credit |
 |---|---|---|
-| City of Toronto open data | Buildings (3D Massing, newest yearly edition), aerial photo, ground, trees, parcels, addresses, city boundary | Contains information licensed under the Open Government Licence – Toronto |
+| City of Toronto open data | Buildings (3D Massing, newest yearly edition), aerial photo, ground, trees, parcels, addresses, city boundary, development applications, building permits | Contains information licensed under the Open Government Licence – Toronto |
 | Natural Resources Canada (HRDEM) | Terrain | Contains information licensed under the Open Government Licence – Canada |
 | Geospatial Ontario (lidar-derived surface and terrain models) | LiDAR roofs in Ontario | Contains information licensed under the Open Government Licence – Ontario |
 | OpenStreetMap | Buildings outside Toronto | © OpenStreetMap contributors (ODbL) |
@@ -232,7 +252,7 @@ you rely on against a survey.
 and the City's open data portal (`ckan0.cf.opendata.inter.prod-toronto.ca`), `datacube.services.geo.ca` and
 `overpass-api.de`, and, only with **LiDAR roofs** ticked, `ws.geoservices.lrc.gov.on.ca`, and only when you press
 the search button, Build Context or Apply Street Look. It sends what the query needs (the address you search for, or
-the location and radius you build) and nothing else. Answers are cached on your computer for 30 days. The City's 3D
+the location and radius you build) and nothing else. Answers are cached on your computer for 30 days; with **Development applications** ticked, the City's application points and its applications and building permits tables are kept for a day (about 17 MB, cleared by the next day's build) and its address points for a week. The City's 3D
 Massing model is downloaded once per yearly edition (81 MB, about 300 MB unpacked in the cache folder) and kept
 until a newer edition comes out. It lives in the cache folder (Preferences › Add-ons › Ghost Town › Cache folder,
 which shows where it is; by default
@@ -272,7 +292,13 @@ Natural Resources Canada, the Province of Ontario, OpenStreetMap or Mapillary.
   under construction can show a partly built roof.
 - Bridges and elevated rail are draped onto the ground.
 - A stream is flat at one level along its length instead of following its valley.
-- Rebuilding a site resets colours you changed on the `Context - …` materials.
+- Rebuilding a site resets colours you changed on the `Context - …` materials (the development application
+  colours stay).
+- Development application boxes are starting volumes, not the proposals' designs: the largest rectangle that fits
+  the lot, one height for the whole box. On a lot as big as a block, separate projects become one box, so a
+  finished building there can take the height of a tower proposed beside it.
+- Building permits for houses are left out, so a house going up or just finished gets a box only when it also has
+  an open application.
 - Street Look reads facades from street photos, many from 2014–2019: glass in the lower floors that mirrors
   the street, or tall glass seen in only a few photos, can read as an opaque wall; sky at a roofline can tint
   a building's top; a building changed or built since the photos gets what they show.

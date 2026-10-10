@@ -3,7 +3,9 @@ import textwrap
 
 import bpy
 
-from . import georef, look_build, ops, prefs, runner, site_use
+from . import georef, look_build, materials, ops, prefs, runner, site_apps, site_use
+from .ghosttown_fetch import app_boxes
+from .ghosttown_fetch import context as ctx
 
 ICON_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons", "ghosttown.png")
 _previews = None
@@ -74,6 +76,7 @@ class GHOSTTOWN_PT_main(bpy.types.Panel):
         col.label(text="Fetch")
         col.prop(settings, "fetch_photo")
         col.prop(settings, "fetch_lidar")
+        col.prop(settings, "fetch_applications")
         if "build" in runner.ACTIVE:
             layout.label(text=runner.STATUS.get("build", "Working…"), icon="TIME")
             layout.operator("ghosttown.cancel", icon="CANCEL").key = "build"
@@ -89,7 +92,8 @@ class GHOSTTOWN_PT_main(bpy.types.Panel):
                 box.label(text=line)
 
 
-SITE_ICONS = ("EMPTY_AXIS", "COPYDOWN", "IMAGE_DATA", "INFO", "EXPORT", "MOD_DECIM", "ERROR")
+SITE_ICONS = ("EMPTY_AXIS", "COPYDOWN", "IMAGE_DATA", "INFO", "EXPORT", "MOD_DECIM", "ERROR", "HOME", "URL",
+              "LOOP_BACK", "OBJECT_DATA")
 HEAVY = ("Heavy for Revit: use Fitted or Flat roofs,", "or lower Roof detail, before exporting.")
 ROOF_SHAPES = {"flat": "Flat", "fitted": "Fitted", "lidar": "LiDAR"}
 
@@ -108,6 +112,52 @@ def _choice(layout, label, operator, current, options):
     row.label(text=label)
     for value, text in options:
         row.operator(operator, text=text, depress=current == value).use = value
+
+
+MAX_DESCRIPTION_LINES = 8
+
+
+def _applications_box(layout, context, coll):
+    """The site's development application boxes: a swatch and count per status, the data's date, Bring Back,
+    and, when the active object is one of them, its applications."""
+    box = layout.box()
+    date = coll.get("ctx_app_date", "")
+    box.label(text=f"Development applications {date}".strip(), icon="HOME")
+    col = box.column(align=True)
+    for group, n in site_apps.status_counts(context.scene, coll):
+        row = col.row(align=True)
+        mat = bpy.data.materials.get(materials.application_name(group))
+        split = row.split(factor=0.15, align=True)
+        if mat is not None:
+            split.prop(mat, "diffuse_color", text="")
+        else:
+            split.label(text="")
+        split.label(text=f"{app_boxes.LABELS[group]}: {n}")
+    gone = site_apps.deleted_count(context.scene, coll)
+    if gone:
+        box.operator("ghosttown.apps_bring_back", text=f"Bring Back Deleted Boxes ({gone})", icon="LOOP_BACK")
+    ob = context.active_object
+    if ob is None or ob.get(site_apps.BOX_SITE) != coll.get(site_apps.SITE_PROP):
+        return
+    detail = box.box()
+    group = ob.get("ctx_app_group", "review")
+    detail.label(text=f"{app_boxes.LABELS.get(group, group)} · {ob.get('ctx_app_height_from', '')}",
+                 icon="OBJECT_DATA")
+    width = hint_width(context)
+    for a in site_apps.applications_of(ob):
+        col = detail.column(align=True)
+        title = " · ".join(str(a.get(k, "")) for k in ("number", "type", "status", "submitted") if a.get(k))
+        for line in textwrap.wrap(title, width):
+            col.label(text=line)
+        for line in textwrap.wrap(str(a.get("address", "")), width):
+            col.label(text=line)
+        lines = textwrap.wrap(str(a.get("description", "")), width)
+        for line in lines[:MAX_DESCRIPTION_LINES]:
+            col.label(text=line)
+        if len(lines) > MAX_DESCRIPTION_LINES:
+            col.label(text="…")
+        if ctx.city_link(a.get("url")):
+            col.operator("ghosttown.open_application", icon="URL").number = str(a.get("number", ""))
 
 
 class GHOSTTOWN_PT_site(bpy.types.Panel):
@@ -165,6 +215,9 @@ class GHOSTTOWN_PT_site(bpy.types.Panel):
                 if heavy:
                     for line in HEAVY:
                         box.label(text=line)
+        apps = site_apps.find(context.scene, root.get("ctx_label"))
+        if apps is not None:
+            _applications_box(layout, context, apps)
 
 
 def hint_width(context):

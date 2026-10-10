@@ -4,6 +4,8 @@ Buildings get one object each; ground kinds, trees and parcels are merged per ki
 The root collection remembers which collections and objects this build made (by tag and by
 name), so a re-run removes exactly those and keeps everything the user added, duplicated or
 linked elsewhere.
+The site's development application boxes live in their own Applications collection, which a rebuild takes out of
+the old site collection before removing it and links into the new one (site_apps).
 """
 import collections
 import json
@@ -11,7 +13,7 @@ import os
 
 import bpy
 
-from . import geometry, georef, look_build, materials, site_lidar, site_photo, site_use
+from . import geometry, georef, look_build, materials, site_apps, site_lidar, site_photo, site_use
 from .ghosttown_fetch import BUILDING_KINDS
 from .ghosttown_fetch import context as ctx
 
@@ -50,6 +52,7 @@ def build(scene, doc, folder=None, *, keep_look=True, report=None):
     label = site_label(doc)
     old = find_root(scene, label)
     look = old.get(look_build.LOOK_PROP) if old is not None and keep_look else None
+    apps = site_apps.detach(scene, label)      # the boxes outlive a rebuild; site_apps.apply decides each one
     if old is not None:
         remove(old, scene)
     georef.set_scene_units(scene)
@@ -104,6 +107,9 @@ def build(scene, doc, folder=None, *, keep_look=True, report=None):
     root.objects.link(origin)
     made.append(origin.name)
     root["ctx_objects"] = json.dumps(made)
+    for level, line in site_apps.apply(scene, root, doc, apps):
+        if report is not None:
+            report({level}, line)
     lidar = doc.get("lidar")
     if lidar and folder:
         path = os.path.join(folder, lidar["file"])

@@ -1,6 +1,8 @@
 import email.message
 import http.client
 import io
+import os
+import time
 import urllib.request
 import urllib.response
 
@@ -236,3 +238,13 @@ def test_a_request_without_credentials_still_follows_a_redirect(monkeypatch):
     status, _body = net_mod.urllib_transport("https://graph.mapillary.com/x", None, {"User-Agent": USER_AGENT}, 10)
     assert status == 200 and [host for host, _scheme, _auth in seen] == ["graph.mapillary.com",
                                                                          "scontent.example.fbcdn.net"]
+
+
+def test_an_answer_older_than_its_age_is_fetched_again(tmp_path):
+    t = Transport((200, b"old"), (200, b"new"))
+    net = Net(str(tmp_path), transport=t)
+    assert net.get(URL, source="toronto", max_age_days=1) == b"old"
+    os.utime(net.cache._path("toronto", URL), (time.time() - 2 * 86400,) * 2)
+    assert net.get(URL, source="toronto") == b"old"                  # 30 days for a caller that doesn't say
+    assert net.get(URL, source="toronto", max_age_days=1) == b"new"
+    assert len(t.calls) == 2
