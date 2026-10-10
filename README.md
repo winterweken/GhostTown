@@ -13,7 +13,7 @@
 
 Type an address in Blender and get the city around it: buildings, terrain, roads, sidewalks,
 water, parks, trees and lot lines, built from open data as clean geometry you can take into Revit or
-any BIM tool.
+any BIM tool. In Toronto it can also show what is proposed and going up around the site.
 
 ![Ghost Town in Blender: searching for 1140 Dundas St W, building the site, and the blocks around Dundas and Ossington appearing on the City's aerial photo](media/build-toronto.gif)
 
@@ -22,7 +22,7 @@ between colours by kind and the aerial photo. The build is shortened here. Data:
 Natural Resources Canada (see [Data and credits](#data-and-credits)).*
 
 Ghost Town is a free, open-source extension for Blender 5.2 and later. It is at an early stage
-(version 0.4): Toronto is covered in depth, and the rest of the world gets buildings only.
+(version 0.5): Toronto is covered in depth, and the rest of the world gets buildings only.
 
 ## What you get
 
@@ -48,10 +48,11 @@ Each build makes one collection, `Context · <site>`:
 - **Parcels:** lot lines draped 15 cm above the ground.
 - **Aerial photo** (Toronto): the City's newest aerial photo of the site, kept inside the .blend file,
   for the ground and low roofs. See [Use](#use).
-- **Development applications** (Toronto, asked for): a see-through box on every nearby site with an open
+- **Development applications** (Toronto, when ticked): a see-through box on every nearby site with an open
   development application, a building going up or one just finished, coloured by where it stands: under
-  construction, recently built, appealed, under review, approved, or Committee of Adjustment. Each box sits on its
-  lot and is as tall as the City's description or building permit says, or one storey when nothing says.
+  construction, recently built, appealed, under review, approved, or Committee of Adjustment. The boxes are in an
+  `Applications · <site>` collection. Each box sits on its lot and is as tall as the building permit or the
+  application's description says, else as the permit's floor area spread over the lot, else one storey.
   Applications and permits filed on the same lot become one box, as tall as the newest of them that states a
   height, a building permit's own height first. See [Use](#use).
 - **Street Look** (a step after the build, with your own Mapillary token): facades coloured from street
@@ -203,6 +204,8 @@ metres, closed building solids, outlines cleaned of edges under 3 mm, and stable
 - Street Look changes how buildings render, not their materials' names. Its detail meshes sit in the
   `Detail · <site>` collection with the `Context - Facade detail` material and count toward the triangle
   figure; exclude that collection (untick it in the Outliner) to leave them out of an export.
+- Development application boxes are closed boxes with a `Context - Application (<status>)` material each,
+  in the `Applications · <site>` collection; exclude that collection to leave them out of an export.
 - LiDAR roofs export as meshes, which Revit imports as DirectShapes: heavier than prisms. Exporters apply
   Roof detail (modifiers are applied by default), so keep the site under the panel's budget, or use Fitted
   or Flat roofs.
@@ -289,7 +292,13 @@ Natural Resources Canada, the Province of Ontario, OpenStreetMap or Mapillary.
   under construction can show a partly built roof.
 - Bridges and elevated rail are draped onto the ground.
 - A stream is flat at one level along its length instead of following its valley.
-- Rebuilding a site resets colours you changed on the `Context - …` materials.
+- Rebuilding a site resets colours you changed on the `Context - …` materials (the development application
+  colours stay).
+- Development application boxes are starting volumes, not the proposals' designs: the largest rectangle that fits
+  the lot, one height for the whole box. On a lot as big as a block, separate projects become one box, so a
+  finished building there can take the height of a tower proposed beside it.
+- Building permits for houses are left out, so a house going up or just finished gets a box only when it also has
+  an open application.
 - Street Look reads facades from street photos, many from 2014–2019: glass in the lower floors that mirrors
   the street, or tall glass seen in only a few photos, can read as an opaque wall; sky at a roofline can tint
   a building's top; a building changed or built since the photos gets what they show.
