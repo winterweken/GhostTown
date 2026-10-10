@@ -48,6 +48,12 @@ Each build makes one collection, `Context · <site>`:
 - **Parcels:** lot lines draped 15 cm above the ground.
 - **Aerial photo** (Toronto): the City's newest aerial photo of the site, kept inside the .blend file,
   for the ground and low roofs. See [Use](#use).
+- **Development applications** (Toronto, asked for): a see-through box on every nearby site with an open
+  development application, a building going up or one just finished, coloured by where it stands: under
+  construction, recently built, appealed, under review, approved, or Committee of Adjustment. Each box sits on its
+  lot and is as tall as the City's description or building permit says, or one storey when nothing says.
+  Applications and permits filed on the same lot become one box, as tall as the newest of them that states a
+  height, a building permit's own height first. See [Use](#use).
 - **Street Look** (a step after the build, with your own Mapillary token): facades coloured from street
   photos, with storefront, wall, glass and cap zones and window patterns, plus floor bands and mullions on
   a few buildings you pick. See [Street Look](#street-look).
@@ -107,7 +113,10 @@ executable first. Install the zip as above.
    of the site with the build. It is kept inside the .blend file. Tick **LiDAR roofs (slower)** in Ontario
    to fetch the province's LiDAR and give buildings outside the City of Toronto's 3D Massing model
    measured roofs. It is a large download, and the province's server can take a minute to answer the
-   first request.
+   first request. Tick **Development applications** to put a box on every nearby site with an open development
+   application, under construction or finished since the City's 3D Massing (City of Toronto applications and
+   building permits; houses left out). The first build of the day downloads the City's tables and can take up to
+   a minute more.
 6. Press **Build Context**. A 300 m site takes about 10 seconds and a 1000 m site about 20. With **LiDAR
    roofs** ticked a build takes a few minutes more, because the province's server is slow to send the LiDAR
    (a 300 m site in Hamilton took about 4 minutes). Cancel or Esc stops it, and Ctrl+Z removes a finished
@@ -143,6 +152,14 @@ and fitted roofs, and the triangle count for Revit follows. The LiDAR download, 
 here. Data: OpenStreetMap, Natural Resources Canada and Geospatial Ontario.*
 
 Switching never downloads anything again, and each site in a file keeps its own choices.
+
+When the site has development application boxes, **Development applications** lists them by status, each with its
+colour (change it there to restyle every box of that status). Select a box to see its applications and permits,
+their status, date and description, and **Open in City AIC** for the City's page about each application. Reshape a
+box as you like: grab, rotate, scale (the **Scale Cage** tool moves one side at a time) or edit its mesh. Building
+the site again refreshes each box's status and keeps the shape you gave it; a box whose applications all closed is
+removed, or turned grey (**Closed**) if you changed it. A box you delete stays deleted; **Bring Back Deleted Boxes**
+makes the next build put them back.
 
 ### Street Look
 
@@ -212,7 +229,7 @@ you used. The panel lists them after every build.
 
 | Source | Used for | Credit |
 |---|---|---|
-| City of Toronto open data | Buildings (3D Massing, newest yearly edition), aerial photo, ground, trees, parcels, addresses, city boundary | Contains information licensed under the Open Government Licence – Toronto |
+| City of Toronto open data | Buildings (3D Massing, newest yearly edition), aerial photo, ground, trees, parcels, addresses, city boundary, development applications, building permits | Contains information licensed under the Open Government Licence – Toronto |
 | Natural Resources Canada (HRDEM) | Terrain | Contains information licensed under the Open Government Licence – Canada |
 | Geospatial Ontario (lidar-derived surface and terrain models) | LiDAR roofs in Ontario | Contains information licensed under the Open Government Licence – Ontario |
 | OpenStreetMap | Buildings outside Toronto | © OpenStreetMap contributors (ODbL) |
@@ -232,7 +249,7 @@ you rely on against a survey.
 and the City's open data portal (`ckan0.cf.opendata.inter.prod-toronto.ca`), `datacube.services.geo.ca` and
 `overpass-api.de`, and, only with **LiDAR roofs** ticked, `ws.geoservices.lrc.gov.on.ca`, and only when you press
 the search button, Build Context or Apply Street Look. It sends what the query needs (the address you search for, or
-the location and radius you build) and nothing else. Answers are cached on your computer for 30 days. The City's 3D
+the location and radius you build) and nothing else. Answers are cached on your computer for 30 days; with **Development applications** ticked, the City's application points and its applications and building permits tables are kept for a day (about 17 MB, cleared by the next day's build) and its address points for a week. The City's 3D
 Massing model is downloaded once per yearly edition (81 MB, about 300 MB unpacked in the cache folder) and kept
 until a newer edition comes out. It lives in the cache folder (Preferences › Add-ons › Ghost Town › Cache folder,
 which shows where it is; by default

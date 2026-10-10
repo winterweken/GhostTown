@@ -171,3 +171,106 @@ def test_fitted_roofs_are_optional_but_must_be_well_formed(change):
     assert ctx.validate(doc) == []
     doc["lidar"]["fitted"].update(change)
     assert ctx.validate(doc) == ["The fitted roofs need a file name beside context.json and counts."]
+
+
+def _apps_doc(sites, date="2026-10-09"):
+    doc = ctx.finish(ctx.new({"centre": {"lat": 43.65, "lon": -79.38}, "radius_m": 150.0}, region="toronto",
+                             terrain_source="flat"))
+    doc["applications"] = sites
+    if date is not None:
+        doc["applications_date"] = date
+    return doc
+
+
+def _app_entry(number="A1", **over):
+    entry = {"number": number, "type": "OZ", "status": "Under Review", "submitted": "2024-01-01",
+             "address": "1 Main St", "description": "a 14-storey building", "source": "application",
+             "floor_area_m2": 0.0, "url": "http://app.toronto.ca/AIC/index.do?folderRsn=abc"}
+    entry.update(over)
+    return entry
+
+
+def _app_site(**over):
+    site = {"id": "app:21 1 BLD", "group": "construction", "numbers": ["21 1 BLD", "A1"], "main": "21 1 BLD",
+            "centre_m": [10.0, 5.0], "angle_deg": 12.5, "width_m": 30.0, "depth_m": 20.0, "height_m": 45.0,
+            "base_m": -0.3, "height_from": "permit: 14 storeys",
+            "applications": [_app_entry("21 1 BLD", type="Apartment Building", status="Inspection", source="permit",
+                                        description="", floor_area_m2=1200.0, url=""),
+                             _app_entry("A1")]}
+    site.update(over)
+    return site
+
+
+def test_a_doc_with_application_sites_is_valid():
+    other = _app_site(id="app:B", group="review", numbers=["B"], main="B", applications=[_app_entry("B")])
+    assert ctx.validate(_apps_doc([_app_site(), other])) == []
+    assert ctx.validate(_apps_doc([])) == []
+
+
+@pytest.mark.parametrize("change, words", [
+    ({"group": "rumoured"}, "unknown group"),
+    ({"numbers": ["A1", "A1"]}, "distinct"),
+    ({"main": "Z"}, "main application"),
+    ({"centre_m": [1.0]}, "no centre"),
+    ({"angle_deg": float("nan")}, "angle_deg"),
+    ({"width_m": 0.0}, "width_m"),
+    ({"height_from": ""}, "height is from"),
+    ({"applications": []}, "do not match"),
+    ({"id": "A1"}, "no id"),
+])
+def test_a_broken_application_site_is_named(change, words):
+    problems = ctx.validate(_apps_doc([_app_site(**change)]))
+    assert len(problems) == 1 and words in problems[0]
+
+
+@pytest.mark.parametrize("change", [{"source": "rumour"}, {"url": "https://example.com/AIC"},
+                                    {"floor_area_m2": -1.0}, {"description": None}, {"submitted": 20240101}])
+def test_a_broken_application_entry_is_refused(change):
+    site = _app_site()
+    site["applications"][1].update(change)
+    problems = ctx.validate(_apps_doc([site]))
+    assert len(problems) == 1 and "do not match" in problems[0]
+
+
+def test_two_sites_may_not_share_an_id_or_a_number():
+    a = _app_site()
+    b = _app_site(numbers=["A1", "B"], main="B", applications=[_app_entry("A1"), _app_entry("B")])
+    problems = ctx.validate(_apps_doc([a, b]))
+    assert "Application site id app:21 1 BLD is used twice." in problems
+    assert "Application A1 is in two sites." in problems
+
+
+def test_applications_need_their_day_and_must_be_a_list():
+    day = "The applications need the day they were fetched, as YYYY-MM-DD."
+    assert ctx.validate(_apps_doc([], date=None)) == [day]
+    assert ctx.validate(_apps_doc([], date="9 Oct")) == [day]
+    assert ctx.validate(_apps_doc({})) == ["The applications must be a list."]
+
+
+def test_applications_problems_checks_a_list_and_its_day_without_a_document():
+    assert ctx.applications_problems([], "2026-10-09") == []
+    assert ctx.applications_problems([_app_site()], "2026-10-09") == []
+    (problem,) = ctx.applications_problems([_app_site(group="rumoured")], "2026-10-09")
+    assert "unknown group" in problem
+    assert ctx.applications_problems([], None) == ["The applications need the day they were fetched, as YYYY-MM-DD."]
+
+
+@pytest.mark.parametrize("url, want", [
+    ("http://app.toronto.ca/AIC/index.do?folderRsn=abc", "http://app.toronto.ca/AIC/index.do?folderRsn=abc"),
+    ("https://secure.toronto.ca/x", "https://secure.toronto.ca/x"), ("https://toronto.ca/", "https://toronto.ca/"),
+    (" https://www.toronto.ca/a ", "https://www.toronto.ca/a"),
+    ("https://toronto.ca.evil.com/x", ""), ("https://eviltoronto.ca/x", ""), ("ftp://app.toronto.ca/x", ""),
+    ("javascript:alert(1)", ""), ("", ""), (None, ""), ("http://[::1", ""),
+    ("https://evil.com\\@toronto.ca/x", ""), ("https://user@toronto.ca/x", ""), ("https://toronto.ca@evil.com/", ""),
+    ("https://www.toronto.ca/a b", ""), ("https://www.toronto.ca/a\tb", ""),
+    ("https://xn--toronto-9ya.ca/", ""), ("https://torontö.ca/", ""),
+    ("HTTPS://WWW.TORONTO.CA/a", "HTTPS://WWW.TORONTO.CA/a"),
+    ("https://toronto.ca:443/x", "https://toronto.ca:443/x"), ("https://toronto.ca./x", "")])
+def test_only_links_on_toronto_ca_are_kept(url, want):
+    assert ctx.city_link(url) == want
+
+
+@pytest.mark.parametrize("url", ["https://toronto.ca:443.evil.com/x", "https://toronto.ca:abc/x",
+                                 "https://toronto.ca:99999/x"])
+def test_a_port_that_is_not_a_number_is_no_city_link(url):
+    assert ctx.city_link(url) == ""

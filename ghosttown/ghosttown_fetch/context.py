@@ -3,14 +3,21 @@
 Coordinates are local metres (x east, y north, z up) from the request centre.
 Solids: rings[0] is the outer ring, counter-clockwise; holes are clockwise;
 rings are not closed. Meshes: triangles, counter-clockwise seen from above.
+Development application sites (design/development-applications.md §4.4) come in an optional top-level "applications"
+list, with the day they were fetched as "applications_date".
 """
 import math
+import re
+import urllib.parse
 
-from . import BUILDING_KINDS, CREDITS, GROUND_KINDS, KINDS, SCHEMA, SOURCE_NAMES, TOOL
+from . import APPLICATION_GROUPS, BUILDING_KINDS, CREDITS, GROUND_KINDS, KINDS, SCHEMA, SOURCE_NAMES, TOOL
 
 _ORDER = {kind: i for i, kind in enumerate(
     GROUND_KINDS + BUILDING_KINDS + ("tree", "parcel", "parcel_on_site"))}
 _MAX_PROBLEMS = 20
+_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
+APPLICATION_KEYS = ("number", "type", "status", "submitted", "address", "description", "source", "url")
+APPLICATION_SOURCES = ("application", "permit")
 
 
 def new(request, *, region, terrain_source, ground_at_centre_m=None, cell_m=None):
@@ -89,6 +96,8 @@ def validate(doc):
         problems += _photo_problems(doc["photo"])
     if doc.get("lidar") is not None:
         problems += _lidar_problems(doc["lidar"])
+    if "applications" in doc:
+        problems += applications_problems(doc["applications"], doc.get("applications_date"))
     for el in doc["elements"]:
         problems += _element_problems(el)
         if len(problems) >= _MAX_PROBLEMS:
@@ -180,6 +189,96 @@ def _element_problems(el):
     if not (el.get("solids") or el.get("meshes") or el.get("lines")):
         p.append(f"{eid}: the element has no geometry.")
     return p
+
+
+def city_link(url):
+    """`url`, trimmed, when it is an http(s) address on toronto.ca or one of its subdomains, else "": the only
+    links the Site panel opens. A backslash, a space or other control character, a user name or a host that is not
+    ASCII is refused, since a browser may read such a URL as going somewhere else."""
+    if not isinstance(url, str):
+        return ""
+    url = url.strip()
+    if any(c == "\\" or ord(c) <= 0x20 or ord(c) == 0x7F for c in url):
+        return ""
+    try:
+        parts = urllib.parse.urlsplit(url)
+        host = (parts.hostname or "").lower()
+        parts.port  # raises ValueError for a port that is not a number: then it is no City address
+    except ValueError:
+        return ""
+    if "@" in parts.netloc or not parts.netloc.isascii():  # no user name, and the host as written is ASCII
+        return ""
+    if parts.scheme in ("http", "https") and (host == "toronto.ca" or host.endswith(".toronto.ca")):
+        return url
+    return ""
+
+
+def _text(v):
+    return isinstance(v, str) and v.strip() != ""
+
+
+def _xy(v):
+    return isinstance(v, list) and len(v) == 2 and all(_num(c) for c in v)
+
+
+def _entry_ok(a):
+    return (isinstance(a, dict) and all(isinstance(a.get(k), str) for k in APPLICATION_KEYS)
+            and _text(a["number"]) and a["source"] in APPLICATION_SOURCES
+            and _num(a.get("floor_area_m2")) and a["floor_area_m2"] >= 0
+            and (a["url"] == "" or city_link(a["url"]) == a["url"]))
+
+
+def _application_problem(site):
+    """What is wrong with one application site, as a phrase, or None."""
+    if not isinstance(site, dict):
+        return "an application site is not an object"
+    sid = site.get("id")
+    if not (_text(sid) and sid.startswith("app:") and len(sid) > 4):
+        return "an application site has no id"
+    if site.get("group") not in APPLICATION_GROUPS:
+        return f"application site {sid} has an unknown group"
+    numbers = site.get("numbers")
+    if not (isinstance(numbers, list) and numbers and all(_text(n) for n in numbers)
+            and len(set(numbers)) == len(numbers)):
+        return f"application site {sid} has no list of distinct application numbers"
+    if site.get("main") not in numbers:
+        return f"application site {sid}'s main application is not one of its numbers"
+    if not _xy(site.get("centre_m")):
+        return f"application site {sid} has no centre"
+    for key in ("angle_deg", "base_m"):
+        if not _num(site.get(key)):
+            return f"application site {sid}'s {key} is not a finite number"
+    for key in ("width_m", "depth_m", "height_m"):
+        if not (_num(site.get(key)) and site[key] > 0):
+            return f"application site {sid}'s {key} is not a positive number"
+    if not _text(site.get("height_from")):
+        return f"application site {sid} doesn't say where its height is from"
+    apps = site.get("applications")
+    if not (isinstance(apps, list) and apps and all(_entry_ok(a) for a in apps)
+            and sorted(a["number"] for a in apps) == sorted(numbers)):
+        return f"application site {sid}'s applications do not match its numbers"
+    return None
+
+
+def applications_problems(sites, date):
+    """Plain-sentence problems with an "applications" list and the day it was fetched; empty means fine."""
+    if not isinstance(sites, list):
+        return ["The applications must be a list."]
+    problems, ids, owner = [], set(), {}
+    for i, site in enumerate(sites):
+        problem = _application_problem(site)
+        if problem:
+            problems.append(problem[0].upper() + problem[1:] + ".")
+            continue
+        if site["id"] in ids:
+            problems.append(f"Application site id {site['id']} is used twice.")
+        ids.add(site["id"])
+        for number in site["numbers"]:
+            if owner.setdefault(number, i) != i:
+                problems.append(f"Application {number} is in two sites.")
+    if not (isinstance(date, str) and _DAY.fullmatch(date)):
+        problems.append("The applications need the day they were fetched, as YYYY-MM-DD.")
+    return problems
 
 
 def _num(v):

@@ -6,6 +6,8 @@ reads each building's gt_look_* custom properties, so one material renders every
 its name, and the plain colour exporters read, stay the same."""
 import bpy
 
+from .ghosttown_fetch import app_boxes
+
 PREFIX = "Context - "
 LABELS = {
     "building": "Building", "building_on_site": "Building (on site)", "building_guessed": "Building (height guessed)",
@@ -50,6 +52,53 @@ def get_material(kind):
         if look is not None:
             look.inputs["Plain Color"].default_value = rgba
     return mat
+
+
+def application_name(group):
+    """`Context - Application (<Status>)`."""
+    return f"{PREFIX}Application ({app_boxes.LABELS[group]})"
+
+
+def _linear(c):
+    """An sRGB channel (0-1) in Blender's linear colour space."""
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+
+def application_material(group):
+    """The see-through material of a development application box's status, made once with its colour (BHPlus's
+    palette); one that exists already is used as it is, so the user's restyling stays. The Site panel's swatch
+    edits the material's viewport colour, so the Principled node's Base Color follows it through drivers (plain
+    ones, no scripts), and Material Preview and renders restyle with it."""
+    name = application_name(group)
+    mat = bpy.data.materials.get(name)
+    if mat is not None:
+        return mat
+    mat = bpy.data.materials.new(name)
+    rgb = tuple(_linear(c / 255.0) for c in app_boxes.COLOURS_SRGB[group])
+    mat.diffuse_color = rgb + (app_boxes.ALPHA,)
+    mat.surface_render_method = "BLENDED"
+    mat.use_backface_culling = False
+    if mat.node_tree is not None:
+        for node in mat.node_tree.nodes:
+            if node.bl_idname == "ShaderNodeBsdfPrincipled":
+                node.inputs["Base Color"].default_value = rgb + (1.0,)
+                node.inputs["Alpha"].default_value = app_boxes.ALPHA
+                node.inputs["Roughness"].default_value = PLAIN_ROUGHNESS
+                _follow_viewport_colour(mat, node.inputs["Base Color"])
+    return mat
+
+
+def _follow_viewport_colour(mat, socket):
+    """Drive the socket's red, green and blue from the material's own diffuse_color."""
+    for channel in range(3):
+        driver = socket.driver_add("default_value", channel).driver
+        driver.type = "AVERAGE"
+        variable = driver.variables.new()
+        variable.type = "SINGLE_PROP"
+        target = variable.targets[0]
+        target.id_type = "MATERIAL"
+        target.id = mat
+        target.data_path = f"diffuse_color[{channel}]"
 
 
 def street_look_group():

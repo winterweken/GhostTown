@@ -32,3 +32,9 @@ entries below name the other recorders, and say where an answer was cut down or 
   - 866962730524181: https://www.mapillary.com/app/?pKey=866962730524181 by kevo (resized to 512 px)
   - 2945761572361391: https://www.mapillary.com/app/?pKey=2945761572361391 by to_ (resized to 512 px)
   - 475750006841564: https://www.mapillary.com/app/?pKey=475750006841564 by kevo (resized to 512 px)
+- `kingbay/applications.json.gz`, `kingbay/parcels.json.gz`: the City of Toronto's development application points
+  (`cot_geospatial11/FeatureServer/60`) and property boundaries (`cot_geospatial27/FeatureServer/36`) around King
+  St W and Bay St, recorded on 2026-10-08 for BHPlus's Build Context (its `kingbay_application.json.gz` and
+  `kingbay_parcel.json.gz`). Contains information licensed under the Open Government Licence – Toronto.
+  The City planners' contact fields (ASSIGNEDPLANNER, ASSIGNEDPLANNER2, PLANNEREMAIL, PLANNERPHONE) were
+  removed.
