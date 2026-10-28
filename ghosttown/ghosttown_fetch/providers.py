@@ -9,12 +9,12 @@ from shapely.geometry import Point
 from . import buildings, parcels, trees
 from .geom import feature_geometry, polygons, to_local
 from .net import SourceError
-from .sources import arcgis
+from .sources import arcgis, ortho
 
 
 class MunicipalProvider:
     def __init__(self, id, name, box, *, boundary=None, parcels_spec=None,
-                 buildings_spec=None, ground_specs=None, trees_specs=None):
+                 buildings_spec=None, ground_specs=None, trees_specs=None, photo_spec=None):
         self.id = id
         self.name = name
         self.source_key = id
@@ -24,6 +24,7 @@ class MunicipalProvider:
         self.buildings_spec = buildings_spec
         self.ground_specs = ground_specs or {}
         self.trees_specs = trees_specs or []
+        self.photo_spec = photo_spec
 
     def in_box(self, lat, lon):
         lat_min, lat_max, lon_min, lon_max = self.box
@@ -129,6 +130,17 @@ class MunicipalProvider:
         height_field = self.trees_specs[0].get("height_field") if self.trees_specs else None
         return trees.from_features(features, frame, terrain, source_key=self.source_key, height_field=height_field)
 
+    def fetch_photo(self, net, frame, radius_m, out_dir):
+        if self.photo_spec:
+            spec = self.photo_spec
+            url = spec["url"]
+            year = spec.get("year")
+            source_key = spec.get("source_key", self.source_key)
+            return ortho.fetch(net, url, frame, radius_m, out_dir, source_key=source_key, year=year)
+        if ortho.in_ontario(frame.lat0, frame.lon0):
+            return ortho.fetch(net, ortho.ONTARIO_IMAGERY_URL, frame, radius_m, out_dir, source_key="ontario")
+        return None
+
 
 def _windsor_height(p):
     top, grd = p.get("Bld_Ht_Top"), p.get("Bld_Ht_Grd")
@@ -173,8 +185,14 @@ WINDSOR = MunicipalProvider(
     },
     ground_specs={
         "water": [
-            {"url": "https://mappmycity.ca/arcgis/rest/services/ParksEnvironment/MapServer/6/query", "where": "1=1"},
             {"url": "https://mappmycity.ca/arcgis/rest/services/Boundaries/MapServer/2/query", "where": "1=1"},
+            {"url": "https://mappmycity.ca/arcgis/rest/services/ParksEnvironment/MapServer/6/query", "where": "1=1"},
+            {"url": "https://mappmycity.ca/arcgis/rest/services/Infrastructure/MapServer/26/query", "where": "1=1"},
+            {"url": "https://mappmycity.ca/arcgis/rest/services/ParksEnvironment/MapServer/9/query", "where": "1=1", "buffer_m": 3.0},
+        ],
+        "road": [
+            {"url": "https://mappmycity.ca/arcgis/rest/services/Transportation/MapServer/16/query", "where": "1=1", "buffer_m": 4.5},
+            {"url": "https://mappmycity.ca/arcgis/rest/services/Transportation/MapServer/7/query", "where": "1=1"},
         ],
         "green": [
             {"url": "https://mappmycity.ca/arcgis/rest/services/ParksEnvironment/MapServer/4/query", "where": "1=1"},
@@ -188,6 +206,11 @@ WINDSOR = MunicipalProvider(
         {"url": "https://mappmycity.ca/arcgis/rest/services/ParksEnvironment/MapServer/2/query", "where": "1=1"},
         {"url": "https://mappmycity.ca/arcgis/rest/services/ParksEnvironment/MapServer/3/query", "where": "1=1"},
     ],
+    photo_spec={
+        "url": "https://mappmycity.ca/arcgis/rest/services/WINDSOR_AERIAL/Windsor_2024/MapServer/export",
+        "year": 2024,
+        "source_key": "windsor",
+    },
 )
 
 
@@ -210,6 +233,17 @@ MISSISSAUGA = MunicipalProvider(
         "order_by": "FID",
         "id_fn": lambda p: f"obj{p.get('FID')}",
     },
+    ground_specs={
+        "water": [
+            {"url": "https://services6.arcgis.com/hM5ymMLbxIyWTjn2/arcgis/rest/services/Waterbody/FeatureServer/0/query", "where": "1=1"},
+        ],
+        "road": [
+            {"url": "https://services6.arcgis.com/hM5ymMLbxIyWTjn2/arcgis/rest/services/StreetCentreline/FeatureServer/0/query", "where": "1=1", "buffer_m": 4.5},
+        ],
+        "green": [
+            {"url": "https://services6.arcgis.com/hM5ymMLbxIyWTjn2/arcgis/rest/services/Park_Boundary/FeatureServer/1/query", "where": "1=1"},
+        ],
+    },
 )
 
 
@@ -224,6 +258,14 @@ MARKHAM = MunicipalProvider(
         "id_field": "OBJECTID",
         "name_fn": lambda p: f"{p.get('ADDRESS', '')} {p.get('STREET', '')}".strip() or str(p.get("OBJECTID", "")),
     },
+    ground_specs={
+        "road": [
+            {"url": "https://services3.arcgis.com/OWiFbQmr7Eu5DHn1/arcgis/rest/services/StreetRoads/FeatureServer/0/query", "where": "1=1", "buffer_m": 4.5},
+        ],
+        "green": [
+            {"url": "https://services3.arcgis.com/OWiFbQmr7Eu5DHn1/arcgis/rest/services/Park_Areas/FeatureServer/0/query", "where": "1=1"},
+        ],
+    },
 )
 
 
@@ -236,6 +278,17 @@ HAMILTON = MunicipalProvider(
         "where": "1=1",
         "out_fields": "OBJECTID",
         "id_field": "OBJECTID",
+    },
+    ground_specs={
+        "water": [
+            {"url": "https://services.arcgis.com/rYz782eMbySr2srL/arcgis/rest/services/Waterbodies/FeatureServer/1/query", "where": "1=1"},
+        ],
+        "road": [
+            {"url": "https://services.arcgis.com/rYz782eMbySr2srL/arcgis/rest/services/Street_Centreline/FeatureServer/14/query", "where": "1=1", "buffer_m": 4.5},
+        ],
+        "green": [
+            {"url": "https://services.arcgis.com/rYz782eMbySr2srL/arcgis/rest/services/Parks_OD/FeatureServer/6/query", "where": "1=1"},
+        ],
     },
 )
 

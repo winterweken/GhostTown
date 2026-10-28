@@ -183,3 +183,85 @@ def test_assemble_boundary_crossing_warning():
     assert any("outside the City of Windsor" in n["text"] for n in doc["notes"] if n["level"] == "warn")
 
 
+def test_municipal_ground_specs_cover_roads_water_green():
+    assert "road" in providers.WINDSOR.ground_specs
+    assert "water" in providers.WINDSOR.ground_specs
+    assert "green" in providers.WINDSOR.ground_specs
+    assert "sidewalk" in providers.WINDSOR.ground_specs
+
+    assert "road" in providers.MISSISSAUGA.ground_specs
+    assert "water" in providers.MISSISSAUGA.ground_specs
+    assert "green" in providers.MISSISSAUGA.ground_specs
+
+    assert "road" in providers.HAMILTON.ground_specs
+    assert "water" in providers.HAMILTON.ground_specs
+    assert "green" in providers.HAMILTON.ground_specs
+
+    assert "road" in providers.MARKHAM.ground_specs
+    assert "green" in providers.MARKHAM.ground_specs
+
+
+def test_windsor_photo_fetch(tmp_path):
+    from photo_samples import JPEG
+    prov = providers.WINDSOR
+    net = FakeNet({"windsor": JPEG})
+    res = prov.fetch_photo(net, Frame(42.317, -83.036), 150, str(tmp_path))
+    assert res is not None
+    assert res["file"] == "photo.jpg"
+    assert res["year"] == 2024
+    assert res["source"] == "windsor"
+    assert (tmp_path / "photo.jpg").read_bytes() == JPEG
+
+
+def test_mississauga_photo_fallback_ontario(tmp_path):
+    from photo_samples import JPEG
+    prov = providers.MISSISSAUGA
+    net = FakeNet({"ontario": JPEG})
+    res = prov.fetch_photo(net, Frame(43.589, -79.644), 150, str(tmp_path))
+    assert res is not None
+    assert res["file"] == "photo.jpg"
+    assert res["source"] == "ontario"
+    assert (tmp_path / "photo.jpg").read_bytes() == JPEG
+
+
+def test_assemble_windsor_with_photo_and_roads(tmp_path):
+    from photo_samples import JPEG
+    req = {
+        "centre": {"lat": 42.317, "lon": -83.036},
+        "radius_m": 150,
+        "layers": ["parcels", "roads", "water", "photo"],
+        "cache_dir": str(tmp_path / "cache"),
+        "out_dir": str(tmp_path / "out"),
+    }
+    frame = Frame(42.317, -83.036)
+    bdy = _w_poly(-300, -300, 600, frame, OBJECTID=1)
+    road_line = {
+        "type": "Feature",
+        "geometry": {
+            "type": "LineString",
+            "coordinates": [[-83.038, 42.317], [-83.034, 42.317]],
+        },
+        "properties": {"OBJECTID": 10},
+    }
+
+    def dispatch(url, data):
+        if "Boundaries" in url and "/11/" in url:
+            return page(bdy)
+        if "Transportation" in url and "/16/" in url:
+            return page(road_line)
+        if "/export?" in url:
+            return JPEG
+        return page()
+
+    net = FakeNet({
+        "windsor": dispatch,
+    })
+    doc = assemble.assemble(req, net)
+    assert doc["region"] == "windsor"
+    assert doc["photo"]["file"] == "photo.jpg"
+    assert doc["photo"]["year"] == 2024
+    assert any(n["code"] == "windsor_photo" and n["level"] == "info" for n in doc["notes"])
+    assert (tmp_path / "out" / "photo.jpg").is_file()
+
+
+

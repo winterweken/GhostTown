@@ -433,18 +433,37 @@ def assemble(request, net, *, progress=None, now=None):
         else:
             ctx.note(doc, "info", "applications", NO_APPLICATIONS)
 
-    if where == "toronto" and "photo" in layers:
-        progress("Site photo", 75)
-        try:
-            doc["photo"] = toronto_photo.fetch(net, frame, radius, request["out_dir"])
-        except SourceError as e:
-            ctx.note(doc, "warn", "city_photo", f"{e} The site has no aerial photo.")
-        except OSError as e:
-            ctx.note(doc, "warn", "city_photo", f"The aerial photo couldn't be saved ({e}). The site has no aerial photo.")
-        else:
-            ctx.add_source(doc, "toronto")
-            year = doc["photo"]["year"]
-            ctx.note(doc, "info", "city_photo", f"Aerial photo: City of Toronto, {year or 'current year'}.")
+    if "photo" in layers:
+        if where == "toronto":
+            progress("Site photo", 75)
+            try:
+                doc["photo"] = toronto_photo.fetch(net, frame, radius, request["out_dir"])
+            except SourceError as e:
+                ctx.note(doc, "warn", "city_photo", f"{e} The site has no aerial photo.")
+            except OSError as e:
+                ctx.note(doc, "warn", "city_photo", f"The aerial photo couldn't be saved ({e}). The site has no aerial photo.")
+            else:
+                ctx.add_source(doc, "toronto")
+                year = doc["photo"]["year"]
+                ctx.note(doc, "info", "city_photo", f"Aerial photo: City of Toronto, {year or 'current year'}.")
+        elif where in providers.PROVIDERS:
+            prov = providers.provider_by_id(where)
+            progress("Site photo", 75)
+            code = f"{prov.source_key}_photo"
+            try:
+                photo_doc = prov.fetch_photo(net, frame, radius, request["out_dir"])
+            except SourceError as e:
+                ctx.note(doc, "warn", code, f"{e} The site has no aerial photo.")
+            except OSError as e:
+                ctx.note(doc, "warn", code, f"The aerial photo couldn't be saved ({e}). The site has no aerial photo.")
+            else:
+                if photo_doc:
+                    doc["photo"] = photo_doc
+                    source_key = photo_doc.get("source", prov.source_key)
+                    ctx.add_source(doc, source_key)
+                    year = photo_doc.get("year")
+                    source_name = prov.name if source_key == prov.source_key else "Geospatial Ontario"
+                    ctx.note(doc, "info", code, f"Aerial photo: {source_name}{', ' + str(year) if year else ''}.")
 
     if "lidar" in layers:
         _lidar(doc, net, frame, radius, request["out_dir"], progress)
