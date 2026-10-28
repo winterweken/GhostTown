@@ -1,6 +1,7 @@
 import json
 import pytest
 
+# pyrefly: ignore[missing-import]
 from ghosttown_fetch import assemble, providers, terrain
 from ghosttown_fetch.frame import Frame
 from fakes import FakeNet
