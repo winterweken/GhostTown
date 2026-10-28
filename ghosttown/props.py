@@ -21,6 +21,9 @@ def _site_picked(self, context):
         self["roof_photo_max_m"] = float(root["roof_photo_max_m"])  # item assignment: no update loop
     if root is not None and "roof_detail" in root:
         self["roof_detail"] = 100.0 * float(root["roof_detail"])
+    if root is not None and hasattr(self, "id_data") and self.id_data is not None:
+        from . import georef
+        georef.set_scene_georef(self.id_data, root)
 
 
 def _roof_limit_changed(self, context):

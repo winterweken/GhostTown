@@ -70,3 +70,79 @@ def set_scene_units(scene):
     units.system = "METRIC"
     units.scale_length = 1.0
     units.length_unit = "METERS"
+
+
+def set_scene_georef(scene, doc_or_block):
+    """Set scene-level georeferencing on the Blender scene.
+
+    Stores standard BlenderGIS / GIS properties (SRID, latitude, longitude,
+    crs x, crs y, scale) so that BlenderGIS and other GIS tools immediately
+    recognize the scene as georeferenced to WGS84 (EPSG:4326). Also sets survey
+    grid properties if available.
+    """
+    if not hasattr(scene, "__setitem__"):
+        return
+
+    if isinstance(doc_or_block, dict) and "centre" in doc_or_block:
+        centre = doc_or_block.get("centre") or {}
+        lat = float(centre.get("lat", 0.0))
+        lon = float(centre.get("lon", 0.0))
+        survey = doc_or_block.get("survey")
+    else:
+        try:
+            lat = float(doc_or_block.get("lat", 0.0))
+            lon = float(doc_or_block.get("lon", 0.0))
+        except (TypeError, ValueError, AttributeError):
+            return
+        survey = survey_from(doc_or_block)
+
+    # Standard scene-level GIS properties (matches BlenderGIS GeoScene)
+    scene["SRID"] = "EPSG:4326"
+    scene["latitude"] = lat
+    scene["longitude"] = lon
+    scene["crs x"] = lon
+    scene["crs y"] = lat
+    scene["scale"] = 1
+
+    # Metadata for Blender's custom property UI inspector
+    rna_ui = scene.get("_RNA_UI")
+    if rna_ui is None:
+        try:
+            scene["_RNA_UI"] = {}
+            rna_ui = scene["_RNA_UI"]
+        except Exception:
+            rna_ui = None
+    if isinstance(rna_ui, dict):
+        rna_ui["SRID"] = {"description": "Map Coordinate Reference System", "default": "EPSG:4326"}
+        rna_ui["latitude"] = {"description": "Scene origin latitude", "default": 0.0, "min": -90.0, "max": 90.0}
+        rna_ui["longitude"] = {"description": "Scene origin longitude", "default": 0.0, "min": -180.0, "max": 180.0}
+        rna_ui["crs x"] = {"description": "Scene x origin in CRS space", "default": 0.0}
+        rna_ui["crs y"] = {"description": "Scene y origin in CRS space", "default": 0.0}
+        rna_ui["scale"] = {"description": "Scene scale factor", "default": 1.0}
+
+    # Survey grid properties
+    if survey:
+        scene["survey_epsg"] = survey["epsg"]
+        scene["survey_name"] = survey["name"]
+        scene["survey_easting_m"] = float(survey["easting_m"])
+        scene["survey_northing_m"] = float(survey["northing_m"])
+        scene["survey_grid_angle_deg"] = float(survey["grid_angle_deg"])
+        if survey.get("elevation_m") is not None:
+            scene["survey_elevation_m"] = float(survey["elevation_m"])
+
+    # If BlenderGIS is loaded, synchronize its wrapper
+    try:
+        import sys
+        mod = sys.modules.get("BlenderGIS-2215.geoscene")
+        if not mod:
+            for k, m in sys.modules.items():
+                if k.endswith(".geoscene") and hasattr(m, "GeoScene"):
+                    mod = m
+                    break
+        if mod and hasattr(mod, "GeoScene"):
+            geoscn = mod.GeoScene(scene)
+            geoscn.crs = "EPSG:4326"
+            geoscn.setOriginGeo(lon, lat)
+    except Exception:
+        pass
+

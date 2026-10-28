@@ -77,6 +77,13 @@ def test_georef_on_collection_and_origin_empty():
         assert block["ground_at_centre_m"] == 84.7 and block["radius_m"] == 150.0
         assert block["credits"] == "© OpenStreetMap contributors"
         assert block["true_north_deg"] == 0.0 and "A test warning." in block["notes_json"]
+    scene = bpy.context.scene
+    assert scene["SRID"] == "EPSG:4326"
+    assert abs(scene["latitude"] - 43.649667) < 1e-6
+    assert abs(scene["longitude"] - (-79.380991)) < 1e-6
+    assert abs(scene["crs x"] - (-79.380991)) < 1e-6
+    assert abs(scene["crs y"] - 43.649667) < 1e-6
+    assert scene["scale"] == 1
 
 
 def test_metric_units_and_identity_transforms():
