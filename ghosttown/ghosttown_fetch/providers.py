@@ -49,10 +49,11 @@ class MunicipalProvider:
         if not self.parcels_spec:
             return []
         spec = self.parcels_spec
+        order_by = spec.get("order_by", "OBJECTID" if spec.get("id_field") != "FID" else "FID")
         params = arcgis.radius_params(lat, lon, radius_m,
                                       out_fields=spec.get("out_fields", "*"),
                                       where=spec.get("where", "1=1"),
-                                      order_by=spec.get("order_by", "OBJECTID"))
+                                      order_by=order_by)
         return arcgis.query(net, spec["url"], params, source=self.source_key, source_name=self.name)
 
     def build_parcels(self, features, frame, terrain, radius_m):
@@ -69,10 +70,11 @@ class MunicipalProvider:
             return []
         spec = self.buildings_spec
         margin = spec.get("margin_m", 250.0)
+        order_by = spec.get("order_by", "OBJECTID" if spec.get("id_field") != "FID" else "FID")
         params = arcgis.radius_params(lat, lon, radius_m + margin,
                                       out_fields=spec.get("out_fields", "*"),
                                       where=spec.get("where", "1=1"),
-                                      order_by=spec.get("order_by", "OBJECTID"))
+                                      order_by=order_by)
         return arcgis.query(net, spec["url"], params, source=self.source_key, source_name=self.name)
 
     def build_buildings(self, features, frame, terrain, radius_m):
@@ -198,12 +200,14 @@ MISSISSAUGA = MunicipalProvider(
         "where": "1=1",
         "out_fields": "FID,CITY_PIN,GIS_AREA",
         "id_field": "CITY_PIN",
+        "order_by": "FID",
         "name_fn": lambda p: f"PIN {p.get('CITY_PIN')}" if p.get("CITY_PIN") else "",
     },
     buildings_spec={
         "url": "https://services6.arcgis.com/hM5ymMLbxIyWTjn2/arcgis/rest/services/BldgRoof/FeatureServer/0/query",
         "where": "1=1",
         "out_fields": "FID,FtType,ZArea",
+        "order_by": "FID",
         "id_fn": lambda p: f"obj{p.get('FID')}",
     },
 )
@@ -216,8 +220,9 @@ MARKHAM = MunicipalProvider(
     parcels_spec={
         "url": "https://services3.arcgis.com/OWiFbQmr7Eu5DHn1/arcgis/rest/services/Parcels/FeatureServer/0/query",
         "where": "1=1",
-        "out_fields": "OBJECTID",
+        "out_fields": "OBJECTID,ADDRESS,STREET",
         "id_field": "OBJECTID",
+        "name_fn": lambda p: f"{p.get('ADDRESS', '')} {p.get('STREET', '')}".strip() or str(p.get("OBJECTID", "")),
     },
 )
 
