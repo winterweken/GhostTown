@@ -48,7 +48,7 @@ def tree_meshes(x, y, z, height):
             {"kind": "tree", "verts": crown_verts, "faces": [list(f) for f in _FACES]}]
 
 
-def from_toronto(features, frame, terrain):
+def from_features(features, frame, terrain, *, source_key="toronto", height_field="DERIVED_HEIGHT"):
     lo, hi = HEIGHT_RANGE_M
     found = []
     for feature in features:
@@ -56,12 +56,18 @@ def from_toronto(features, frame, terrain):
         if geom is None or geom.geom_type != "Point":
             continue
         props = feature.get("properties") or {}
-        h = props.get("DERIVED_HEIGHT")
+        h = props.get(height_field) if height_field else None
         height = float(h) if isinstance(h, (int, float)) and lo <= h <= hi else DEFAULT_HEIGHT_M
         x, y = frame.to_local(geom.x, geom.y)
-        found.append((props.get("OBJECTID"), x, y, height))
+        oid = props.get("OBJECTID") or props.get("FID") or len(found) + 1
+        found.append((oid, x, y, height))
     if not found:
         return []
     zs = terrain.z(np.array([p[1] for p in found]), np.array([p[2] for p in found]))
-    return [ctx.element(f"tree:toronto:{oid}", "tree", meshes=tree_meshes(x, y, float(z), height))
+    return [ctx.element(f"tree:{source_key}:{oid}", "tree", meshes=tree_meshes(x, y, float(z), height))
             for (oid, x, y, height), z in zip(found, zs)]
+
+
+def from_toronto(features, frame, terrain):
+    return from_features(features, frame, terrain, source_key="toronto", height_field="DERIVED_HEIGHT")
+

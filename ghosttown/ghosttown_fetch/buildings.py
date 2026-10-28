@@ -221,23 +221,32 @@ def _resolve_overlaps(items, infer=True):
     return [(part, height, inferred, items[i][2]) for i in range(len(items)) for part, height, inferred in pieces[i]]
 
 
-def from_toronto(features, frame, terrain, radius_m=None):
-    """City building outlines grouped by BUILDINGID, overlaps resolved; every tier stands on the lowest
+def from_features(features, frame, terrain, radius_m=None, *, source_key="toronto",
+                  height_fn=None, id_fn=None, filter_fn=None):
+    """Building outlines grouped by building id, overlaps resolved; every tier stands on the lowest
     ground under its whole building. With `radius_m`, only buildings touching the site circle are built
     (whole), while every outline given still takes part in resolving the overlaps."""
     items, footprints = [], {}
     for feature in features:
         props = feature.get("properties") or {}
-        if props.get("SUBTYPE_DESC", "Building Outline") != "Building Outline":
+        if filter_fn and not filter_fn(props):
             continue
         geom = feature_geometry(feature)
         if geom is None:
             continue
-        bid = props.get("BUILDINGID")
-        key = str(int(bid)) if isinstance(bid, (int, float)) else f"obj{props.get('OBJECTID')}"
-        height = _count(props.get("DERIVED_HEIGHT"))
+        if id_fn:
+            key = str(id_fn(props))
+        else:
+            bid = props.get("BUILDINGID")
+            key = str(int(bid)) if isinstance(bid, (int, float)) else f"obj{props.get('OBJECTID') or props.get('FID') or len(items)}"
+
+        if height_fn:
+            height = height_fn(props)
+        else:
+            height = _count(props.get("DERIVED_HEIGHT"))
         if height is not None and height < MIN_SOLID_M:
             height = None
+
         for poly in polygons(to_local(geom, frame)):
             items.append((poly, height, key))
             footprints.setdefault(key, []).append(poly)
@@ -260,14 +269,21 @@ def from_toronto(features, frame, terrain, radius_m=None):
             if height is None:
                 kind, source, height = "building_guessed", "guessed", GUESS_M
             else:
-                kind, source = "building", ("toronto_inferred" if inferred else "toronto_derived")
+                kind, source = "building", (f"{source_key}_inferred" if inferred else f"{source_key}_derived")
             r = rings(poly)
             if r is not None:
                 solids.append(ctx.solid(kind, r, ground - SINK_M, ground + height, source, ground=ground))
         if solids:
             kind = "building_guessed" if all(s["kind"] == "building_guessed" for s in solids) else "building"
-            elements.append(ctx.element(f"toronto:building:{key}", kind, solids=solids))
+            elements.append(ctx.element(f"{source_key}:building:{key}", kind, solids=solids))
     return elements
+
+
+def from_toronto(features, frame, terrain, radius_m=None):
+    return from_features(features, frame, terrain, radius_m,
+                         source_key="toronto",
+                         filter_fn=lambda p: p.get("SUBTYPE_DESC", "Building Outline") == "Building Outline")
+
 
 
 GROUP_OVERLAP_M2 = 1.0  # massing parts overlapping by more than this are storeys of one building

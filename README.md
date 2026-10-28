@@ -29,8 +29,11 @@ Ghost Town is a free, open-source extension for Blender 5.2 and later. It is at 
 | Where the site is | Buildings | Terrain | Ground, trees, lot lines | Address search |
 |---|---|---|---|---|
 | **City of Toronto** | City 3D Massing model, newest edition: stepped parts with measured heights | NRCan elevation, 2 m grid | Roads, sidewalks, parking, rail, water, parks, trees, parcels | Yes |
+| **City of Windsor** | Municipal building outlines with measured top and ground heights | NRCan elevation, 2 m grid | Detroit River / water, parks, sidewalks, right-of-way and park trees, parcels | Type coordinates |
+| **Mississauga, Markham, Hamilton** | Municipal building footprints (Mississauga) or OpenStreetMap | NRCan elevation | Municipal property & tax parcels (lot lines) | Type coordinates |
 | **Elsewhere in Canada** | OpenStreetMap | NRCan elevation where available | Plain ground only | Not yet (type coordinates) |
 | **Rest of the world** | OpenStreetMap | Flat | Plain ground only | Not yet (type coordinates) |
+
 
 Each build makes one collection, `Context · <site>`:
 
@@ -233,10 +236,15 @@ you used. The panel lists them after every build.
 | Source | Used for | Credit |
 |---|---|---|
 | City of Toronto open data | Buildings (3D Massing, newest yearly edition), aerial photo, ground, trees, parcels, addresses, city boundary, development applications, building permits | Contains information licensed under the Open Government Licence – Toronto |
+| City of Windsor open data | Buildings (measured heights), water (Detroit River), parks, sidewalks, trees, parcels, city boundary | Contains information licensed under the Open Government Licence – City of Windsor |
+| City of Mississauga open data | Building footprints, tax and property parcels | Contains information licensed under the Open Government Licence – City of Mississauga |
+| City of Markham open data | Property assessment parcels | Contains information licensed under the Open Government Licence – City of Markham |
+| City of Hamilton open data | Assessment parcels | Contains information licensed under the Open Government Licence – City of Hamilton |
 | Natural Resources Canada (HRDEM) | Terrain | Contains information licensed under the Open Government Licence – Canada |
 | Geospatial Ontario (lidar-derived surface and terrain models) | LiDAR roofs in Ontario | Contains information licensed under the Open Government Licence – Ontario |
-| OpenStreetMap | Buildings outside Toronto | © OpenStreetMap contributors (ODbL) |
+| OpenStreetMap | Buildings where no municipal model exists | © OpenStreetMap contributors (ODbL) |
 | Mapillary | Street Look: facade colours read from street photos | Street photos © Mapillary contributors, CC BY-SA 4.0<br>Labels from Mapillary · https://www.mapillary.com |
+
 
 Street Look's photos and labels come from Mapillary:
 

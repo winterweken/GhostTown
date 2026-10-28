@@ -7,6 +7,19 @@ Ghost Town downloads open data at build time. Credit the sources you use in anyt
 - **City of Toronto** open data (buildings, aerial photos, ground, trees, parcels, addresses, development applications,
   building permits): Contains information licensed under the Open Government Licence – Toronto.
   https://open.toronto.ca/open-data-license/
+- **City of Windsor** open data (buildings, Detroit River / water, parks, sidewalks, trees, parcels, city boundary):
+  Contains information licensed under the Open Government Licence – City of Windsor.
+  https://www.citywindsor.ca/opendata
+- **City of Mississauga** open data (building footprints, property & tax parcels):
+  Contains information licensed under the Open Government Licence – City of Mississauga.
+  https://opendata.mississauga.ca/
+- **City of Markham** open data (property assessment parcels):
+  Contains information licensed under the Open Government Licence – City of Markham.
+  https://data-markham.opendata.arcgis.com/
+- **City of Hamilton** open data (assessment parcels):
+  Contains information licensed under the Open Government Licence – City of Hamilton.
+  https://open.hamilton.ca/
+
 - **Natural Resources Canada** HRDEM elevation: Contains information licensed under the Open Government Licence – Canada.
   https://open.canada.ca/en/open-government-licence-canada
 - **Geospatial Ontario** lidar-derived Digital Surface and Terrain Models: Contains information licensed under the

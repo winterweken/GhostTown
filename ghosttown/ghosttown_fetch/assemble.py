@@ -18,7 +18,7 @@ import shapely
 from shapely.geometry import Point
 
 from . import (BUILDING_KINDS, applications, buildings, construction, fitted_roofs, ground, lidar_roofs, parcels,
-               region, survey, trees)
+               providers, region, survey, trees)
 from . import context as ctx
 from . import terrain as terrain_mod
 from .frame import Frame
@@ -36,22 +36,39 @@ class NothingFetched(Exception):
 
 
 def _region(net, frame, radius):
-    if not region.near_toronto(frame.lat0, frame.lon0):
-        return "world", None
-    try:
-        boundary = region.fetch_boundary(net)
-    except SourceError as e:
-        return "world", ("warn", "region", f"{e} The site is treated as outside Toronto.")
-    except shapely.errors.GEOSException as e:
-        return "world", ("warn", "region", f"The City of Toronto boundary couldn't be read ({str(e)[:80]}). "
-                                           "The site is treated as outside Toronto.")
-    where, crosses = region.classify(boundary, frame, radius)
-    if crosses and where == "toronto":
-        return where, ("warn", "boundary", "Part of the circle is outside the City of Toronto; that part has no City data.")
-    if crosses:
-        return where, ("info", "boundary", "Part of the circle is in the City of Toronto, but City data is used only "
-                                           "for sites centred in Toronto.")
-    return where, None
+    if region.near_toronto(frame.lat0, frame.lon0):
+        try:
+            boundary = region.fetch_boundary(net)
+        except SourceError as e:
+            return "world", ("warn", "region", f"{e} The site is treated as outside Toronto.")
+        except shapely.errors.GEOSException as e:
+            return "world", ("warn", "region", f"The City of Toronto boundary couldn't be read ({str(e)[:80]}). "
+                                               "The site is treated as outside Toronto.")
+        where, crosses = region.classify(boundary, frame, radius)
+        if crosses and where == "toronto":
+            return where, ("warn", "boundary", "Part of the circle is outside the City of Toronto; that part has no City data.")
+        if crosses:
+            return where, ("info", "boundary", "Part of the circle is in the City of Toronto, but City data is used only "
+                                               "for sites centred in Toronto.")
+        return where, None
+
+    cand = providers.find_candidate_provider(frame.lat0, frame.lon0)
+    if cand:
+        try:
+            boundary = cand.fetch_boundary(net)
+        except (SourceError, shapely.errors.GEOSException):
+            boundary = None
+        if boundary is not None:
+            centre = Point(frame.lon0, frame.lat0)
+            circle = shapely.transform(Point(0.0, 0.0).buffer(radius, quad_segs=16),
+                                       lambda c: np.column_stack(frame.to_lonlat(c[:, 0], c[:, 1])))
+            if boundary.contains(centre):
+                crosses = not boundary.contains(circle)
+                note = ("warn", "boundary", f"Part of the circle is outside the {cand.name}; that part has no {cand.name} data.") if crosses else None
+                return cand.id, note
+        else:
+            return cand.id, None
+    return "world", None
 
 
 def _city_buildings(net, request, frame, radius, progress, doc):
@@ -351,6 +368,56 @@ def assemble(request, net, *, progress=None, now=None):
                 parcel_answer = found
                 doc["elements"].extend(built("city_parcels", "City parcels",
                                              lambda: parcels.from_toronto(found, frame, terrain, radius)))
+    elif where in providers.PROVIDERS:
+        prov = providers.provider_by_id(where)
+        source_key = prov.source_key
+        if "buildings" in layers and prov.buildings_spec:
+            found = attempt(f"{prov.name} buildings", 25, f"{source_key}_buildings", source_key,
+                            lambda: prov.fetch_buildings(net, lat, lon, radius))
+            if found:
+                doc["elements"].extend(built(f"{source_key}_buildings", f"{prov.name} buildings",
+                                             lambda: prov.build_buildings(found, frame, terrain, radius)))
+                ctx.note(doc, "info", f"{source_key}_buildings", f"Buildings: {prov.name}.")
+            elif "buildings" in layers:
+                endpoint = request.get("overpass_url") or osm.ENDPOINT
+                osm_found = attempt("OpenStreetMap", 25, "osm", "osm",
+                                    lambda: osm.fetch(net, lat, lon, radius, layers, endpoint=endpoint))
+                if osm_found is not None:
+                    doc["elements"].extend(built("osm", "OpenStreetMap buildings",
+                                                 lambda: buildings.from_osm(osm_found, frame, terrain)))
+        elif "buildings" in layers:
+            endpoint = request.get("overpass_url") or osm.ENDPOINT
+            found = attempt("OpenStreetMap", 25, "osm", "osm",
+                            lambda: osm.fetch(net, lat, lon, radius, layers, endpoint=endpoint))
+            if found is not None:
+                doc["elements"].extend(built("osm", "OpenStreetMap buildings",
+                                             lambda: buildings.from_osm(found, frame, terrain)))
+
+        kinds = [kind for kind, layer in KIND_LAYERS.items() if layer in layers]
+        if kinds and prov.ground_specs:
+            skipped = []
+            found = attempt(f"{prov.name} ground", 40, f"{source_key}_ground", source_key,
+                            lambda: prov.fetch_ground(net, lat, lon, radius, frame, kinds=kinds, skipped=skipped))
+            pieces = found or {}
+            if skipped:
+                shapes = (f"1 {prov.name} ground shape couldn't be read and was" if len(skipped) == 1
+                          else f"{len(skipped)} {prov.name} ground shapes couldn't be read and were")
+                ctx.note(doc, "warn", f"{source_key}_ground", f"{shapes} left out; plain ground fills the gap.")
+
+        if "trees" in layers and prov.trees_specs:
+            found = attempt(f"{prov.name} trees", 55, f"{source_key}_trees", source_key,
+                            lambda: prov.fetch_trees(net, lat, lon, radius))
+            if found:
+                doc["elements"].extend(built(f"{source_key}_trees", f"{prov.name} trees",
+                                             lambda: prov.build_trees(found, frame, terrain)))
+
+        if "parcels" in layers and prov.parcels_spec:
+            found = attempt(f"{prov.name} parcels", 65, f"{source_key}_parcels", source_key,
+                            lambda: prov.fetch_parcels(net, lat, lon, radius))
+            if found:
+                parcel_answer = found
+                doc["elements"].extend(built(f"{source_key}_parcels", f"{prov.name} parcels",
+                                             lambda: prov.build_parcels(found, frame, terrain, radius)))
     elif "buildings" in layers:
         endpoint = request.get("overpass_url") or osm.ENDPOINT
         found = attempt("OpenStreetMap", 25, "osm", "osm", lambda: osm.fetch(net, lat, lon, radius, layers, endpoint=endpoint))
