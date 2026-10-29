@@ -28,7 +28,10 @@ def test_provider_lookup_and_in_box():
 def test_windsor_building_height_computation():
     fn = providers.WINDSOR.buildings_spec["height_fn"]
     assert fn({"Bld_Ht_Top": 187.5, "Bld_Ht_Grd": 183.0}) == pytest.approx(4.5)
-    assert fn({"Bld_Ht_Top": 12.0}) == 12.0
+    assert fn({"Bld_Ht_Top": 183.0, "Bld_Ht_Grd": 183.0}) is None
+    assert fn({"Bld_Ht_Top": 180.0, "Bld_Ht_Grd": 183.0}) is None
+    assert fn({"Bld_Ht_Top": 187.5, "Bld_Ht_Grd": 187.2}) is None
+    assert fn({"Bld_Ht_Top": 12.0}) is None
     assert fn({"Bld_Ht_Top": 0.2}) is None
     assert fn({"Bld_Ht_Top": "invalid"}) is None
 
@@ -262,6 +265,19 @@ def test_assemble_windsor_with_photo_and_roads(tmp_path):
     assert doc["photo"]["year"] == 2024
     assert any(n["code"] == "windsor_photo" and n["level"] == "info" for n in doc["notes"])
     assert (tmp_path / "out" / "photo.jpg").is_file()
+
+
+def test_region_in_toronto_box_outside_toronto_uses_candidate_provider():
+    # Markham is inside TORONTO_BOX (near_toronto = True), but outside Toronto municipal boundary.
+    lat, lon = 43.856, -79.337
+    frame = Frame(lat, lon)
+    # Fake Toronto boundary centered at 43.65, -79.38 (far from Markham)
+    toronto_bdy = _w_poly(-1000, -1000, 2000, Frame(43.65, -79.38), OBJECTID=1)
+    net = FakeNet({
+        "toronto": page(toronto_bdy),
+    })
+    where, note = assemble._region(net, frame, 150)
+    assert where == "markham"
 
 
 

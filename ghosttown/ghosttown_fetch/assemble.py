@@ -36,6 +36,7 @@ class NothingFetched(Exception):
 
 
 def _region(net, frame, radius):
+    toronto_crosses = False
     if region.near_toronto(frame.lat0, frame.lon0):
         try:
             boundary = region.fetch_boundary(net)
@@ -45,12 +46,11 @@ def _region(net, frame, radius):
             return "world", ("warn", "region", f"The City of Toronto boundary couldn't be read ({str(e)[:80]}). "
                                                "The site is treated as outside Toronto.")
         where, crosses = region.classify(boundary, frame, radius)
-        if crosses and where == "toronto":
-            return where, ("warn", "boundary", "Part of the circle is outside the City of Toronto; that part has no City data.")
-        if crosses:
-            return where, ("info", "boundary", "Part of the circle is in the City of Toronto, but City data is used only "
-                                               "for sites centred in Toronto.")
-        return where, None
+        if where == "toronto":
+            if crosses:
+                return where, ("warn", "boundary", "Part of the circle is outside the City of Toronto; that part has no City data.")
+            return where, None
+        toronto_crosses = crosses
 
     cand = providers.find_candidate_provider(frame.lat0, frame.lon0)
     if cand:
@@ -68,6 +68,9 @@ def _region(net, frame, radius):
                 return cand.id, note
         else:
             return cand.id, None
+    if toronto_crosses:
+        return "world", ("info", "boundary", "Part of the circle is in the City of Toronto, but City data is used only "
+                                             "for sites centred in Toronto.")
     return "world", None
 
 

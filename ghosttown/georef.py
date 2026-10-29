@@ -121,6 +121,8 @@ def set_scene_georef(scene, doc_or_block):
         rna_ui["scale"] = {"description": "Scene scale factor", "default": 1.0}
 
     # Survey grid properties
+    survey_keys = ("survey_epsg", "survey_name", "survey_easting_m", "survey_northing_m",
+                   "survey_grid_angle_deg", "survey_elevation_m")
     if survey:
         scene["survey_epsg"] = survey["epsg"]
         scene["survey_name"] = survey["name"]
@@ -129,6 +131,12 @@ def set_scene_georef(scene, doc_or_block):
         scene["survey_grid_angle_deg"] = float(survey["grid_angle_deg"])
         if survey.get("elevation_m") is not None:
             scene["survey_elevation_m"] = float(survey["elevation_m"])
+        elif "survey_elevation_m" in scene:
+            del scene["survey_elevation_m"]
+    else:
+        for k in survey_keys:
+            if k in scene:
+                del scene[k]
 
     # If BlenderGIS is loaded, synchronize its wrapper
     try:

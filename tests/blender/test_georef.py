@@ -87,6 +87,37 @@ def test_set_scene_georef_from_collection_block():
     assert scene["survey_grid_angle_deg"] == -1.1
 
 
+def test_set_scene_georef_clears_stale_survey_elevation_and_survey_props():
+    scene = {}
+    doc1 = {
+        "centre": {"lat": 43.649667, "lon": -79.380991},
+        "survey": POINT,
+    }
+    georef.set_scene_georef(scene, doc1)
+    assert scene["survey_elevation_m"] == 84.712
+    assert scene["survey_easting_m"] == 314400.285
+
+    # Switch to site with survey that has unknown elevation (None)
+    point_without_elev = dict(POINT)
+    point_without_elev["elevation_m"] = None
+    doc2 = {
+        "centre": {"lat": 43.65, "lon": -79.38},
+        "survey": point_without_elev,
+    }
+    georef.set_scene_georef(scene, doc2)
+    assert "survey_elevation_m" not in scene
+    assert scene["survey_easting_m"] == 314400.285
+
+    # Switch to site without survey at all
+    doc3 = {
+        "centre": {"lat": 43.65, "lon": -79.38},
+    }
+    georef.set_scene_georef(scene, doc3)
+    assert "survey_easting_m" not in scene
+    assert "survey_epsg" not in scene
+    assert "survey_elevation_m" not in scene
+
+
 def test_set_scene_georef_handles_invalid_target_or_doc():
     georef.set_scene_georef(None, {})
     scene = {}

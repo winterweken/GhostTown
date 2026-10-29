@@ -151,13 +151,6 @@ def _windsor_height(p):
                 return diff
         except (ValueError, TypeError):
             pass
-    if top is not None:
-        try:
-            val = float(top)
-            if val >= 0.5:
-                return val
-        except (ValueError, TypeError):
-            pass
     return None
 
 
