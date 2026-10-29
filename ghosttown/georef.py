@@ -76,10 +76,12 @@ def set_scene_georef(scene, doc_or_block):
     """Set scene-level georeferencing on the Blender scene.
 
     Stores standard BlenderGIS / GIS properties (SRID, latitude, longitude,
-    crs x, crs y, scale) matching the model's metric coordinates. Uses the
-    projected metric CRS (e.g. EPSG:2952 for Toronto, UTM EPSG:326xx/327xx elsewhere)
-    and origin easting/northing in metres so BlenderGIS's view3dToProj converts metric
-    scene offsets accurately. Also sets survey grid properties if available.
+    crs x, crs y, scale) matching the model's metric coordinates. Uses a local
+    transverse mercator CRS centered at the site origin (+proj=tmerc +lat_0=... +lon_0=...)
+    with origin at (0, 0) so the projection grid axes match the model's true-north
+    and true-east metric frame exactly. Also sets regional survey grid properties
+    (survey_epsg, survey_name, survey_easting_m, survey_northing_m, survey_grid_angle_deg,
+    survey_elevation_m) on the scene for Revit and survey references.
     """
     if not hasattr(scene, "__setitem__"):
         return
@@ -97,28 +99,13 @@ def set_scene_georef(scene, doc_or_block):
             return
         survey = survey_from(doc_or_block)
 
-    if not survey and (lat != 0.0 or lon != 0.0):
-        try:
-            from ghosttown_fetch import survey as sv
-            survey = sv.survey_point("world", lat, lon, None)
-        except Exception:
-            survey = None
-
-    if survey and survey.get("epsg"):
-        crs = str(survey["epsg"])
-        crs_x = float(survey.get("easting_m", lon))
-        crs_y = float(survey.get("northing_m", lat))
-    else:
-        crs = "EPSG:4326"
-        crs_x = lon
-        crs_y = lat
-
-    # Standard scene-level GIS properties (matches BlenderGIS GeoScene in metric space)
-    scene["SRID"] = crs
+    # Local metric CRS aligned with model axes (+Y = True North, +X = True East, origin at site centre)
+    local_crs = f"+proj=tmerc +lat_0={lat:.8f} +lon_0={lon:.8f} +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m"
+    scene["SRID"] = local_crs
     scene["latitude"] = lat
     scene["longitude"] = lon
-    scene["crs x"] = crs_x
-    scene["crs y"] = crs_y
+    scene["crs x"] = 0.0
+    scene["crs y"] = 0.0
     scene["scale"] = 1
 
     # Metadata for Blender's custom property UI inspector
@@ -130,14 +117,14 @@ def set_scene_georef(scene, doc_or_block):
         except Exception:
             rna_ui = None
     if isinstance(rna_ui, dict):
-        rna_ui["SRID"] = {"description": "Map Coordinate Reference System", "default": crs}
+        rna_ui["SRID"] = {"description": "Map Coordinate Reference System", "default": local_crs}
         rna_ui["latitude"] = {"description": "Scene origin latitude", "default": 0.0, "min": -90.0, "max": 90.0}
         rna_ui["longitude"] = {"description": "Scene origin longitude", "default": 0.0, "min": -180.0, "max": 180.0}
         rna_ui["crs x"] = {"description": "Scene x origin in CRS space", "default": 0.0}
         rna_ui["crs y"] = {"description": "Scene y origin in CRS space", "default": 0.0}
         rna_ui["scale"] = {"description": "Scene scale factor", "default": 1.0}
 
-    # Survey grid properties
+    # Regional survey grid properties (e.g. MTM zone 10 in Toronto, UTM elsewhere)
     survey_keys = ("survey_epsg", "survey_name", "survey_easting_m", "survey_northing_m",
                    "survey_grid_angle_deg", "survey_elevation_m")
     if survey:
@@ -166,10 +153,10 @@ def set_scene_georef(scene, doc_or_block):
                     break
         if mod and hasattr(mod, "GeoScene"):
             geoscn = mod.GeoScene(scene)
-            geoscn.crs = crs
+            geoscn.crs = local_crs
             geoscn.setOriginGeo(lon, lat)
-            geoscn.crsx = crs_x
-            geoscn.crsy = crs_y
+            geoscn.crsx = 0.0
+            geoscn.crsy = 0.0
     except Exception:
         pass
 

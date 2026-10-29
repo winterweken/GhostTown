@@ -50,11 +50,13 @@ def test_set_scene_georef_from_doc():
         "survey": POINT,
     }
     georef.set_scene_georef(scene, doc)
-    assert scene["SRID"] == "EPSG:2952"
+    assert "+proj=tmerc" in scene["SRID"]
+    assert "+lat_0=43.64966700" in scene["SRID"]
+    assert "+lon_0=-79.38099100" in scene["SRID"]
     assert abs(scene["latitude"] - 43.649667) < 1e-6
     assert abs(scene["longitude"] - (-79.380991)) < 1e-6
-    assert abs(scene["crs x"] - 314400.285) < 1e-6
-    assert abs(scene["crs y"] - 4834420.675) < 1e-6
+    assert scene["crs x"] == 0.0
+    assert scene["crs y"] == 0.0
     assert scene["scale"] == 1
     assert scene["survey_epsg"] == "EPSG:2952"
     assert scene["survey_name"] == "NAD83(CSRS) / MTM zone 10"
@@ -78,11 +80,13 @@ def test_set_scene_georef_from_collection_block():
         "survey_grid_angle_deg": -1.1,
     }
     georef.set_scene_georef(scene, block)
-    assert scene["SRID"] == "EPSG:26917"
+    assert "+proj=tmerc" in scene["SRID"]
+    assert "+lat_0=42.26700000" in scene["SRID"]
+    assert "+lon_0=-82.92800000" in scene["SRID"]
     assert abs(scene["latitude"] - 42.267) < 1e-6
     assert abs(scene["longitude"] - (-82.928)) < 1e-6
-    assert scene["crs x"] == 341000.0
-    assert scene["crs y"] == 4681000.0
+    assert scene["crs x"] == 0.0
+    assert scene["crs y"] == 0.0
     assert scene["survey_epsg"] == "EPSG:26917"
     assert scene["survey_grid_angle_deg"] == -1.1
 
