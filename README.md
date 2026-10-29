@@ -22,7 +22,7 @@ between colours by kind and the aerial photo. The build is shortened here. Data:
 Natural Resources Canada (see [Data and credits](#data-and-credits)).*
 
 Ghost Town is a free, open-source extension for Blender 5.2 and later. It is at an early stage
-(version 0.5): Toronto is covered in depth, and the rest of the world gets buildings only.
+(version 0.6): Toronto, Windsor, Mississauga, Markham, and Hamilton are covered in depth with municipal open data, with georeferencing and aerial orthophotography across Lake Ontario and southern Ontario.
 
 ## What you get
 
