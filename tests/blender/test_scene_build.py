@@ -78,11 +78,11 @@ def test_georef_on_collection_and_origin_empty():
         assert block["credits"] == "© OpenStreetMap contributors"
         assert block["true_north_deg"] == 0.0 and "A test warning." in block["notes_json"]
     scene = bpy.context.scene
-    assert scene["SRID"] == "EPSG:4326"
+    assert scene["SRID"] == "EPSG:32617"
     assert abs(scene["latitude"] - 43.649667) < 1e-6
     assert abs(scene["longitude"] - (-79.380991)) < 1e-6
-    assert abs(scene["crs x"] - (-79.380991)) < 1e-6
-    assert abs(scene["crs y"] - 43.649667) < 1e-6
+    assert abs(scene["crs x"] - 630564.787) < 1e-3
+    assert abs(scene["crs y"] - 4834236.788) < 1e-3
     assert scene["scale"] == 1
 
 
