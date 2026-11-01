@@ -1,9 +1,11 @@
 import json
 import pytest
+import shapely
 
 # pyrefly: ignore[missing-import]
 from ghosttown_fetch import assemble, providers, terrain
 from ghosttown_fetch.frame import Frame
+from ghosttown_fetch.net import SourceError
 from fakes import FakeNet
 from toronto_samples import square, page
 
@@ -281,3 +283,19 @@ def test_region_in_toronto_box_outside_toronto_uses_candidate_provider():
 
 
 
+
+
+
+def _geos_error(net):
+    raise shapely.errors.GEOSException("TopologyException: found non-noded intersection")
+
+
+@pytest.mark.parametrize("broken", ["down", "unreadable"])
+def test_a_toronto_boundary_failure_still_finds_the_municipal_provider(broken, monkeypatch):
+    # Markham is inside TORONTO_BOX, so Toronto's boundary is asked for first; its failure mustn't cost Markham's data.
+    if broken == "unreadable":
+        monkeypatch.setattr("ghosttown_fetch.region.fetch_boundary", _geos_error)
+    net = FakeNet({"toronto": SourceError("City of Toronto answered HTTP 503; try again in a minute.")})
+    where, note = assemble._region(net, Frame(43.856, -79.337), 150)
+    assert where == "markham"
+    assert note[:2] == ("warn", "region") and "outside Toronto" in note[2]

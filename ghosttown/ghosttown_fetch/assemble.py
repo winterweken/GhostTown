@@ -36,21 +36,26 @@ class NothingFetched(Exception):
 
 
 def _region(net, frame, radius):
+    """The region and at most one note. Toronto's boundary failing only means the site isn't taken as
+    Toronto: a municipal provider covering the centre (Markham, Mississauga) is still looked for."""
     toronto_crosses = False
+    toronto_note = None
     if region.near_toronto(frame.lat0, frame.lon0):
+        boundary = None
         try:
             boundary = region.fetch_boundary(net)
         except SourceError as e:
-            return "world", ("warn", "region", f"{e} The site is treated as outside Toronto.")
+            toronto_note = ("warn", "region", f"{e} The site is treated as outside Toronto.")
         except shapely.errors.GEOSException as e:
-            return "world", ("warn", "region", f"The City of Toronto boundary couldn't be read ({str(e)[:80]}). "
-                                               "The site is treated as outside Toronto.")
-        where, crosses = region.classify(boundary, frame, radius)
-        if where == "toronto":
-            if crosses:
-                return where, ("warn", "boundary", "Part of the circle is outside the City of Toronto; that part has no City data.")
-            return where, None
-        toronto_crosses = crosses
+            toronto_note = ("warn", "region", f"The City of Toronto boundary couldn't be read ({str(e)[:80]}). "
+                                              "The site is treated as outside Toronto.")
+        if boundary is not None:
+            where, crosses = region.classify(boundary, frame, radius)
+            if where == "toronto":
+                if crosses:
+                    return where, ("warn", "boundary", "Part of the circle is outside the City of Toronto; that part has no City data.")
+                return where, None
+            toronto_crosses = crosses
 
     cand = providers.find_candidate_provider(frame.lat0, frame.lon0)
     if cand:
@@ -65,13 +70,13 @@ def _region(net, frame, radius):
             if boundary.contains(centre):
                 crosses = not boundary.contains(circle)
                 note = ("warn", "boundary", f"Part of the circle is outside the {cand.name}; that part has no {cand.name} data.") if crosses else None
-                return cand.id, note
+                return cand.id, note or toronto_note
         else:
-            return cand.id, None
+            return cand.id, toronto_note
     if toronto_crosses:
         return "world", ("info", "boundary", "Part of the circle is in the City of Toronto, but City data is used only "
                                              "for sites centred in Toronto.")
-    return "world", None
+    return "world", toronto_note
 
 
 def _city_buildings(net, request, frame, radius, progress, doc):
