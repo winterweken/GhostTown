@@ -56,6 +56,7 @@ def build(scene, doc, folder=None, *, keep_look=True, report=None):
     if old is not None:
         remove(old, scene)
     georef.set_scene_units(scene)
+    georef.set_scene_georef(scene, doc)
     root = bpy.data.collections.new(ROOT_PREFIX + label)
     root["ctx_root"] = True
     root["ctx_label"] = label

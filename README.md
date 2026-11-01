@@ -22,15 +22,18 @@ between colours by kind and the aerial photo. The build is shortened here. Data:
 Natural Resources Canada (see [Data and credits](#data-and-credits)).*
 
 Ghost Town is a free, open-source extension for Blender 5.2 and later. It is at an early stage
-(version 0.5): Toronto is covered in depth, and the rest of the world gets buildings only.
+(version 0.6): Toronto, Windsor, Mississauga, Markham, and Hamilton are covered in depth with municipal open data, with georeferencing and aerial orthophotography across Lake Ontario and southern Ontario.
 
 ## What you get
 
 | Where the site is | Buildings | Terrain | Ground, trees, lot lines | Address search |
 |---|---|---|---|---|
-| **City of Toronto** | City 3D Massing model, newest edition: stepped parts with measured heights | NRCan elevation, 2 m grid | Roads, sidewalks, parking, rail, water, parks, trees, parcels | Yes |
+| **City of Toronto** | City 3D Massing model, newest edition: stepped parts with measured heights | NRCan elevation, 2 m grid | Roads, sidewalks, parking, rail, water, parks, trees, parcels, aerial photo | Yes |
+| **City of Windsor** | Municipal building outlines with measured top and ground heights | NRCan elevation, 2 m grid | Roads, Detroit River & water bodies, parks, sidewalks, trees, parcels, aerial photo | Type coordinates |
+| **Mississauga, Markham, Hamilton** | Municipal building footprints (Mississauga) or OpenStreetMap | NRCan elevation | Roads, water bodies (Lake Ontario), parks, municipal parcels, aerial photo | Type coordinates |
 | **Elsewhere in Canada** | OpenStreetMap | NRCan elevation where available | Plain ground only | Not yet (type coordinates) |
 | **Rest of the world** | OpenStreetMap | Flat | Plain ground only | Not yet (type coordinates) |
+
 
 Each build makes one collection, `Context · <site>`:
 
@@ -46,7 +49,7 @@ Each build makes one collection, `Context · <site>`:
   The pieces share their edges, so there are no cracks or overlaps. Water lies flat at its shoreline.
 - **Trees:** a trunk and a low-poly crown each, sized from the City's tree heights, merged into one object.
 - **Parcels:** lot lines draped 15 cm above the ground.
-- **Aerial photo** (Toronto): the City's newest aerial photo of the site, kept inside the .blend file,
+- **Aerial photo** (Toronto, Windsor, and Ontario): The municipality's or Province's newest aerial orthophoto of the site, kept inside the .blend file,
   for the ground and low roofs. See [Use](#use).
 - **Development applications** (Toronto, when ticked): a see-through box on every nearby site with an open
   development application, a building going up or one just finished, coloured by where it stands: under
@@ -233,10 +236,15 @@ you used. The panel lists them after every build.
 | Source | Used for | Credit |
 |---|---|---|
 | City of Toronto open data | Buildings (3D Massing, newest yearly edition), aerial photo, ground, trees, parcels, addresses, city boundary, development applications, building permits | Contains information licensed under the Open Government Licence – Toronto |
+| City of Windsor open data | Buildings (measured heights), aerial orthophoto, roads, water (Detroit River, retention ponds, creeks), parks, sidewalks, trees, property parcels, city boundary | Contains information licensed under the Open Government Licence – City of Windsor |
+| City of Mississauga open data | Building footprints, roads, water bodies (Lake Ontario, creeks), parks, tax and property parcels | Contains information licensed under the Open Government Licence – City of Mississauga |
+| City of Markham open data | Roads, parks, property assessment parcels | Contains information licensed under the Open Government Licence – City of Markham |
+| City of Hamilton open data | Roads, water bodies (Hamilton Harbour, Lake Ontario), parks, assessment parcels | Contains information licensed under the Open Government Licence – City of Hamilton |
 | Natural Resources Canada (HRDEM) | Terrain | Contains information licensed under the Open Government Licence – Canada |
-| Geospatial Ontario (lidar-derived surface and terrain models) | LiDAR roofs in Ontario | Contains information licensed under the Open Government Licence – Ontario |
-| OpenStreetMap | Buildings outside Toronto | © OpenStreetMap contributors (ODbL) |
+| Geospatial Ontario | Ontario Imagery aerial orthophotography, LiDAR DTM/DSM | Contains information licensed under the Open Government Licence – Ontario |
+| OpenStreetMap | Buildings where no municipal model exists | © OpenStreetMap contributors (ODbL) |
 | Mapillary | Street Look: facade colours read from street photos | Street photos © Mapillary contributors, CC BY-SA 4.0<br>Labels from Mapillary · https://www.mapillary.com |
+
 
 Street Look's photos and labels come from Mapillary:
 

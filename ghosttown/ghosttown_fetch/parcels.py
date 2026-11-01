@@ -16,7 +16,8 @@ def _name(props):
     return f"{number} {street}" if number and street else ""
 
 
-def from_toronto(features, frame, terrain, radius_m):
+def from_features(features, frame, terrain, radius_m, *, source_key="toronto",
+                  id_field="PARCELID", name_fn=None):
     site = Point(0.0, 0.0).buffer(radius_m, quad_segs=64)
     out = []
     for feature in features:
@@ -40,6 +41,14 @@ def from_toronto(features, frame, terrain, radius_m):
                               "pts": [[round(float(x), 3), round(float(y), 3), round(float(z), 3)]
                                       for (x, y), z in zip(xy, zs)]})
         if lines:
-            pid = props.get("PARCELID") or props.get("OBJECTID")
-            out.append(ctx.element(f"toronto:parcel:{pid}", "parcel", name=_name(props), lines=lines))
+            pid = props.get(id_field) if id_field else None
+            pid = pid or props.get("OBJECTID") or props.get("FID") or len(out) + 1
+            name = name_fn(props) if name_fn else _name(props)
+            out.append(ctx.element(f"{source_key}:parcel:{pid}", "parcel", name=name, lines=lines))
     return out
+
+
+def from_toronto(features, frame, terrain, radius_m):
+    return from_features(features, frame, terrain, radius_m, source_key="toronto",
+                         id_field="PARCELID", name_fn=_name)
+
