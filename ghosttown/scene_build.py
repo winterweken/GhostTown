@@ -56,6 +56,7 @@ def build(scene, doc, folder=None, *, keep_look=True, report=None):
     if old is not None:
         remove(old, scene)
     georef.set_scene_units(scene)
+    georef.set_scene_georef(scene, doc)
     root = bpy.data.collections.new(ROOT_PREFIX + label)
     root["ctx_root"] = True
     root["ctx_label"] = label
@@ -143,10 +144,12 @@ def build(scene, doc, folder=None, *, keep_look=True, report=None):
 def remove(root, scene):
     """Delete a context collection and what Ghost Town made in it. The user's objects, duplicates and
     sub-collections are kept; anything that would be left with no parent moves to the scene collection."""
+    # A linked duplicate the user kept shares a building's mesh: take the photo off it first, so it
+    # keeps no photo slot or saved indices and the old photo has no users left. Realistic's trim comes
+    # off duplicates the same way.
     if site_use.has_photo(root):
-        # A linked duplicate the user kept shares a building's mesh: take the photo off it first, so it
-        # keeps no photo slot or saved indices and the old photo has no users left.
         site_use.apply_roofs(root, "plain")
+    if site_use.has_photo(root) or site_use.ground_choice(root) == "realistic":
         site_use.apply_ground(root, "colours")
     photo_assets = (root.get("ctx_photo_material"), root.get("ctx_photo_image"))
     made = set(json.loads(root.get("ctx_objects", "[]")))

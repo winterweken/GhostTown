@@ -4,9 +4,9 @@ import re
 import time
 
 import bpy
-from bpy.props import EnumProperty, IntProperty, StringProperty
+from bpy.props import BoolProperty, EnumProperty, IntProperty, StringProperty
 
-from . import georef, look_build, prefs, runner, scene_build, site_apps, site_photo, site_use
+from . import georef, look_build, prefs, revit_export, runner, scene_build, site_apps, site_photo, site_use
 from .ghosttown_fetch import context as ctx
 from .ghosttown_fetch import look_schema as ls
 from .ghosttown_fetch import request as rq
@@ -410,18 +410,23 @@ def _has_photo(context):
 class GHOSTTOWN_OT_use_ground(bpy.types.Operator):
     bl_idname = "ghosttown.use_ground"
     bl_label = "Ground"
-    bl_description = "Show the aerial photo, or the colours by kind, on the picked site's ground"
+    bl_description = "Show colours by kind, the aerial photo, or Realistic ground on the picked site"
     bl_options = {"REGISTER", "UNDO"}
 
     use: EnumProperty(items=(("colours", "Colours", "Colours by kind, as exported"),
-                             ("photo", "Photo", "The aerial photo")))
+                             ("photo", "Photo", "The aerial photo"),
+                             ("realistic", "Realistic", "Textured ground on a cut-out drum of earth, for renders")))
 
     @classmethod
     def poll(cls, context):
-        return _has_photo(context)
+        return site_use.picked(context) is not None and context.mode == "OBJECT"
 
     def execute(self, context):
-        site_use.apply_ground(site_use.picked(context), self.use)
+        root = site_use.picked(context)
+        if self.use == "photo" and not site_use.has_photo(root):
+            self.report({"WARNING"}, "This site has no aerial photo.")
+            return {"CANCELLED"}
+        site_use.apply_ground(root, self.use)
         return {"FINISHED"}
 
 
@@ -501,6 +506,42 @@ class GHOSTTOWN_OT_save_photo(bpy.types.Operator):
             return {"CANCELLED"}
         self.report({"INFO"}, f"Saved {os.path.basename(jpg)}. In Revit, set the image width to {width:g} m "
                               "and centre it on the origin.")
+        return {"FINISHED"}
+
+
+class GHOSTTOWN_OT_export_revit(bpy.types.Operator):
+    bl_idname = "ghosttown.export_revit"
+    bl_label = "Export for Revit…"
+    bl_description = ("Write the picked site as an OBJ for Revit: metres, Z up, Context materials, plain ground "
+                      "and roofs whatever the site shows")
+
+    filepath: StringProperty(subtype="FILE_PATH")
+    filter_glob: StringProperty(default="*.obj", options={"HIDDEN"})
+    applications: BoolProperty(name="Development applications", default=True,
+                               description="Include the site's development application boxes")
+    detail: BoolProperty(name="Street Look detail", default=False,
+                         description="Include Street Look's facade detail (heavy; mostly for renders)")
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode == "OBJECT" and site_use.picked(context) is not None
+
+    def invoke(self, context, event):
+        name = bpy.path.clean_name(site_use.picked(context).get("ctx_label") or "site") + ".obj"
+        folder = os.path.dirname(bpy.data.filepath) if bpy.data.filepath else os.path.expanduser("~")
+        self.filepath = os.path.join(folder, name)
+        context.window_manager.fileselect_add(self)
+        return {"RUNNING_MODAL"}
+
+    def execute(self, context):
+        path = bpy.path.ensure_ext(bpy.path.abspath(self.filepath), ".obj")
+        try:
+            count = revit_export.export(context, site_use.picked(context), path, self.applications, self.detail)
+        except (OSError, RuntimeError) as e:
+            self.report({"ERROR"}, f"Couldn't export ({e}).")
+            return {"CANCELLED"}
+        self.report({"INFO"}, f"Exported {count} objects to {os.path.basename(path)}. In Revit, import it "
+                              "origin to origin.")
         return {"FINISHED"}
 
 

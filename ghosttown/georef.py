@@ -70,3 +70,93 @@ def set_scene_units(scene):
     units.system = "METRIC"
     units.scale_length = 1.0
     units.length_unit = "METERS"
+
+
+def set_scene_georef(scene, doc_or_block):
+    """Set scene-level georeferencing on the Blender scene.
+
+    Stores standard BlenderGIS / GIS properties (SRID, latitude, longitude,
+    crs x, crs y, scale) matching the model's metric coordinates. Uses a local
+    transverse mercator CRS centered at the site origin (+proj=tmerc +lat_0=... +lon_0=...)
+    with origin at (0, 0) so the projection grid axes match the model's true-north
+    and true-east metric frame exactly. Also sets regional survey grid properties
+    (survey_epsg, survey_name, survey_easting_m, survey_northing_m, survey_grid_angle_deg,
+    survey_elevation_m) on the scene for Revit and survey references.
+    """
+    if not hasattr(scene, "__setitem__"):
+        return
+
+    if isinstance(doc_or_block, dict) and "centre" in doc_or_block:
+        centre = doc_or_block.get("centre") or {}
+        lat = float(centre.get("lat", 0.0))
+        lon = float(centre.get("lon", 0.0))
+        survey = doc_or_block.get("survey")
+    else:
+        try:
+            lat = float(doc_or_block.get("lat", 0.0))
+            lon = float(doc_or_block.get("lon", 0.0))
+        except (TypeError, ValueError, AttributeError):
+            return
+        survey = survey_from(doc_or_block)
+
+    # Local metric CRS aligned with model axes (+Y = True North, +X = True East, origin at site centre)
+    local_crs = f"+proj=tmerc +lat_0={lat:.8f} +lon_0={lon:.8f} +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m"
+    scene["SRID"] = local_crs
+    scene["latitude"] = lat
+    scene["longitude"] = lon
+    scene["crs x"] = 0.0
+    scene["crs y"] = 0.0
+    scene["scale"] = 1
+
+    # Metadata for Blender's custom property UI inspector
+    rna_ui = scene.get("_RNA_UI")
+    if rna_ui is None:
+        try:
+            scene["_RNA_UI"] = {}
+            rna_ui = scene["_RNA_UI"]
+        except Exception:
+            rna_ui = None
+    if isinstance(rna_ui, dict):
+        rna_ui["SRID"] = {"description": "Map Coordinate Reference System", "default": local_crs}
+        rna_ui["latitude"] = {"description": "Scene origin latitude", "default": 0.0, "min": -90.0, "max": 90.0}
+        rna_ui["longitude"] = {"description": "Scene origin longitude", "default": 0.0, "min": -180.0, "max": 180.0}
+        rna_ui["crs x"] = {"description": "Scene x origin in CRS space", "default": 0.0}
+        rna_ui["crs y"] = {"description": "Scene y origin in CRS space", "default": 0.0}
+        rna_ui["scale"] = {"description": "Scene scale factor", "default": 1.0}
+
+    # Regional survey grid properties (e.g. MTM zone 10 in Toronto, UTM elsewhere)
+    survey_keys = ("survey_epsg", "survey_name", "survey_easting_m", "survey_northing_m",
+                   "survey_grid_angle_deg", "survey_elevation_m")
+    if survey:
+        scene["survey_epsg"] = survey["epsg"]
+        scene["survey_name"] = survey["name"]
+        scene["survey_easting_m"] = float(survey["easting_m"])
+        scene["survey_northing_m"] = float(survey["northing_m"])
+        scene["survey_grid_angle_deg"] = float(survey["grid_angle_deg"])
+        if survey.get("elevation_m") is not None:
+            scene["survey_elevation_m"] = float(survey["elevation_m"])
+        elif "survey_elevation_m" in scene:
+            del scene["survey_elevation_m"]
+    else:
+        for k in survey_keys:
+            if k in scene:
+                del scene[k]
+
+    # If BlenderGIS is loaded, synchronize its wrapper
+    try:
+        import sys
+        mod = sys.modules.get("BlenderGIS-2215.geoscene")
+        if not mod:
+            for k, m in sys.modules.items():
+                if k.endswith(".geoscene") and hasattr(m, "GeoScene"):
+                    mod = m
+                    break
+        if mod and hasattr(mod, "GeoScene"):
+            geoscn = mod.GeoScene(scene)
+            geoscn.crs = local_crs
+            geoscn.setOriginGeo(lon, lat)
+            geoscn.crsx = 0.0
+            geoscn.crsy = 0.0
+    except Exception:
+        pass
+

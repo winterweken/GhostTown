@@ -5,7 +5,7 @@ This file, request.py, context.py and look_schema.py use the standard library on
 Blender add-on can import them without shapely, numpy or Pillow.
 """
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 SCHEMA = 1
 TOOL = "ghosttown " + __version__
 HOMEPAGE = "https://github.com/winterweken/GhostTown"
@@ -21,6 +21,7 @@ LAYERS = ("buildings", "terrain", "roads", "sidewalks", "parking", "rail",
 OFF_BY_DEFAULT = ("lidar", "applications")
 DEFAULT_LAYERS = tuple(layer for layer in LAYERS if layer not in OFF_BY_DEFAULT)
 RADIUS_RANGE_M = (50.0, 1000.0)
+CIRCLE_QUAD_SEGS = 64   # the ground's site circle is a polygon of 4 × this many sides, its corners on the radius
 SITE_LIMIT_M = 2000.0  # site outlines must sit within this distance of the centre
 # Development applications (design/development-applications.md §4.3): a site's group, most live first, and its words.
 APPLICATION_GROUPS = ("construction", "built", "appealed", "review", "approved", "coa")
@@ -29,7 +30,11 @@ GROUP_LABELS = {"construction": "Under construction", "built": "Recently built",
 
 SOURCE_NAMES = {"osm": "OpenStreetMap", "toronto": "City of Toronto", "nrcan": "Natural Resources Canada",
                 "ontario": "Geospatial Ontario", "mapillary": "Mapillary", "mapillary_labels": "Mapillary",
-                "toronto_tables": "City of Toronto Open Data"}
+                "toronto_tables": "City of Toronto Open Data",
+                "windsor": "City of Windsor",
+                "mississauga": "City of Mississauga",
+                "markham": "City of Markham",
+                "hamilton": "City of Hamilton"}
 CREDITS = {
     "osm": "© OpenStreetMap contributors",
     "toronto": "Contains information licensed under the Open Government Licence – Toronto",
@@ -38,5 +43,10 @@ CREDITS = {
     "ontario": "Contains information licensed under the Open Government Licence – Ontario",
     "mapillary": "Street photos © Mapillary contributors, CC BY-SA 4.0",
     "mapillary_labels": "Labels from Mapillary · https://www.mapillary.com",   # the labels are Mapillary's own data
+    "windsor": "Contains information licensed under the Open Government Licence – City of Windsor",
+    "mississauga": "Contains information licensed under the Open Government Licence – City of Mississauga",
+    "markham": "Contains information licensed under the Open Government Licence – City of Markham",
+    "hamilton": "Contains information licensed under the Open Government Licence – City of Hamilton",
 }
 LOOK_SCHEMA = 1
+

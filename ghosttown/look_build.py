@@ -13,7 +13,7 @@ from collections import Counter
 
 import bpy
 
-from . import look_detail, materials, site_use
+from . import look_detail, materials, site_realistic, site_use
 from .ghosttown_fetch import BUILDING_KINDS
 from .ghosttown_fetch import look_schema as ls
 
@@ -137,12 +137,15 @@ def make_request(root, settings, cache_dir, *, selected=(), now=None):
 
 def apply(scene, root, answer, settings=None):
     """Dress a context collection's buildings from a look.json answer and store it there; returns the
-    summary. An answer that can't be applied raises, and is not stored for a rebuild to carry over."""
+    summary. An answer that can't be applied raises, and is not stored for a rebuild to carry over. On the
+    Realistic ground the new detail is trimmed at the site's edge too."""
     _dress(root, answer)
     root[LOOK_PROP] = json.dumps(answer, ensure_ascii=False, separators=(",", ":"))
     if settings is not None:
         materials.set_street_look(look=settings.show_look, brightness=settings.look_brightness)
         set_show_detail(scene, settings.show_detail)
+    if site_use.ground_choice(root) == "realistic":
+        site_realistic.add_trim(root)
     return root[SUMMARY_PROP]
 
 

@@ -13,6 +13,7 @@ FLAT_KEY, FITTED_KEY, LIDAR_KEY = "ctx_mesh_flat", "ctx_mesh_fitted", "ctx_mesh_
 SHAPE_KEYS = {"flat": FLAT_KEY, "fitted": FITTED_KEY, "lidar": LIDAR_KEY}  # roof shape -> the mesh's ID property
 ROOF_GROUP = "roof interior"    # LiDAR roof vertices off the outline: the only ones Roof detail may move
 DETAIL_MODIFIER = "Ghost Town roof detail"
+EDGE_TRIM = "Ghost Town edge trim"   # site_realistic.TRIM: Realistic's Boolean, which must stay the last modifier
 SITE_KINDS = BUILDING_KINDS + GROUND_KINDS + ("tree", "parcel", "parcel_on_site", "facade_detail")  # exported kinds
 
 
@@ -43,19 +44,34 @@ def has_photo(root):
     return photo_material(root) is not None
 
 
+def ground_choice(root):
+    return root.get("use_ground") or "colours"
+
+
 def apply_ground(root, use):
-    """`use` is "photo" or "colours". The photo goes in an object-level slot, so each mesh keeps its
-    Context - <Kind> material underneath and switching back costs nothing."""
+    """`use` is "colours", "photo" or "realistic". The photo and the Realistic materials go in object-level
+    slots, so each mesh keeps its Context - <Kind> material underneath and switching back costs nothing.
+    Realistic also adds the earth drum and trims what crosses the site's edge; the others take both away."""
+    from . import realistic, site_realistic
     material = photo_material(root)
+    if use != "realistic":
+        site_realistic.remove_trim(root)
+        site_realistic.remove_earth(root)
     for ob in made_objects(root, GROUND_KINDS):
         if not ob.material_slots:
             continue
         slot = ob.material_slots[0]
-        if use == "photo" and material is not None:
+        if use == "realistic":
+            slot.link = "OBJECT"
+            slot.material = realistic.get_material(realistic.SURFACES[ob["ctx_kind"]])
+        elif use == "photo" and material is not None:
             slot.link = "OBJECT"
             slot.material = material
         else:
             slot.link = "DATA"
+    if use == "realistic":
+        site_realistic.make_earth(root)
+        site_realistic.add_trim(root)
     root["use_ground"] = use
 
 
@@ -171,6 +187,10 @@ def _detail(ob, ratio):
         mod.decimate_type = "COLLAPSE"
         mod.vertex_group = ROOF_GROUP
         mod.use_collapse_triangulate = True
+        for i, other in enumerate(ob.modifiers):
+            if other.name == EDGE_TRIM:
+                ob.modifiers.move(i, len(ob.modifiers) - 1)   # the Realistic edge trim stays last
+                break
     mod.ratio = ratio
 
 
@@ -209,13 +229,29 @@ def apply_roof_detail(root, ratio):
 
 def count_triangles(root, depsgraph):
     """The triangles the site exports with modifiers applied (buildings, ground, trees; parcels are
-    lines), stored on the root as ctx_triangles. Never call this while a panel draws."""
+    lines), stored on the root as ctx_triangles, counted as if the Realistic edge trim were off. The
+    passed depsgraph is used only when no object carries the trim; otherwise the trim is toggled off and
+    the scene evaluated afresh. Never call this while a panel draws."""
+    obs = made_objects(root, SITE_KINDS)
+    trims = [m for ob in obs for m in ob.modifiers if m.name == EDGE_TRIM]
+    shown = [m.show_viewport for m in trims]
     total = 0
-    for ob in made_objects(root, SITE_KINDS):
-        me = ob.evaluated_get(depsgraph).data
-        sizes = np.empty(len(me.polygons), dtype=np.int32)
-        me.polygons.foreach_get("loop_total", sizes)
-        total += int(np.clip(sizes - 2, 0, None).sum())
+    try:
+        if trims:
+            for m in trims:
+                m.show_viewport = False
+            bpy.context.view_layer.update()
+            depsgraph = bpy.context.evaluated_depsgraph_get()
+        for ob in obs:
+            me = ob.evaluated_get(depsgraph).data
+            sizes = np.empty(len(me.polygons), dtype=np.int32)
+            me.polygons.foreach_get("loop_total", sizes)
+            total += int(np.clip(sizes - 2, 0, None).sum())
+    finally:
+        for m, was in zip(trims, shown):
+            m.show_viewport = was
+        if trims:
+            bpy.context.view_layer.update()
     root["ctx_triangles"] = total
     return total
 

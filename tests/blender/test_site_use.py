@@ -116,7 +116,7 @@ def test_the_switches_wait_for_a_site_with_a_photo():
         ghosttown.unregister()
 
 
-def test_without_its_material_a_site_has_no_photo_and_the_switches_wait():
+def test_without_its_material_a_site_has_no_photo_and_the_roof_switch_waits():
     ghosttown.register()
     try:
         root, _ = photo_site()
@@ -124,7 +124,7 @@ def test_without_its_material_a_site_has_no_photo_and_the_switches_wait():
         assert site_use.has_photo(root) and bpy.ops.ghosttown.use_ground.poll() and bpy.ops.ghosttown.use_roofs.poll()
         bpy.data.materials.remove(site_use.photo_material(root))
         assert not site_use.has_photo(root) and site_use.photo_material(root) is None
-        assert not bpy.ops.ghosttown.use_ground.poll() and not bpy.ops.ghosttown.use_roofs.poll()
+        assert bpy.ops.ghosttown.use_ground.poll() and not bpy.ops.ghosttown.use_roofs.poll()  # Realistic needs no photo
         assert site_use.photo_image(root) is not None and bpy.ops.ghosttown.save_photo.poll()
         bpy.data.images.remove(site_use.photo_image(root))
         assert not bpy.ops.ghosttown.save_photo.poll()

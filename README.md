@@ -22,15 +22,18 @@ between colours by kind and the aerial photo. The build is shortened here. Data:
 Natural Resources Canada (see [Data and credits](#data-and-credits)).*
 
 Ghost Town is a free, open-source extension for Blender 5.2 and later. It is at an early stage
-(version 0.5): Toronto is covered in depth, and the rest of the world gets buildings only.
+(version 0.6): Toronto, Windsor, Mississauga, Markham, and Hamilton are covered in depth with municipal open data, with georeferencing and aerial orthophotography across Lake Ontario and southern Ontario.
 
 ## What you get
 
 | Where the site is | Buildings | Terrain | Ground, trees, lot lines | Address search |
 |---|---|---|---|---|
-| **City of Toronto** | City 3D Massing model, newest edition: stepped parts with measured heights | NRCan elevation, 2 m grid | Roads, sidewalks, parking, rail, water, parks, trees, parcels | Yes |
+| **City of Toronto** | City 3D Massing model, newest edition: stepped parts with measured heights | NRCan elevation, 2 m grid | Roads, sidewalks, parking, rail, water, parks, trees, parcels, aerial photo | Yes |
+| **City of Windsor** | Municipal building outlines with measured top and ground heights | NRCan elevation, 2 m grid | Roads, Detroit River & water bodies, parks, sidewalks, trees, parcels, aerial photo | Type coordinates |
+| **Mississauga, Markham, Hamilton** | Municipal building footprints (Mississauga) or OpenStreetMap | NRCan elevation | Roads, water bodies (Lake Ontario), parks, municipal parcels, aerial photo | Type coordinates |
 | **Elsewhere in Canada** | OpenStreetMap | NRCan elevation where available | Plain ground only | Not yet (type coordinates) |
 | **Rest of the world** | OpenStreetMap | Flat | Plain ground only | Not yet (type coordinates) |
+
 
 Each build makes one collection, `Context · <site>`:
 
@@ -46,7 +49,7 @@ Each build makes one collection, `Context · <site>`:
   The pieces share their edges, so there are no cracks or overlaps. Water lies flat at its shoreline.
 - **Trees:** a trunk and a low-poly crown each, sized from the City's tree heights, merged into one object.
 - **Parcels:** lot lines draped 15 cm above the ground.
-- **Aerial photo** (Toronto): the City's newest aerial photo of the site, kept inside the .blend file,
+- **Aerial photo** (Toronto, Windsor, and Ontario): The municipality's or Province's newest aerial orthophoto of the site, kept inside the .blend file,
   for the ground and low roofs. See [Use](#use).
 - **Development applications** (Toronto, when ticked): a see-through box on every nearby site with an open
   development application, a building going up or one just finished, coloured by where it stands: under
@@ -127,10 +130,15 @@ Building the same site again replaces what Ghost Town made and keeps anything yo
 your own objects and collections inside the context collection.
 
 The **Site** section under the panel shows one site at a time; pick it at the top. It lists the site's
-survey point, and, when the site has an aerial photo:
+survey point and its **Ground** choice:
 
-- **Ground: Colours | Photo** shows the photo on the ground, or the colours by kind.
+- **Ground: Colours | Photo | Realistic** shows the colours by kind, or the photo on the ground. Photo is
+  offered when the site has its aerial photo. Realistic gives the ground textured materials, cuts the site out
+  as a drum of earth and trims what crosses its edge, for renders.
   Shows in Material Preview, or Solid view with Color: Texture.
+
+When the site has an aerial photo:
+
 - **Roofs: Plain | Photo** puts the photo on the roofs of buildings up to a height you set (20 m to start).
   Taller buildings lean in the photo, so their roof texture would be offset.
 - **Save Site Photo…** writes the photo and a world file, for an underlay in Revit or CAD.
@@ -190,15 +198,28 @@ keep working, and no photo is stored in the .blend file.
 
 ## Taking it into Revit
 
-Ghost Town does not export. It keeps the geometry friendly to exporters and to Revit instead:
-metres, closed building solids, outlines cleaned of edges under 3 mm, and stable material names.
+Ghost Town keeps the geometry friendly to exporters and to Revit: metres, closed building solids, outlines
+cleaned of edges under 3 mm, and stable material names.
+
+**Export for Revit…** in the Site panel writes the picked site as one OBJ, ready to import origin to origin:
+metres, Z up, every piece on its `Context - …` material, the ground and roofs in their plain colours
+whatever the site shows (no photo, no Realistic earth or edge trim; the site goes back to what it showed),
+and Roof detail applied. It takes the site's visible objects, with the development application boxes
+(untick **Development applications** in the file browser to leave them out) and without Street Look's
+facade detail (tick **Street Look detail** to add it). OBJ writes the material names with underscores for
+spaces (`Context_-_Building`).
+
+To export by hand instead:
 
 - **OBJ:** set **Up Axis: Z** (Blender's default is Y).
 - **FBX:** tick **Loose Edges** if you want the parcel lines.
 - In Revit, import **origin to origin**. The material names become the layers or materials you control
   under Object Styles › Imported Objects.
 - Before exporting, set the site's **Ground** to Colours and **Roofs** to Plain, so every piece keeps its
-  `Context - …` material. While the photo shows, exporters see the photo material on those faces instead.
+  `Context - …` material. While Photo shows, exporters see the photo material on those faces instead; while
+  Realistic shows, they see its materials and the earth drum, and buildings, trees and facade detail cut at
+  the site's edge (exporters apply modifiers by default); an export that includes hidden objects also takes
+  the hidden `Earth cutter · <site>` cylinder.
 - Fitted roofs export as closed solids of a few faces each: the lightest measured roofs, and the ones to
   take into Revit.
 - Street Look changes how buildings render, not their materials' names. Its detail meshes sit in the
@@ -233,10 +254,15 @@ you used. The panel lists them after every build.
 | Source | Used for | Credit |
 |---|---|---|
 | City of Toronto open data | Buildings (3D Massing, newest yearly edition), aerial photo, ground, trees, parcels, addresses, city boundary, development applications, building permits | Contains information licensed under the Open Government Licence – Toronto |
+| City of Windsor open data | Buildings (measured heights), aerial orthophoto, roads, water (Detroit River, retention ponds, creeks), parks, sidewalks, trees, property parcels, city boundary | Contains information licensed under the Open Government Licence – City of Windsor |
+| City of Mississauga open data | Building footprints, roads, water bodies (Lake Ontario, creeks), parks, tax and property parcels | Contains information licensed under the Open Government Licence – City of Mississauga |
+| City of Markham open data | Roads, parks, property assessment parcels | Contains information licensed under the Open Government Licence – City of Markham |
+| City of Hamilton open data | Roads, water bodies (Hamilton Harbour, Lake Ontario), parks, assessment parcels | Contains information licensed under the Open Government Licence – City of Hamilton |
 | Natural Resources Canada (HRDEM) | Terrain | Contains information licensed under the Open Government Licence – Canada |
-| Geospatial Ontario (lidar-derived surface and terrain models) | LiDAR roofs in Ontario | Contains information licensed under the Open Government Licence – Ontario |
-| OpenStreetMap | Buildings outside Toronto | © OpenStreetMap contributors (ODbL) |
+| Geospatial Ontario | Ontario Imagery aerial orthophotography, LiDAR DTM/DSM | Contains information licensed under the Open Government Licence – Ontario |
+| OpenStreetMap | Buildings where no municipal model exists | © OpenStreetMap contributors (ODbL) |
 | Mapillary | Street Look: facade colours read from street photos | Street photos © Mapillary contributors, CC BY-SA 4.0<br>Labels from Mapillary · https://www.mapillary.com |
+
 
 Street Look's photos and labels come from Mapillary:
 

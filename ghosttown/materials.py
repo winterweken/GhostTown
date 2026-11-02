@@ -8,6 +8,12 @@ import bpy
 
 from .ghosttown_fetch import app_boxes
 
+
+def _linear(c):
+    """An sRGB channel (0-1) in Blender's linear colour space."""
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+
 PREFIX = "Context - "
 LABELS = {
     "building": "Building", "building_on_site": "Building (on site)", "building_guessed": "Building (height guessed)",
@@ -18,12 +24,15 @@ LABELS = {
 }
 COLOURS = {
     "building": (0.86, 0.86, 0.84), "building_on_site": (0.85, 0.20, 0.20), "building_guessed": (0.95, 0.62, 0.25),
-    "parcel": (0.55, 0.25, 0.60), "parcel_on_site": (0.75, 0.10, 0.55),
+    "parcel": (0.55, 0.25, 0.60),
     "ground": (0.80, 0.76, 0.66), "road": (0.33, 0.33, 0.35), "sidewalk": (0.70, 0.70, 0.70),
-    "parking": (0.52, 0.52, 0.55), "rail": (0.45, 0.32, 0.22), "green": (0.45, 0.66, 0.35),
-    "water": (0.30, 0.52, 0.80), "tree": (0.18, 0.42, 0.20),
+    "parking": (0.52, 0.52, 0.55), "rail": (0.45, 0.32, 0.22), "tree": (0.18, 0.42, 0.20),
     "facade_detail": (0.08, 0.085, 0.09),
 }
+# The kinds the City of Toronto's sun/shadow study has a colour for take its palette (BHPlus bh_shadows/toronto.py),
+# sRGB 0-255: PARK AND OPEN SPACE, WATER, and the subject site's outline red.
+CITY_SRGB = {"green": (143, 188, 143), "water": (173, 216, 230), "parcel_on_site": (210, 35, 42)}
+COLOURS.update({kind: tuple(_linear(c / 255.0) for c in rgb) for kind, rgb in CITY_SRGB.items()})
 
 LOOK_GROUP = "Ghost Town · Street Look"
 LOOK_NODE = "Ghost Town Street Look"
@@ -58,10 +67,6 @@ def application_name(group):
     """`Context - Application (<Status>)`."""
     return f"{PREFIX}Application ({app_boxes.LABELS[group]})"
 
-
-def _linear(c):
-    """An sRGB channel (0-1) in Blender's linear colour space."""
-    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
 
 
 def application_material(group):
