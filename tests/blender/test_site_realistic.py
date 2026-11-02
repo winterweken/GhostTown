@@ -136,3 +136,21 @@ def test_removing_the_trim_leaves_nothing_and_the_revit_count_ignores_it():
     site_realistic.remove_trim(root)
     assert site_realistic.find(root, "earth_cutter") is None
     assert not any(m.name == site_realistic.TRIM for o in root.all_objects for m in o.modifiers)
+
+
+def test_a_later_roof_detail_goes_before_the_trim():
+    root = drum_site(); site_realistic.add_trim(root)
+    ob = next(o for o in root.all_objects if o.get("ctx_id") == "osm:way:9")
+    ob[site_use.LIDAR_KEY] = ob.data                              # shows its LiDAR roof, so detail applies
+    site_use.apply_roof_detail(root, 0.5)
+    names = [m.name for m in ob.modifiers]
+    assert names == [site_use.DETAIL_MODIFIER, site_realistic.TRIM]
+
+
+def test_trimming_twice_leaves_one_trim_per_object_and_one_cutter():
+    root = drum_site()
+    assert site_realistic.add_trim(root) == 2 and site_realistic.add_trim(root) == 2
+    assert len([o for o in root.all_objects if o.get("ctx_kind") == "earth_cutter"]) == 1
+    for ob in root.all_objects:
+        assert len([m for m in ob.modifiers if m.name == site_realistic.TRIM]) <= 1
+    assert sum(1 for o in root.all_objects for m in o.modifiers if m.name == site_realistic.TRIM) == 2

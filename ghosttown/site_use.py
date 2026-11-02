@@ -13,6 +13,7 @@ FLAT_KEY, FITTED_KEY, LIDAR_KEY = "ctx_mesh_flat", "ctx_mesh_fitted", "ctx_mesh_
 SHAPE_KEYS = {"flat": FLAT_KEY, "fitted": FITTED_KEY, "lidar": LIDAR_KEY}  # roof shape -> the mesh's ID property
 ROOF_GROUP = "roof interior"    # LiDAR roof vertices off the outline: the only ones Roof detail may move
 DETAIL_MODIFIER = "Ghost Town roof detail"
+EDGE_TRIM = "Ghost Town edge trim"   # site_realistic.TRIM: Realistic's Boolean, which must stay the last modifier
 SITE_KINDS = BUILDING_KINDS + GROUND_KINDS + ("tree", "parcel", "parcel_on_site", "facade_detail")  # exported kinds
 
 
@@ -171,6 +172,10 @@ def _detail(ob, ratio):
         mod.decimate_type = "COLLAPSE"
         mod.vertex_group = ROOF_GROUP
         mod.use_collapse_triangulate = True
+        for i, other in enumerate(ob.modifiers):
+            if other.name == EDGE_TRIM:
+                ob.modifiers.move(i, len(ob.modifiers) - 1)   # the Realistic edge trim stays last
+                break
     mod.ratio = ratio
 
 
@@ -212,9 +217,8 @@ def count_triangles(root, depsgraph):
     lines), stored on the root as ctx_triangles, counted as if the Realistic edge trim were off. The
     passed depsgraph is not used: the trim is toggled and the scene evaluated afresh. Never call this
     while a panel draws."""
-    from .site_realistic import TRIM
     obs = made_objects(root, SITE_KINDS)
-    trims = [m for ob in obs for m in ob.modifiers if m.name == TRIM]
+    trims = [m for ob in obs for m in ob.modifiers if m.name == EDGE_TRIM]
     shown = [m.show_viewport for m in trims]
     if trims:
         for m in trims:
