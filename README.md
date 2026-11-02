@@ -207,7 +207,9 @@ metres, closed building solids, outlines cleaned of edges under 3 mm, and stable
   under Object Styles › Imported Objects.
 - Before exporting, set the site's **Ground** to Colours and **Roofs** to Plain, so every piece keeps its
   `Context - …` material. While Photo shows, exporters see the photo material on those faces instead; while
-  Realistic shows, they see its materials and the earth drum.
+  Realistic shows, they see its materials and the earth drum, and buildings, trees and facade detail cut at
+  the site's edge (exporters apply modifiers by default); an export that includes hidden objects also takes
+  the hidden `Earth cutter · <site>` cylinder.
 - Fitted roofs export as closed solids of a few faces each: the lightest measured roofs, and the ones to
   take into Revit.
 - Street Look changes how buildings render, not their materials' names. Its detail meshes sit in the

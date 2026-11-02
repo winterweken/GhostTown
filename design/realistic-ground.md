@@ -1,9 +1,8 @@
 # Realistic ground: a presentable look for built context, cut out as a round earth drum
 
-Status: design agreed in conversation, 2026-11-01; awaiting the user's approval of this document. Implementation
-plan to follow in `design/realistic-ground-plan.md`. Builds on Ghost Town 0.6.0 (dev at `e7e976b`, plus the City
-shadow-study colours for Green, Water and Parcel (site) in `ghosttown/materials.py`, uncommitted at the time of
-writing).
+Status: design approved by the user, 2026-11-01. Implementation plan in `design/realistic-ground-plan.md`.
+Builds on Ghost Town 0.6.0 (dev at `e7e976b`, plus the City shadow-study colours for Green, Water and Parcel
+(site) in `ghosttown/materials.py`, uncommitted at the time of writing).
 
 ## 1. Summary
 
