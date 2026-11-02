@@ -122,6 +122,28 @@ def test_only_what_crosses_the_edge_is_trimmed_to_the_circle():
             assert max(math.hypot(*(ob.matrix_world @ v.co).xy) for v in me.vertices) < r + 0.05
 
 
+def two_solid_site():
+    """drum_site plus osm:way:7: a podium and a taller tower inside it, both across the rim (overlapping shells)."""
+    doc = drum_doc(); r = doc["radius_m"]
+    ring = lambda x0, x1, y0, y1: [[r + x0, y0], [r + x1, y0], [r + x1, y1], [r + x0, y1]]
+    doc["elements"].append({"id": "osm:way:7", "kind": "building", "name": "", "meshes": [], "lines": [], "solids": [
+        {"kind": "building", "rings": [ring(-10, 30, 20, 30)], "z0": -0.3, "z1": 10.0, "height_source": "osm_levels"},
+        {"kind": "building", "rings": [ring(-5, 20, 22, 28)], "z0": -0.3, "z1": 40.0, "height_source": "osm_levels"}]})
+    return scene_build.build(bpy.context.scene, doc, folder=tempfile.mkdtemp())
+
+
+def test_a_building_of_overlapping_solids_survives_the_trim():
+    root = two_solid_site()
+    site_realistic.add_trim(root)
+    dg = bpy.context.evaluated_depsgraph_get()
+    tower = next(o for o in root.all_objects if o.get("ctx_id") == "osm:way:7")
+    box = next(o for o in root.all_objects if o.get("ctx_id") == "osm:way:9")
+    me = tower.evaluated_get(dg).data
+    assert len(me.polygons) > 0                                            # not emptied by the overlap
+    assert len(me.polygons) > len(box.evaluated_get(dg).data.polygons)      # more than one trimmed box
+    assert furthest(tower, me) < root["radius_m"] + 0.05
+
+
 def triangles(me):
     return sum(len(p.vertices) - 2 for p in me.polygons)
 
@@ -224,6 +246,17 @@ def test_trimming_twice_leaves_one_trim_per_object_and_one_cutter():
     for ob in root.all_objects:
         assert len([m for m in ob.modifiers if m.name == site_realistic.TRIM]) <= 1
     assert sum(1 for o in root.all_objects for m in o.modifiers if m.name == site_realistic.TRIM) == 2
+
+
+def test_adding_the_trim_again_repairs_stale_settings():
+    root = drum_site(); site_realistic.add_trim(root)
+    building = next(o for o in root.all_objects if o.get("ctx_id") == "osm:way:9").modifiers[site_realistic.TRIM]
+    trees = next(o for o in site_use.made_objects(root, ("tree",))).modifiers[site_realistic.TRIM]
+    building.solver, building.use_self, building.use_hole_tolerant = "MANIFOLD", False, False
+    trees.solver = "EXACT"
+    site_realistic.add_trim(root)
+    assert (building.solver, building.use_self, building.use_hole_tolerant) == ("EXACT", True, True)
+    assert trees.solver == "MANIFOLD"
 
 
 def slots(root):
