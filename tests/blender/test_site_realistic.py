@@ -164,6 +164,15 @@ def test_facade_detail_across_the_edge_is_trimmed():
     assert not detail_of(root, "osm:way:1").modifiers                # the tower's detail is inside
 
 
+def test_street_look_on_realistic_trims_its_new_detail():
+    root = drum_site()
+    site_use.apply_ground(root, "realistic")
+    for _ in range(2):                                            # applying again replaces the detail
+        look_build.apply(bpy.context.scene, root, look_across(root["radius_m"]))
+        assert_trimmed(root, detail_of(root, "osm:way:9"))
+    assert len(site_use.made_objects(root, ("earth_cutter",))) == 1
+
+
 def test_switching_roof_shape_keeps_the_trim():
     root = drum_site(); site_realistic.add_trim(root)
     ob = next(o for o in root.all_objects if o.get("ctx_id") == "osm:way:9")
