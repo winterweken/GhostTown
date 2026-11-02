@@ -7,12 +7,17 @@ import bpy
 import numpy as np
 
 from . import realistic, site_use
-from .ghosttown_fetch import GROUND_KINDS
+from .ghosttown_fetch import BUILDING_KINDS, GROUND_KINDS
 
 EARTH_DEPTH_M = 15.0     # the base sits this far below the rim's lowest point
 RING_SPACING_M = 1.0     # about one wall vertex every metre around the circle
 RIM_TOLERANCE_M = 0.5    # ground vertices this close to the radius count as the rim
 EARTH = "earth"
+CUTTER = "earth_cutter"
+TRIM = "Ghost Town edge trim"
+TRIM_KINDS = BUILDING_KINDS + ("tree", "facade_detail")   # what gets cut at the drum's wall
+TRIM_TOLERANCE_M = 0.01  # a vertex this far past the radius counts as crossing
+CUTTER_ABOVE_M = 10.0    # the cutter rises this far above the tallest object it may trim
 
 
 def ring_angles(root):
@@ -94,3 +99,83 @@ def make_earth(root):
     root.objects.link(ob)
     root["ctx_objects"] = json.dumps(json.loads(root.get("ctx_objects", "[]")) + [ob.name])
     return ob
+
+
+def _world_points(ob, me):
+    co = np.empty(len(me.vertices) * 3, dtype=np.float64)
+    me.vertices.foreach_get("co", co)
+    world = np.array(ob.matrix_world)
+    return co.reshape(-1, 3) @ world[:3, :3].T + world[:3, 3]
+
+
+def make_cutter(root):
+    """The site's hidden cutter: a closed cylinder on the earth wall's circle, from below the drum's base
+    to above the tallest object that can be trimmed. Replaces any it has."""
+    old = find(root, CUTTER)
+    if old is not None:
+        _forget(root, old)
+    angles = ring_angles(root)
+    n = len(angles)
+    r = root["radius_m"]
+    rim = rim_heights(root, angles)
+    top = float(rim.max())
+    for ob in site_use.made_objects(root, TRIM_KINDS):
+        for me in site_use.meshes_of(ob):
+            if len(me.vertices):
+                top = max(top, float(_world_points(ob, me)[:, 2].max()))
+    bottom = float(rim.min()) - EARTH_DEPTH_M - 1.0
+    x, y = r * np.cos(angles), r * np.sin(angles)
+    verts = np.concatenate([np.column_stack([x, y, np.full(n, bottom)]),
+                            np.column_stack([x, y, np.full(n, top + CUTTER_ABOVE_M)])])
+    nxt = (np.arange(n) + 1) % n
+    faces = [(i, nxt[i], n + nxt[i], n + i) for i in range(n)]
+    faces += [tuple(range(n - 1, -1, -1)), tuple(range(n, 2 * n))]
+    name = f"Earth cutter · {root['ctx_label']}"
+    me = bpy.data.meshes.new(name)
+    me.from_pydata(verts.tolist(), [], faces)
+    me.update()
+    ob = bpy.data.objects.new(name, me)
+    ob["ctx_id"] = CUTTER
+    ob["ctx_kind"] = CUTTER
+    ob.hide_viewport = ob.hide_render = True
+    root.objects.link(ob)
+    root["ctx_objects"] = json.dumps(json.loads(root.get("ctx_objects", "[]")) + [ob.name])
+    return ob
+
+
+def crosses_edge(root, ob):
+    """True when a vertex of any mesh the object can show lies past the site's circle."""
+    limit = root["radius_m"] + TRIM_TOLERANCE_M
+    return any(len(me.vertices) and (np.hypot(*_world_points(ob, me)[:, :2].T) > limit).any()
+               for me in site_use.meshes_of(ob))
+
+
+def add_trim(root):
+    """Cut what crosses the site's circle flat at the drum's wall, with a Boolean modifier that is never
+    applied and goes after the object's other modifiers. Makes the cutter if the site has none. Returns
+    how many objects carry the trim."""
+    cutter = find(root, CUTTER) or make_cutter(root)
+    count = 0
+    for ob in site_use.made_objects(root, TRIM_KINDS):
+        mod = ob.modifiers.get(TRIM)
+        if mod is None:
+            if not crosses_edge(root, ob):
+                continue
+            mod = ob.modifiers.new(TRIM, "BOOLEAN")
+            mod.operation = "INTERSECT"
+            mod.solver = "EXACT"
+            mod.use_hole_tolerant = True
+        mod.object = cutter
+        count += 1
+    return count
+
+
+def remove_trim(root):
+    """Remove every trim modifier on the site's objects and the cutter."""
+    for ob in root.all_objects:
+        mod = ob.modifiers.get(TRIM)
+        if mod is not None:
+            ob.modifiers.remove(mod)
+    old = find(root, CUTTER)
+    if old is not None:
+        _forget(root, old)

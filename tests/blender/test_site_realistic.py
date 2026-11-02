@@ -5,7 +5,7 @@ import tempfile
 import bpy
 import numpy as np
 
-from ghosttown import scene_build, site_realistic
+from ghosttown import scene_build, site_realistic, site_use
 from ghosttown.ghosttown_fetch import GROUND_KINDS
 from helpers import drum_doc, mesh_arrays, open_only_at_the_top
 
@@ -92,3 +92,47 @@ def test_removing_the_site_removes_its_earth():
     scene_build.remove(root, bpy.context.scene)
     assert not [o for o in bpy.data.objects if o.get("ctx_kind") == "earth"]
     assert not [m for m in bpy.data.meshes if m.name.startswith("Earth")]
+
+
+def test_only_what_crosses_the_edge_is_trimmed_to_the_circle():
+    root = drum_site(); r = root["radius_m"]
+    assert site_realistic.add_trim(root) == 2                     # osm:way:9 and the merged trees
+    cutter = site_realistic.find(root, "earth_cutter")
+    assert cutter.hide_viewport and cutter.hide_render
+    dg = bpy.context.evaluated_depsgraph_get()
+    for ob in root.all_objects:
+        mods = [m for m in ob.modifiers if m.name == site_realistic.TRIM]
+        crosses = ob.get("ctx_id") == "osm:way:9" or ob.get("ctx_kind") == "tree"
+        assert len(mods) == (1 if crosses else 0)
+        if mods:
+            assert mods[0].object == cutter and mods[0].operation == "INTERSECT"
+            me = ob.evaluated_get(dg).data
+            assert len(me.vertices) > 0
+            assert max(math.hypot(*(ob.matrix_world @ v.co).xy) for v in me.vertices) < r + 0.05
+
+
+def test_switching_roof_shape_keeps_the_trim():
+    root = drum_site(); site_realistic.add_trim(root)
+    ob = next(o for o in root.all_objects if o.get("ctx_id") == "osm:way:9")
+    ob.data = ob.data.copy()                                      # stands in for a roof-shape swap
+    me = ob.evaluated_get(bpy.context.evaluated_depsgraph_get()).data
+    assert max(math.hypot(*(ob.matrix_world @ v.co).xy) for v in me.vertices) < root["radius_m"] + 0.05
+
+
+def test_a_building_whose_other_roof_mesh_crosses_is_trimmed():
+    root = drum_site()
+    ob = next(o for o in root.all_objects if o.get("ctx_id") == "osm:way:1")
+    far = bpy.data.meshes.new("far"); far.from_pydata([(0, 0, 0), (400, 0, 0), (0, 1, 1)], [], [(0, 1, 2)])
+    ob[site_use.LIDAR_KEY] = far
+    site_realistic.add_trim(root)
+    assert any(m.name == site_realistic.TRIM for m in ob.modifiers)
+
+
+def test_removing_the_trim_leaves_nothing_and_the_revit_count_ignores_it():
+    root = drum_site(); dg = bpy.context.evaluated_depsgraph_get()
+    before = site_use.count_triangles(root, dg)
+    site_realistic.make_earth(root); site_realistic.add_trim(root)
+    assert site_use.count_triangles(root, bpy.context.evaluated_depsgraph_get()) == before
+    site_realistic.remove_trim(root)
+    assert site_realistic.find(root, "earth_cutter") is None
+    assert not any(m.name == site_realistic.TRIM for o in root.all_objects for m in o.modifiers)

@@ -209,13 +209,30 @@ def apply_roof_detail(root, ratio):
 
 def count_triangles(root, depsgraph):
     """The triangles the site exports with modifiers applied (buildings, ground, trees; parcels are
-    lines), stored on the root as ctx_triangles. Never call this while a panel draws."""
+    lines), stored on the root as ctx_triangles, counted as if the Realistic edge trim were off. The
+    passed depsgraph is not used: the trim is toggled and the scene evaluated afresh. Never call this
+    while a panel draws."""
+    from .site_realistic import TRIM
+    obs = made_objects(root, SITE_KINDS)
+    trims = [m for ob in obs for m in ob.modifiers if m.name == TRIM]
+    shown = [m.show_viewport for m in trims]
+    if trims:
+        for m in trims:
+            m.show_viewport = False
+        bpy.context.view_layer.update()
+        depsgraph = bpy.context.evaluated_depsgraph_get()
     total = 0
-    for ob in made_objects(root, SITE_KINDS):
-        me = ob.evaluated_get(depsgraph).data
-        sizes = np.empty(len(me.polygons), dtype=np.int32)
-        me.polygons.foreach_get("loop_total", sizes)
-        total += int(np.clip(sizes - 2, 0, None).sum())
+    try:
+        for ob in obs:
+            me = ob.evaluated_get(depsgraph).data
+            sizes = np.empty(len(me.polygons), dtype=np.int32)
+            me.polygons.foreach_get("loop_total", sizes)
+            total += int(np.clip(sizes - 2, 0, None).sum())
+    finally:
+        for m, was in zip(trims, shown):
+            m.show_viewport = was
+        if trims:
+            bpy.context.view_layer.update()
     root["ctx_triangles"] = total
     return total
 
