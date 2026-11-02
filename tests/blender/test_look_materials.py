@@ -56,6 +56,12 @@ def test_the_detail_material_has_a_stable_name():
     assert materials.get_material("facade_detail").name == "Context - Facade detail"
 
 
+def test_park_water_and_site_take_the_city_shadow_study_colours():
+    for kind, srgb in {"green": (143, 188, 143), "water": (173, 216, 230), "parcel_on_site": (210, 35, 42)}.items():
+        mat = materials.get_material(kind)
+        assert _close(mat.diffuse_color, [materials._linear(c / 255.0) for c in srgb])
+
+
 def _box_with_look(on):
     verts = [(-10, 0, 0), (10, 0, 0), (10, 10, 0), (-10, 10, 0), (-10, 0, 30), (10, 0, 30), (10, 10, 30), (-10, 10, 30)]
     faces = [(0, 3, 2, 1), (4, 5, 6, 7), (0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)]
