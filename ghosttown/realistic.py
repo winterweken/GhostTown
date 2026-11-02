@@ -13,7 +13,7 @@ EARTH = "Earth"
 SURFACES = {"ground": "Open ground", "green": "Grass", "road": "Asphalt", "sidewalk": "Concrete",
             "parking": "Lot asphalt", "rail": "Ballast", "water": "Water"}
 DEPTH_ATTRIBUTE = "gt_depth"
-EARTH_DEPTH_M = 18.0   # the earth ramp's far end, in metres below the rim
+RAMP_DEPTH_M = 18.0   # the earth ramp's far end, in metres below the rim: must cover the drum depth plus rim relief
 VIEWPORT = {"Open ground": (104, 112, 62), "Grass": (46, 90, 34), "Asphalt": (56, 57, 60),
             "Concrete": (166, 162, 154), "Lot asphalt": (78, 78, 80), "Ballast": (100, 94, 86),
             "Water": (14, 76, 84), EARTH: (120, 88, 58)}
@@ -233,7 +233,7 @@ def _earth(t):
     for scale, amount in ((0.45, 1.2), (2.0, 0.3), (8.0, 0.05)):
         depth = t.math("ADD", depth, t.math("MULTIPLY", t.math("SUBTRACT", t.noise(scale, 4, 0.55, seed=scale), 0.5),
                                             amount * 2))
-    bands = t.ramp(t.math("DIVIDE", depth, EARTH_DEPTH_M), [
+    bands = t.ramp(t.math("DIVIDE", depth, RAMP_DEPTH_M), [
         (0.0, (42, 30, 21)), (0.045, (50, 36, 24)), (0.065, (112, 80, 52)), (0.30, (126, 92, 60)),
         (0.38, (150, 120, 86)), (1.0, (186, 162, 128))])
     strata = t.noise(1.0, 3, 0.5, seed=7, vec=t.stretch(0.15, 0.15, 2.5))

@@ -35,3 +35,9 @@ def test_water_is_glossy_and_viewport_colours_are_not_the_plain_ones():
     assert bsdf.inputs["Roughness"].default_value <= 0.1
     for surface in ALL:
         assert tuple(realistic.get_material(surface).diffuse_color)[3] == 1.0
+
+
+def test_the_earth_reads_depth_from_the_geometry_attribute():
+    nodes = realistic.get_material(realistic.EARTH).node_tree.nodes
+    assert any(n.bl_idname == "ShaderNodeAttribute" and n.attribute_type == "GEOMETRY"
+               and n.attribute_name == realistic.DEPTH_ATTRIBUTE for n in nodes)

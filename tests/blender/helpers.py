@@ -190,3 +190,35 @@ def fitted_doc(folder, address=None, photo=False, dense=False):
                 name="fitted_roofs.npz")
     doc["lidar"]["fitted"] = dict(FITTED)
     return doc
+
+
+def open_only_at_the_top(verts, faces):
+    """Every edge is shared by two faces except one closed loop of boundary edges, and that loop is the
+    mesh's highest vertex ring: each of its vertices is the top of its wall column."""
+    uses = {}
+    for f in faces:
+        for i in range(len(f)):
+            edge = frozenset((f[i], f[(i + 1) % len(f)]))
+            uses[edge] = uses.get(edge, 0) + 1
+    if any(count > 2 for count in uses.values()):
+        return False
+    boundary = [tuple(e) for e, count in uses.items() if count == 1]
+    around = {}
+    for a, b in boundary:
+        around.setdefault(a, []).append(b)
+        around.setdefault(b, []).append(a)
+    if not boundary or any(len(n) != 2 for n in around.values()):
+        return False
+    seen, stack = set(), [boundary[0][0]]
+    while stack:
+        v = stack.pop()
+        if v not in seen:
+            seen.add(v)
+            stack.extend(around[v])
+    if seen != set(around):
+        return False                                   # more than one loop
+    top = {}
+    for x, y, z in verts:
+        key = (round(x, 3), round(y, 3))
+        top[key] = max(top.get(key, -math.inf), z)
+    return all(verts[v][2] >= top[(round(verts[v][0], 3), round(verts[v][1], 3))] - 1e-6 for v in around)
