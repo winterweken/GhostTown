@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import shutil
 
@@ -13,15 +14,51 @@ def load_fixture(name):
         return json.load(f)
 
 
+def add_photo(doc, folder):
+    """`doc` with a 128 px photo covering ±150 m, its file copied into `folder` beside it."""
+    shutil.copy(PHOTO, os.path.join(folder, "photo.jpg"))
+    doc["photo"] = {"file": "photo.jpg", "year": 2025, "width_px": 128, "height_px": 128,
+                    "bounds_m": [-150.0, -150.0, 150.0, 150.0], "source": "toronto"}
+    return doc
+
+
 def photo_doc(folder, address=None):
     """The mini context with a 128 px photo covering ±150 m, copied into `folder` beside it."""
     doc = load_fixture("mini_context.json")
     if address is not None:
         doc["address"] = address
-    shutil.copy(PHOTO, os.path.join(folder, "photo.jpg"))
-    doc["photo"] = {"file": "photo.jpg", "year": 2025, "width_px": 128, "height_px": 128,
-                    "bounds_m": [-150.0, -150.0, 150.0, 150.0], "source": "toronto"}
-    return doc
+    return add_photo(doc, folder)
+
+
+def drum_doc(radius=150.0, slope=0.02, photo_folder=None):
+    """The mini context on a sloping round site: three ground pieces tile the circle on the plane
+    z = slope * x (ground 0-240 degrees, green 240-300, water 300-360, fans of 1 degree segments from the
+    centre to the rim), the mini buildings plus osm:way:9 crossing the rim, and the mini tree plus one
+    straddling it. With `photo_folder`, the photo too."""
+    doc = load_fixture("mini_context.json")
+    doc["radius_m"] = radius
+
+    def fan(kind, start, end):
+        verts = [[0.0, 0.0, 0.0]]
+        for deg in range(start, end + 1):
+            x, y = radius * math.cos(math.radians(deg)), radius * math.sin(math.radians(deg))
+            verts.append([x, y, slope * x])
+        faces = [[0, i, i + 1] for i in range(1, len(verts) - 1)]
+        return {"id": "ground:" + kind, "kind": kind, "name": "", "solids": [], "lines": [],
+                "meshes": [{"kind": kind, "verts": verts, "faces": faces}]}
+
+    road = doc["elements"][0]
+    assert road["id"] == "ground:road"
+    ground = [fan("ground", 0, 240), fan("green", 240, 300), fan("water", 300, 360)]
+    rim_tree = {"id": "tree:osm:9", "kind": "tree", "name": "", "solids": [], "lines": [], "meshes": [
+        {"kind": "tree", "verts": [[radius, 0, slope * radius], [radius + 1, 0, slope * radius],
+                                   [radius, 1, slope * radius], [radius, 0, slope * radius + 3]],
+         "faces": [[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]]}]}
+    across = {"id": "osm:way:9", "kind": "building", "name": "", "meshes": [], "lines": [], "solids": [
+        {"kind": "building", "rings": [[[radius - 10, -5], [radius + 30, -5], [radius + 30, 5], [radius - 10, 5]]],
+         "z0": -0.3, "z1": 20.0, "height_source": "osm_levels"}]}
+    doc["elements"] = ground + [e for e in doc["elements"] if e is not road] + [across, rim_tree]
+    return doc if photo_folder is None else add_photo(doc, photo_folder)
 
 
 def mesh_arrays(ob):
