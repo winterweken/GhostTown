@@ -41,3 +41,15 @@ def test_the_earth_reads_depth_from_the_geometry_attribute():
     nodes = realistic.get_material(realistic.EARTH).node_tree.nodes
     assert any(n.bl_idname == "ShaderNodeAttribute" and n.attribute_type == "GEOMETRY"
                and n.attribute_name == realistic.DEPTH_ATTRIBUTE for n in nodes)
+
+
+def test_the_frames_the_bsdf_and_the_output_stand_left_to_right_without_overlapping():
+    for surface in ALL:
+        nodes = realistic.get_material(surface).node_tree.nodes
+        groups = [[n for n in nodes if n.parent is not None and n.parent.label == label] for label in realistic.FRAMES]
+        groups += [[next(n for n in nodes if n.bl_idname == idname)]
+                   for idname in ("ShaderNodeBsdfPrincipled", "ShaderNodeOutputMaterial")]
+        assert all(groups)
+        spans = [(min(n.location_absolute.x for n in g), max(n.location_absolute.x + n.width for n in g))
+                 for g in groups]
+        assert all(right < left for (_, right), (left, _) in zip(spans, spans[1:])), (surface, spans)

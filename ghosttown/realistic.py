@@ -17,7 +17,8 @@ RAMP_DEPTH_M = 18.0   # the earth ramp's far end, in metres below the rim: must 
 VIEWPORT = {"Open ground": (104, 112, 62), "Grass": (46, 90, 34), "Asphalt": (56, 57, 60),
             "Concrete": (166, 162, 154), "Lot asphalt": (78, 78, 80), "Ballast": (100, 94, 86),
             "Water": (14, 76, 84), EARTH: (120, 88, 58)}
-FRAMES = (("Pattern", -1500), ("Colour", -820), ("Bump", -440))
+FRAMES = ("Pattern", "Colour", "Bump")   # left to right, then the Principled BSDF and the output
+FRAME_GAP = 100                          # space between neighbouring frames and nodes, left to right
 
 
 def _rgb(srgb):
@@ -30,11 +31,10 @@ class _Tree:
 
     def __init__(self, mat):
         self.nodes, self.links = mat.node_tree.nodes, mat.node_tree.links
-        self.frames, self.count = {}, dict.fromkeys(dict(FRAMES), 0)
-        for label, x in FRAMES:
+        self.frames, self.count = {}, dict.fromkeys(FRAMES, 0)
+        for label in FRAMES:
             frame = self.nodes.new("NodeFrame")
             frame.name = frame.label = label
-            frame.location = (x, 300)
             self.frames[label] = frame
         self.bsdf = next(n for n in self.nodes if n.bl_idname == "ShaderNodeBsdfPrincipled")
         self.pos = self.add("ShaderNodeNewGeometry", "Pattern").outputs["Position"]
@@ -145,6 +145,17 @@ class _Tree:
     def finish(self, colour, roughness, normal=None, **inputs):
         for name, v in (("Base Color", colour), ("Roughness", roughness), ("Normal", normal), *inputs.items()):
             self.feed(self.bsdf.inputs[name], v)
+
+    def lay_out(self):
+        """Each frame starts where the one before it ends, then the Principled BSDF and the output follow."""
+        x = 0.0
+        for label in FRAMES:
+            frame = self.frames[label]
+            frame.location = (x, 300)
+            x += max((n.location.x + n.width for n in self.nodes if n.parent == frame), default=0.0) + FRAME_GAP
+        output = next(n for n in self.nodes if n.bl_idname == "ShaderNodeOutputMaterial")
+        self.bsdf.location = (x, 300)
+        output.location = (x + self.bsdf.width + FRAME_GAP, 300)
 
 
 def _open_ground(t):
@@ -266,6 +277,8 @@ def get_material(surface):
     mat = bpy.data.materials.get(name)
     if mat is None:
         mat = bpy.data.materials.new(name)
-        BUILDERS[surface](_Tree(mat))
+        tree = _Tree(mat)
+        BUILDERS[surface](tree)
+        tree.lay_out()
         mat.diffuse_color = _rgb(VIEWPORT[surface])
     return mat

@@ -9,7 +9,7 @@ import numpy as np
 
 import ghosttown
 from ghosttown import look_build, materials, realistic, scene_build, site_realistic, site_use
-from ghosttown.ghosttown_fetch import GROUND_KINDS
+from ghosttown.ghosttown_fetch import CIRCLE_QUAD_SEGS, GROUND_KINDS
 from helpers import drum_doc, fetch_tree_meshes, load_fixture, mesh_arrays, open_only_at_the_top
 
 
@@ -37,6 +37,14 @@ def test_the_base_is_flat_fifteen_metres_below_the_lowest_rim_point():
     bottom = min(z for *_, z in verts)
     assert abs(bottom - (-0.02 * root["radius_m"] - 15.0)) < 0.05
     assert max(z for *_, z in verts if z < bottom + 1.0) - bottom < 1e-4          # the base ring is flat
+
+
+def test_the_wall_and_the_cutter_stand_on_the_grounds_inscribed_circle():
+    root = drum_site()
+    inscribed = root["radius_m"] * math.cos(math.pi / (4 * CIRCLE_QUAD_SEGS))    # the ground's rim polygon
+    for ob in (site_realistic.make_earth(root), site_realistic.make_cutter(root)):
+        verts, _ = mesh_arrays(ob)
+        assert np.allclose([math.hypot(x, y) for x, y, _ in verts], inscribed)
 
 
 def test_one_earth_per_site_recorded_for_removal():

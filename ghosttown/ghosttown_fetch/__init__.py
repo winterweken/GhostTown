@@ -21,6 +21,7 @@ LAYERS = ("buildings", "terrain", "roads", "sidewalks", "parking", "rail",
 OFF_BY_DEFAULT = ("lidar", "applications")
 DEFAULT_LAYERS = tuple(layer for layer in LAYERS if layer not in OFF_BY_DEFAULT)
 RADIUS_RANGE_M = (50.0, 1000.0)
+CIRCLE_QUAD_SEGS = 64   # the ground's site circle is a polygon of 4 × this many sides, its corners on the radius
 SITE_LIMIT_M = 2000.0  # site outlines must sit within this distance of the centre
 # Development applications (design/development-applications.md §4.3): a site's group, most live first, and its words.
 APPLICATION_GROUPS = ("construction", "built", "appealed", "review", "approved", "coa")

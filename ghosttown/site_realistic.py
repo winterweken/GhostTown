@@ -7,7 +7,7 @@ import bpy
 import numpy as np
 
 from . import realistic, site_use
-from .ghosttown_fetch import BUILDING_KINDS, GROUND_KINDS
+from .ghosttown_fetch import BUILDING_KINDS, CIRCLE_QUAD_SEGS, GROUND_KINDS
 
 EARTH_DEPTH_M = 15.0     # the base sits this far below the rim's lowest point
 RING_SPACING_M = 1.0     # about one wall vertex every metre around the circle
@@ -26,6 +26,12 @@ def ring_angles(root):
     trims buildings at the drum uses the same ones."""
     n = max(64, math.ceil(2 * math.pi * root["radius_m"] / RING_SPACING_M))
     return np.arange(n) * (2 * math.pi / n)
+
+
+def wall_radius(root):
+    """The radius of the earth wall and the cutter: the inscribed radius of the ground's site polygon, so the
+    ground's rim overhangs the wall a little rather than leaving a slit, and trims land on the wall."""
+    return root["radius_m"] * math.cos(math.pi / (4 * CIRCLE_QUAD_SEGS))
 
 
 def rim_heights(root, angles):
@@ -82,7 +88,7 @@ def make_earth(root):
     n = len(angles)
     rim = rim_heights(root, angles)
     base = float(rim.min()) - EARTH_DEPTH_M
-    r = root["radius_m"]
+    r = wall_radius(root)
     x, y = r * np.cos(angles), r * np.sin(angles)
     verts = np.concatenate([np.column_stack([x, y, rim]), np.column_stack([x, y, np.full(n, base)])])
     nxt = (np.arange(n) + 1) % n
@@ -117,7 +123,7 @@ def make_cutter(root):
         _forget(root, old)
     angles = ring_angles(root)
     n = len(angles)
-    r = root["radius_m"]
+    r = wall_radius(root)
     rim = rim_heights(root, angles)
     top = float(rim.max())
     for ob in site_use.made_objects(root, TRIM_KINDS):
@@ -145,8 +151,8 @@ def make_cutter(root):
 
 
 def crosses_edge(root, ob):
-    """True when a vertex of any mesh the object can show lies past the site's circle."""
-    limit = root["radius_m"] + TRIM_TOLERANCE_M
+    """True when a vertex of any mesh the object can show lies past the drum's wall."""
+    limit = wall_radius(root) + TRIM_TOLERANCE_M
     return any(len(me.vertices) and (np.hypot(*_world_points(ob, me)[:, :2].T) > limit).any()
                for me in site_use.meshes_of(ob))
 
