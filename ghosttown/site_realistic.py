@@ -15,7 +15,8 @@ RIM_TOLERANCE_M = 0.5    # ground vertices this close to the radius count as the
 EARTH = "earth"
 CUTTER = "earth_cutter"
 TRIM = site_use.EDGE_TRIM
-TRIM_KINDS = BUILDING_KINDS + ("tree", "facade_detail")   # what gets cut at the drum's wall
+CLOSED_KINDS = ("tree", "facade_detail")   # every part closed: the Manifold solver trims them fast and right
+TRIM_KINDS = BUILDING_KINDS + CLOSED_KINDS  # what gets cut at the drum's wall
 TRIM_TOLERANCE_M = 0.01  # a vertex this far past the radius counts as crossing
 CUTTER_ABOVE_M = 10.0    # the cutter rises this far above the tallest object it may trim
 
@@ -152,8 +153,10 @@ def crosses_edge(root, ob):
 
 def add_trim(root):
     """Cut what crosses the site's circle flat at the drum's wall, with a Boolean modifier that is never
-    applied and goes after the object's other modifiers. Makes the cutter if the site has none. Returns
-    how many objects carry the trim."""
+    applied and goes after the object's other modifiers. Trees and facade detail use the Manifold solver
+    (Exact can empty a merged object whose closed parts overlap, like tree crowns); buildings use Exact,
+    which tolerates massing that isn't closed. Makes the cutter if the site has none. Returns how many
+    objects carry the trim."""
     cutter = find(root, CUTTER) or make_cutter(root)
     count = 0
     for ob in site_use.made_objects(root, TRIM_KINDS):
@@ -163,8 +166,11 @@ def add_trim(root):
                 continue
             mod = ob.modifiers.new(TRIM, "BOOLEAN")
             mod.operation = "INTERSECT"
-            mod.solver = "EXACT"
-            mod.use_hole_tolerant = True
+            if ob["ctx_kind"] in CLOSED_KINDS:
+                mod.solver = "MANIFOLD"
+            else:
+                mod.solver = "EXACT"
+                mod.use_hole_tolerant = True
         mod.object = cutter
         count += 1
     return count

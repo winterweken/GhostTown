@@ -63,6 +63,29 @@ def drum_doc(radius=150.0, slope=0.02, photo_folder=None, address=None):
     return doc if photo_folder is None else add_photo(doc, photo_folder)
 
 
+def fetch_tree_meshes(x, y, z, height):
+    """The fetcher's own two meshes for one tree (ghosttown_fetch.trees.tree_meshes). trees.py imports shapely
+    for reading features only, and Blender has none, so a stand-in for its geom module lets it load."""
+    import importlib
+    import sys
+    import types
+
+    names = ("ghosttown.ghosttown_fetch.geom", "ghosttown.ghosttown_fetch.trees")
+    saved = {name: sys.modules.get(name) for name in names}
+    if saved[names[1]] is None:
+        stub = sys.modules[names[0]] = types.ModuleType(names[0])
+        stub.feature_geometry = None
+    try:
+        trees = importlib.import_module(names[1])
+    finally:
+        for name, module in saved.items():
+            if module is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module
+    return trees.tree_meshes(float(x), float(y), float(z), float(height))
+
+
 def mesh_arrays(ob):
     me = ob.data
     return [tuple(v.co) for v in me.vertices], [tuple(p.vertices) for p in me.polygons]

@@ -8,9 +8,9 @@ import bpy
 import numpy as np
 
 import ghosttown
-from ghosttown import materials, realistic, scene_build, site_realistic, site_use
+from ghosttown import look_build, materials, realistic, scene_build, site_realistic, site_use
 from ghosttown.ghosttown_fetch import GROUND_KINDS
-from helpers import drum_doc, mesh_arrays, open_only_at_the_top
+from helpers import drum_doc, fetch_tree_meshes, load_fixture, mesh_arrays, open_only_at_the_top
 
 
 def drum_site(**kw):
@@ -112,6 +112,56 @@ def test_only_what_crosses_the_edge_is_trimmed_to_the_circle():
             me = ob.evaluated_get(dg).data
             assert len(me.vertices) > 0
             assert max(math.hypot(*(ob.matrix_world @ v.co).xy) for v in me.vertices) < r + 0.05
+
+
+def triangles(me):
+    return sum(len(p.vertices) - 2 for p in me.polygons)
+
+
+def furthest(ob, me):
+    return max(math.hypot(*(ob.matrix_world @ v.co).xy) for v in me.vertices)
+
+
+def test_a_dense_grove_across_the_edge_keeps_its_trees():
+    doc = drum_doc(); r = doc["radius_m"]
+    grid = itertools.product(np.arange(r - 12, r + 6, 4.0), np.arange(-10, 10, 4.0))
+    for i, (x, y) in enumerate(grid):                             # 10 m trees 4 m apart: the crowns overlap
+        doc["elements"].append({"id": f"tree:grove:{i}", "kind": "tree", "name": "", "solids": [], "lines": [],
+                                "meshes": fetch_tree_meshes(x, y, 0.02 * x, 10.0)})
+    root = scene_build.build(bpy.context.scene, doc, folder=tempfile.mkdtemp())
+    trees, = site_use.made_objects(root, ("tree",))
+    before = triangles(trees.data)
+    site_realistic.add_trim(root)
+    me = trees.evaluated_get(bpy.context.evaluated_depsgraph_get()).data
+    assert triangles(me) > before / 2
+    assert furthest(trees, me) < r + 0.05
+
+
+def look_across(r):
+    """mini_look.json with detail on osm:way:9, the building across the rim, along its south wall."""
+    answer = load_fixture("mini_look.json")
+    entry = json.loads(json.dumps(answer["buildings"]["osm:way:2"]))
+    entry["detail_walls"] = [{"a": [r - 10, -5], "b": [r + 30, -5], "n": [0, -1], "z0": 0.0, "z1": 20.3}]
+    answer["buildings"]["osm:way:9"] = entry
+    return answer
+
+
+def detail_of(root, building_id):
+    return next(o for o in site_use.made_objects(root, ("facade_detail",)) if o["ctx_id"] == "detail:" + building_id)
+
+
+def assert_trimmed(root, ob):
+    assert any(m.name == site_realistic.TRIM for m in ob.modifiers)
+    me = ob.evaluated_get(bpy.context.evaluated_depsgraph_get()).data
+    assert triangles(me) > 0 and furthest(ob, me) < root["radius_m"] + 0.05
+
+
+def test_facade_detail_across_the_edge_is_trimmed():
+    root = drum_site()
+    look_build.apply(bpy.context.scene, root, look_across(root["radius_m"]))
+    site_use.apply_ground(root, "realistic")
+    assert_trimmed(root, detail_of(root, "osm:way:9"))
+    assert not detail_of(root, "osm:way:1").modifiers                # the tower's detail is inside
 
 
 def test_switching_roof_shape_keeps_the_trim():
