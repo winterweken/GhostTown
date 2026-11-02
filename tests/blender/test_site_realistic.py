@@ -76,11 +76,14 @@ def test_the_wall_faces_outward_and_the_base_faces_down():
     assert all(p.normal.to_2d().dot(p.center.to_2d()) > 0 for p in earth.data.polygons if abs(p.normal.z) < 0.5)
 
 
-def test_the_ring_helper_gives_about_a_vertex_a_metre():
+def test_the_ring_helper_gives_about_a_vertex_a_metre_and_at_least_sixty_four():
     root = drum_site()
     angles = site_realistic.ring_angles(root)
-    assert abs(len(angles) - 2 * math.pi * root["radius_m"]) < 1.5 and angles[0] == 0.0
+    assert len(angles) == max(64, math.ceil(2 * math.pi * root["radius_m"])) and angles[0] == 0.0
     assert len(site_realistic.make_earth(root).data.vertices) == 2 * len(angles)
+    small = drum_site(radius=5.0)
+    assert len(site_realistic.ring_angles(small)) == 64
+    assert len(site_realistic.make_earth(small).data.vertices) == 128
 
 
 def test_removing_the_site_removes_its_earth():

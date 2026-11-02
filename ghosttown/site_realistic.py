@@ -18,7 +18,7 @@ EARTH = "earth"
 def ring_angles(root):
     """The angles (radians, from 0) of the wall's vertices, about RING_SPACING_M apart. The cutter that
     trims buildings at the drum uses the same ones."""
-    n = max(16, math.ceil(2 * math.pi * root["radius_m"] / RING_SPACING_M))
+    n = max(64, math.ceil(2 * math.pi * root["radius_m"] / RING_SPACING_M))
     return np.arange(n) * (2 * math.pi / n)
 
 
