@@ -189,6 +189,7 @@ class GHOSTTOWN_PT_site(bpy.types.Panel):
             col = box.column(align=True)
             for line in georef.survey_lines(point):
                 col.label(text=line)
+        layout.operator("ghosttown.export_revit", icon="EXPORT")
         box = layout.box()
         choice = site_use.ground_choice(root)
         options = [("colours", "Colours")] + ([("photo", "Photo")] if site_use.has_photo(root) else []) \
