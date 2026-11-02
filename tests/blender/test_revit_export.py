@@ -4,7 +4,7 @@ import tempfile
 import bpy
 
 import ghosttown
-from ghosttown import revit_export, scene_build, site_realistic, site_use
+from ghosttown import revit_export, scene_build, site_apps, site_realistic, site_use
 from helpers import drum_doc
 
 
@@ -81,3 +81,36 @@ def test_the_operator_needs_a_picked_site():
         assert bpy.ops.ghosttown.export_revit.poll()
     finally:
         ghosttown.unregister()
+
+
+def test_a_selected_and_active_earth_survives_the_export():
+    root = photo_drum_site()
+    site_use.apply_ground(root, "realistic")
+    earth = site_realistic.find(root, "earth")
+    name = earth.name
+    for ob in bpy.context.view_layer.objects:
+        ob.select_set(False)
+    earth.select_set(True)
+    bpy.context.view_layer.objects.active = earth
+    exported(root)
+    earth = site_realistic.find(root, "earth")
+    assert earth is not None and earth.name == name and earth.select_get()
+    assert bpy.context.view_layer.objects.active == earth and root["use_ground"] == "realistic"
+
+
+def test_application_boxes_are_found_wherever_the_user_moved_them():
+    root = photo_drum_site()
+    label = root["ctx_label"]
+    box = bpy.data.objects.new("My box", bpy.data.meshes.new("My box"))
+    box[site_apps.BOX_SITE] = label
+    mine = bpy.data.collections.new("Mine")
+    bpy.context.scene.collection.children.link(mine)
+    mine.objects.link(box)
+    apps = bpy.data.collections.new("Applications")
+    apps[site_apps.SITE_PROP] = label
+    bpy.context.scene.collection.children.link(apps)
+    stray = bpy.data.objects.new("Stray", bpy.data.meshes.new("Stray"))
+    apps.objects.link(stray)
+    names = {o.name for o in revit_export.objects_to_export(root)}
+    assert "My box" in names and "Stray" not in names
+    assert "My box" not in {o.name for o in revit_export.objects_to_export(root, applications=False)}
