@@ -44,19 +44,34 @@ def has_photo(root):
     return photo_material(root) is not None
 
 
+def ground_choice(root):
+    return root.get("use_ground") or "colours"
+
+
 def apply_ground(root, use):
-    """`use` is "photo" or "colours". The photo goes in an object-level slot, so each mesh keeps its
-    Context - <Kind> material underneath and switching back costs nothing."""
+    """`use` is "colours", "photo" or "realistic". The photo and the Realistic materials go in object-level
+    slots, so each mesh keeps its Context - <Kind> material underneath and switching back costs nothing.
+    Realistic also adds the earth drum and trims what crosses the site's edge; the others take both away."""
+    from . import realistic, site_realistic
     material = photo_material(root)
+    if use != "realistic":
+        site_realistic.remove_trim(root)
+        site_realistic.remove_earth(root)
     for ob in made_objects(root, GROUND_KINDS):
         if not ob.material_slots:
             continue
         slot = ob.material_slots[0]
-        if use == "photo" and material is not None:
+        if use == "realistic":
+            slot.link = "OBJECT"
+            slot.material = realistic.get_material(realistic.SURFACES[ob["ctx_kind"]])
+        elif use == "photo" and material is not None:
             slot.link = "OBJECT"
             slot.material = material
         else:
             slot.link = "DATA"
+    if use == "realistic":
+        site_realistic.make_earth(root)
+        site_realistic.add_trim(root)
     root["use_ground"] = use
 
 

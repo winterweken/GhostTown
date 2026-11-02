@@ -105,6 +105,7 @@ def triangles_text(count):
 
 # The default Solid view colours by material, so it never shows the photo on the ground.
 SOLID_HINT = "Shows in Material Preview, or Solid view with Color: Texture."
+EXPORT_HINT = "Switch to Colours before exporting for Revit."
 
 
 def _choice(layout, label, operator, current, options):
@@ -188,13 +189,18 @@ class GHOSTTOWN_PT_site(bpy.types.Panel):
             col = box.column(align=True)
             for line in georef.survey_lines(point):
                 col.label(text=line)
+        box = layout.box()
+        choice = site_use.ground_choice(root)
+        options = [("colours", "Colours")] + ([("photo", "Photo")] if site_use.has_photo(root) else []) \
+            + [("realistic", "Realistic")]
+        _choice(box, "Ground", "ghosttown.use_ground", choice, options)
+        box.label(text=SOLID_HINT, icon="INFO")
+        if choice == "realistic":
+            box.label(text=EXPORT_HINT, icon="ERROR")
         if site_use.has_photo(root):
             box = layout.box()
             year = root.get("photo_year") or 0
             box.label(text=f"Aerial photo {year}" if year else "Aerial photo", icon="IMAGE_DATA")
-            _choice(box, "Ground", "ghosttown.use_ground", root.get("use_ground"),
-                    (("colours", "Colours"), ("photo", "Photo")))
-            box.label(text=SOLID_HINT, icon="INFO")
             _choice(box, "Roofs", "ghosttown.use_roofs", root.get("use_roofs"),
                     (("plain", "Plain"), ("photo", "Photo")))
             if root.get("use_roofs") == "photo":

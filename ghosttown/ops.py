@@ -410,18 +410,23 @@ def _has_photo(context):
 class GHOSTTOWN_OT_use_ground(bpy.types.Operator):
     bl_idname = "ghosttown.use_ground"
     bl_label = "Ground"
-    bl_description = "Show the aerial photo, or the colours by kind, on the picked site's ground"
+    bl_description = "Show colours by kind, the aerial photo, or Realistic ground on the picked site"
     bl_options = {"REGISTER", "UNDO"}
 
     use: EnumProperty(items=(("colours", "Colours", "Colours by kind, as exported"),
-                             ("photo", "Photo", "The aerial photo")))
+                             ("photo", "Photo", "The aerial photo"),
+                             ("realistic", "Realistic", "Textured ground on a cut-out drum of earth, for renders")))
 
     @classmethod
     def poll(cls, context):
-        return _has_photo(context)
+        return site_use.picked(context) is not None and context.mode == "OBJECT"
 
     def execute(self, context):
-        site_use.apply_ground(site_use.picked(context), self.use)
+        root = site_use.picked(context)
+        if self.use == "photo" and not site_use.has_photo(root):
+            self.report({"WARNING"}, "This site has no aerial photo.")
+            return {"CANCELLED"}
+        site_use.apply_ground(root, self.use)
         return {"FINISHED"}
 
 

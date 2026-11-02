@@ -1,11 +1,14 @@
+import itertools
 import json
 import math
+import os
 import tempfile
 
 import bpy
 import numpy as np
 
-from ghosttown import scene_build, site_realistic, site_use
+import ghosttown
+from ghosttown import materials, realistic, scene_build, site_realistic, site_use
 from ghosttown.ghosttown_fetch import GROUND_KINDS
 from helpers import drum_doc, mesh_arrays, open_only_at_the_top
 
@@ -154,3 +157,79 @@ def test_trimming_twice_leaves_one_trim_per_object_and_one_cutter():
     for ob in root.all_objects:
         assert len([m for m in ob.modifiers if m.name == site_realistic.TRIM]) <= 1
     assert sum(1 for o in root.all_objects for m in o.modifiers if m.name == site_realistic.TRIM) == 2
+
+
+def slots(root):
+    return {o["ctx_kind"]: (o.material_slots[0].link, o.material_slots[0].material.name, o.data.materials[0].name)
+            for o in site_use.made_objects(root, GROUND_KINDS)}
+
+
+def test_realistic_puts_each_surface_on_the_object_and_keeps_the_context_material():
+    root = drum_site()
+    site_use.apply_ground(root, "realistic")
+    for kind, (link, shown, data) in slots(root).items():
+        assert link == "OBJECT" and shown == "Ghost Town Realistic · " + realistic.SURFACES[kind]
+        assert data == materials.material_name(kind)
+    assert root["use_ground"] == "realistic" and site_realistic.find(root, "earth") is not None
+
+
+def test_every_switching_order_ends_clean():
+    folder = tempfile.mkdtemp()
+    root = scene_build.build(bpy.context.scene, drum_doc(photo_folder=folder), folder=folder)
+    for path in itertools.permutations(("colours", "photo", "realistic")):
+        for use in path + path[:1]:
+            site_use.apply_ground(root, use)
+        last = path[0]
+        assert sum(o.get("ctx_kind") == "earth" for o in root.all_objects) == (last == "realistic")
+        assert any(m.name == site_realistic.TRIM for o in root.all_objects for m in o.modifiers) == (last == "realistic")
+        links = {link for link, *_ in slots(root).values()}
+        assert links == ({"DATA"} if last == "colours" else {"OBJECT"})
+
+
+def test_hand_deleted_pieces_never_break_a_switch():
+    root = drum_site()
+    site_use.apply_ground(root, "realistic")
+    bpy.data.objects.remove(site_realistic.find(root, "earth"))
+    bpy.data.objects.remove(site_realistic.find(root, "earth_cutter"))
+    site_use.apply_ground(root, "colours")
+    site_use.apply_ground(root, "realistic")
+    assert site_realistic.find(root, "earth") and site_realistic.find(root, "earth_cutter")
+
+
+def test_two_sites_keep_their_own_choice_and_share_materials():
+    a, b = drum_site(address="1 First St"), drum_site(address="2 Second St")
+    site_use.apply_ground(a, "realistic")
+    assert {link for link, *_ in slots(b).values()} == {"DATA"} and site_realistic.find(b, "earth") is None
+    site_use.apply_ground(b, "realistic")
+    assert sum(m.name == "Ghost Town Realistic · Grass" for m in bpy.data.materials) == 1
+
+
+def test_removing_a_realistic_site_leaves_nothing_behind():
+    root = drum_site()
+    site_use.apply_ground(root, "realistic")
+    scene_build.remove(root, bpy.context.scene)
+    assert not any(o.get("ctx_kind") in ("earth", "earth_cutter") for o in bpy.data.objects)
+    assert not any(m.name == site_realistic.TRIM for o in bpy.data.objects for m in o.modifiers)
+
+
+def test_realistic_survives_save_and_reload():
+    root = drum_site()
+    site_use.apply_ground(root, "realistic")
+    path = os.path.join(tempfile.mkdtemp(), "r.blend")
+    name = root.name
+    bpy.ops.wm.save_as_mainfile(filepath=path)
+    bpy.ops.wm.open_mainfile(filepath=path)
+    root = bpy.data.collections[name]
+    assert root["use_ground"] == "realistic" and site_realistic.find(root, "earth") is not None
+
+
+def test_the_operator_refuses_photo_without_a_photo_and_allows_realistic():
+    ghosttown.register()
+    try:
+        root = drum_site()
+        bpy.context.scene.ghosttown.site = root
+        assert bpy.ops.ghosttown.use_ground(use="photo") == {"CANCELLED"}
+        assert bpy.ops.ghosttown.use_ground(use="realistic") == {"FINISHED"}
+        assert root["use_ground"] == "realistic"
+    finally:
+        ghosttown.unregister()

@@ -5,8 +5,8 @@ import tempfile
 import bpy
 
 import ghosttown
-from ghosttown import scene_build, site_photo, site_use
-from helpers import load_fixture, photo_doc, PHOTO
+from ghosttown import realistic, scene_build, site_photo, site_use
+from helpers import drum_doc, load_fixture, photo_doc, PHOTO
 
 SITE = "320 Bay St"
 
@@ -265,3 +265,14 @@ def test_the_save_operator_writes_for_the_picked_site():
         assert sorted(os.listdir(out)) == ["320_Bay_St photo.jgw", "320_Bay_St photo.jpg"]
     finally:
         ghosttown.unregister()
+
+
+def test_a_photo_site_still_opens_on_photo_and_can_go_realistic():
+    folder = tempfile.mkdtemp()
+    root = scene_build.build(bpy.context.scene, drum_doc(photo_folder=folder), folder=folder)
+    assert root["use_ground"] == "photo"
+    road = next(ob for ob in site_use.made_objects(root, ("ground",)))
+    site_use.apply_ground(root, "realistic")
+    assert road.material_slots[0].material.name == "Ghost Town Realistic · " + realistic.SURFACES["ground"]
+    site_use.apply_ground(root, "photo")
+    assert road.material_slots[0].link == "OBJECT" and road.material_slots[0].material == site_use.photo_material(root)

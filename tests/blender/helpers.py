@@ -30,12 +30,14 @@ def photo_doc(folder, address=None):
     return add_photo(doc, folder)
 
 
-def drum_doc(radius=150.0, slope=0.02, photo_folder=None):
+def drum_doc(radius=150.0, slope=0.02, photo_folder=None, address=None):
     """The mini context on a sloping round site: three ground pieces tile the circle on the plane
     z = slope * x (ground 0-240 degrees, green 240-300, water 300-360, fans of 1 degree segments from the
     centre to the rim), the mini buildings plus osm:way:9 crossing the rim, and the mini tree plus one
-    straddling it. With `photo_folder`, the photo too."""
+    straddling it. With `photo_folder`, the photo too; `address` names the site."""
     doc = load_fixture("mini_context.json")
+    if address:
+        doc["address"] = address
     doc["radius_m"] = radius
 
     def fan(kind, start, end):
