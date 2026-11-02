@@ -198,8 +198,18 @@ keep working, and no photo is stored in the .blend file.
 
 ## Taking it into Revit
 
-Ghost Town does not export. It keeps the geometry friendly to exporters and to Revit instead:
-metres, closed building solids, outlines cleaned of edges under 3 mm, and stable material names.
+Ghost Town keeps the geometry friendly to exporters and to Revit: metres, closed building solids, outlines
+cleaned of edges under 3 mm, and stable material names.
+
+**Export for Revit…** in the Site panel writes the picked site as one OBJ, ready to import origin to origin:
+metres, Z up, every piece on its `Context - …` material, the ground and roofs in their plain colours
+whatever the site shows (no photo, no Realistic earth or edge trim; the site goes back to what it showed),
+and Roof detail applied. It takes the site's visible objects, with the development application boxes
+(untick **Development applications** in the file browser to leave them out) and without Street Look's
+facade detail (tick **Street Look detail** to add it). OBJ writes the material names with underscores for
+spaces (`Context_-_Building`).
+
+To export by hand instead:
 
 - **OBJ:** set **Up Axis: Z** (Blender's default is Y).
 - **FBX:** tick **Loose Edges** if you want the parcel lines.
