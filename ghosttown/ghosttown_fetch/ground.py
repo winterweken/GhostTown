@@ -11,6 +11,7 @@ import numpy as np
 import shapely
 from shapely.geometry import LineString, Point
 
+from . import CIRCLE_QUAD_SEGS
 from . import context as ctx
 
 PRIORITY = ("water", "road", "sidewalk", "parking", "rail", "green")
@@ -18,7 +19,7 @@ ORDER = PRIORITY + ("ground",)
 WELD_M = 0.003
 WATER_DROP_M = 0.1
 WATER_PERCENTILE = 10
-QUAD_SEGS = 64
+QUAD_SEGS = CIRCLE_QUAD_SEGS
 MIN_FACE_M2 = 1e-6
 
 

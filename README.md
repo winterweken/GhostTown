@@ -130,10 +130,15 @@ Building the same site again replaces what Ghost Town made and keeps anything yo
 your own objects and collections inside the context collection.
 
 The **Site** section under the panel shows one site at a time; pick it at the top. It lists the site's
-survey point, and, when the site has an aerial photo:
+survey point and its **Ground** choice:
 
-- **Ground: Colours | Photo** shows the photo on the ground, or the colours by kind.
+- **Ground: Colours | Photo | Realistic** shows the colours by kind, or the photo on the ground. Photo is
+  offered when the site has its aerial photo. Realistic gives the ground textured materials, cuts the site out
+  as a drum of earth and trims what crosses its edge, for renders.
   Shows in Material Preview, or Solid view with Color: Texture.
+
+When the site has an aerial photo:
+
 - **Roofs: Plain | Photo** puts the photo on the roofs of buildings up to a height you set (20 m to start).
   Taller buildings lean in the photo, so their roof texture would be offset.
 - **Save Site Photo…** writes the photo and a world file, for an underlay in Revit or CAD.
@@ -201,7 +206,10 @@ metres, closed building solids, outlines cleaned of edges under 3 mm, and stable
 - In Revit, import **origin to origin**. The material names become the layers or materials you control
   under Object Styles › Imported Objects.
 - Before exporting, set the site's **Ground** to Colours and **Roofs** to Plain, so every piece keeps its
-  `Context - …` material. While the photo shows, exporters see the photo material on those faces instead.
+  `Context - …` material. While Photo shows, exporters see the photo material on those faces instead; while
+  Realistic shows, they see its materials and the earth drum, and buildings, trees and facade detail cut at
+  the site's edge (exporters apply modifiers by default); an export that includes hidden objects also takes
+  the hidden `Earth cutter · <site>` cylinder.
 - Fitted roofs export as closed solids of a few faces each: the lightest measured roofs, and the ones to
   take into Revit.
 - Street Look changes how buildings render, not their materials' names. Its detail meshes sit in the

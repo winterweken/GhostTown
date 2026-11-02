@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import shutil
 
@@ -13,15 +14,76 @@ def load_fixture(name):
         return json.load(f)
 
 
+def add_photo(doc, folder):
+    """`doc` with a 128 px photo covering ±150 m, its file copied into `folder` beside it."""
+    shutil.copy(PHOTO, os.path.join(folder, "photo.jpg"))
+    doc["photo"] = {"file": "photo.jpg", "year": 2025, "width_px": 128, "height_px": 128,
+                    "bounds_m": [-150.0, -150.0, 150.0, 150.0], "source": "toronto"}
+    return doc
+
+
 def photo_doc(folder, address=None):
     """The mini context with a 128 px photo covering ±150 m, copied into `folder` beside it."""
     doc = load_fixture("mini_context.json")
     if address is not None:
         doc["address"] = address
-    shutil.copy(PHOTO, os.path.join(folder, "photo.jpg"))
-    doc["photo"] = {"file": "photo.jpg", "year": 2025, "width_px": 128, "height_px": 128,
-                    "bounds_m": [-150.0, -150.0, 150.0, 150.0], "source": "toronto"}
-    return doc
+    return add_photo(doc, folder)
+
+
+def drum_doc(radius=150.0, slope=0.02, photo_folder=None, address=None):
+    """The mini context on a sloping round site: three ground pieces tile the circle on the plane
+    z = slope * x (ground 0-240 degrees, green 240-300, water 300-360, fans of 1 degree segments from the
+    centre to the rim), the mini buildings plus osm:way:9 crossing the rim, and the mini tree plus one
+    straddling it. With `photo_folder`, the photo too; `address` names the site."""
+    doc = load_fixture("mini_context.json")
+    if address:
+        doc["address"] = address
+    doc["radius_m"] = radius
+
+    def fan(kind, start, end):
+        verts = [[0.0, 0.0, 0.0]]
+        for deg in range(start, end + 1):
+            x, y = radius * math.cos(math.radians(deg)), radius * math.sin(math.radians(deg))
+            verts.append([x, y, slope * x])
+        faces = [[0, i, i + 1] for i in range(1, len(verts) - 1)]
+        return {"id": "ground:" + kind, "kind": kind, "name": "", "solids": [], "lines": [],
+                "meshes": [{"kind": kind, "verts": verts, "faces": faces}]}
+
+    road = doc["elements"][0]
+    assert road["id"] == "ground:road"
+    ground = [fan("ground", 0, 240), fan("green", 240, 300), fan("water", 300, 360)]
+    rim_tree = {"id": "tree:osm:9", "kind": "tree", "name": "", "solids": [], "lines": [], "meshes": [
+        {"kind": "tree", "verts": [[radius, 0, slope * radius], [radius + 1, 0, slope * radius],
+                                   [radius, 1, slope * radius], [radius, 0, slope * radius + 3]],
+         "faces": [[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]]}]}
+    across = {"id": "osm:way:9", "kind": "building", "name": "", "meshes": [], "lines": [], "solids": [
+        {"kind": "building", "rings": [[[radius - 10, -5], [radius + 30, -5], [radius + 30, 5], [radius - 10, 5]]],
+         "z0": -0.3, "z1": 20.0, "height_source": "osm_levels"}]}
+    doc["elements"] = ground + [e for e in doc["elements"] if e is not road] + [across, rim_tree]
+    return doc if photo_folder is None else add_photo(doc, photo_folder)
+
+
+def fetch_tree_meshes(x, y, z, height):
+    """The fetcher's own two meshes for one tree (ghosttown_fetch.trees.tree_meshes). trees.py imports shapely
+    for reading features only, and Blender has none, so a stand-in for its geom module lets it load."""
+    import importlib
+    import sys
+    import types
+
+    names = ("ghosttown.ghosttown_fetch.geom", "ghosttown.ghosttown_fetch.trees")
+    saved = {name: sys.modules.get(name) for name in names}
+    if saved[names[1]] is None:
+        stub = sys.modules[names[0]] = types.ModuleType(names[0])
+        stub.feature_geometry = None
+    try:
+        trees = importlib.import_module(names[1])
+    finally:
+        for name, module in saved.items():
+            if module is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module
+    return trees.tree_meshes(float(x), float(y), float(z), float(height))
 
 
 def mesh_arrays(ob):
@@ -153,3 +215,35 @@ def fitted_doc(folder, address=None, photo=False, dense=False):
                 name="fitted_roofs.npz")
     doc["lidar"]["fitted"] = dict(FITTED)
     return doc
+
+
+def open_only_at_the_top(verts, faces):
+    """Every edge is shared by two faces except one closed loop of boundary edges, and that loop is the
+    mesh's highest vertex ring: each of its vertices is the top of its wall column."""
+    uses = {}
+    for f in faces:
+        for i in range(len(f)):
+            edge = frozenset((f[i], f[(i + 1) % len(f)]))
+            uses[edge] = uses.get(edge, 0) + 1
+    if any(count > 2 for count in uses.values()):
+        return False
+    boundary = [tuple(e) for e, count in uses.items() if count == 1]
+    around = {}
+    for a, b in boundary:
+        around.setdefault(a, []).append(b)
+        around.setdefault(b, []).append(a)
+    if not boundary or any(len(n) != 2 for n in around.values()):
+        return False
+    seen, stack = set(), [boundary[0][0]]
+    while stack:
+        v = stack.pop()
+        if v not in seen:
+            seen.add(v)
+            stack.extend(around[v])
+    if seen != set(around):
+        return False                                   # more than one loop
+    top = {}
+    for x, y, z in verts:
+        key = (round(x, 3), round(y, 3))
+        top[key] = max(top.get(key, -math.inf), z)
+    return all(verts[v][2] >= top[(round(verts[v][0], 3), round(verts[v][1], 3))] - 1e-6 for v in around)
