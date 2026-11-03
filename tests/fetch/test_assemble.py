@@ -60,7 +60,7 @@ def test_a_site_outside_toronto_uses_osm_and_plain_ground(tmp_path):
     net = _net(toronto=_city(**{"FeatureServer/40/": page(FAR)}))
     doc = assemble(_req(tmp_path), net)
     assert doc["region"] == "world"
-    assert {e["id"] for e in doc["elements"]} == {"osm:way:1", "ground:ground"}
+    assert {e["id"] for e in doc["elements"] if e["kind"] != "contour"} == {"osm:way:1", "ground:ground"}
     assert [url for url, source, _ in net.calls if source == "toronto"] == [net.calls[0][0]]
 
 
@@ -196,3 +196,19 @@ def test_the_survey_point_of_the_origin_is_recorded(tmp_path):
     assert 300000 < s["easting_m"] < 330000 and 4.82e6 < s["northing_m"] < 4.85e6
     world = assemble(_req(tmp_path), _net(toronto=_city(**{"FeatureServer/40/": page(FAR)})))
     assert world["survey"]["epsg"] == "EPSG:32617" and ctx.validate(world) == []
+
+
+def test_the_terrain_layer_adds_contour_lines_at_round_heights(tmp_path):
+    doc = assemble(_req(tmp_path), _net())
+    lines = [e for e in doc["elements"] if e["kind"] == "contour"]
+    assert lines and all(e["id"].startswith("contour:") and e["lines"] for e in lines)
+    assert doc["counts"]["contour"] == len(lines) and ctx.validate(doc) == []
+    heights = [float(e["id"].split(":")[1]) for e in lines]
+    assert all(h * 2 == int(h * 2) for h in heights) and heights == sorted(heights)   # every 0.5 m, in order
+
+
+def test_flat_ground_and_a_build_without_the_terrain_layer_have_no_contours(tmp_path):
+    flat = assemble(_req(tmp_path), _net(nrcan=SourceError("Natural Resources Canada answered HTTP 500; try again in a minute.")))
+    assert all(e["kind"] != "contour" for e in flat["elements"])
+    without = assemble(_req(tmp_path, layers=["buildings"]), _net())
+    assert all(e["kind"] != "contour" for e in without["elements"])
