@@ -15,7 +15,7 @@ Type an address in Blender and get the city around it: buildings, terrain, roads
 water, parks, trees and lot lines, built from open data as clean geometry you can take into Revit or
 any BIM tool. In Toronto it can also show what is proposed and going up around the site.
 
-![Ghost Town in Blender: searching for 1140 Dundas St W, building the site, and the blocks around Dundas and Ossington appearing on the City's aerial photo](media/build-toronto.gif)
+![Ghost Town in Blender: typing 1140 Dundas St W, building the site, and the blocks around Dundas and Ossington appearing on the City's aerial photo, with the Site panel's survey point, Export for Revit and Ground switch](media/build-toronto.gif)
 
 *1140 Dundas St W at Ossington, Toronto, 150 m radius: find the address, build, and switch the ground
 between colours by kind and the aerial photo. The build is shortened here. Data: City of Toronto and
@@ -136,6 +136,8 @@ survey point and its **Ground** choice:
   offered when the site has its aerial photo. Realistic gives the ground textured materials, cuts the site out
   as a drum of earth and trims what crosses its edge, for renders.
   Shows in Material Preview, or Solid view with Color: Texture.
+
+![HTO Park on the Toronto waterfront switching from Colours to Realistic in Ghost Town: textured ground and water on a drum of earth, towers cut at the edge](media/realistic-hto.gif)
 
 When the site has an aerial photo:
 
