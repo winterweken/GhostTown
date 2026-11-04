@@ -12,6 +12,8 @@ MIN_PIECE_M = 0.003
 
 
 def _name(props):
+    """"<number> <street>" for a parcel that carries both fields. The City of Toronto's parcels no longer do (seen
+    2026-11-04), so they have no name."""
     number, street = props.get("ADDRESS_NUMBER"), props.get("LINEAR_NAME_FULL")
     return f"{number} {street}" if number and street else ""
 

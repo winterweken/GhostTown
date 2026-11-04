@@ -34,10 +34,11 @@ PARCELS = (CITY, 36)
 
 def fetch_parcels(net, lat, lon, radius_m):
     """Lot lines only: CONDO parcels overlap the COMMON ones they sit on. DATE_EXPIRY tells a current parcel from
-    a retired one, which the development application boxes need."""
+    a retired one, which the development application boxes need. No address is asked for: the layer no longer has
+    ADDRESS_NUMBER and LINEAR_NAME_FULL (seen 2026-11-04), and the City refuses a query that names a field the
+    layer doesn't have."""
     return arcgis.query(net, *PARCELS, arcgis.radius_params(
-        lat, lon, radius_m, out_fields="OBJECTID,PARCELID,ADDRESS_NUMBER,LINEAR_NAME_FULL,DATE_EXPIRY",
-        where="FEATURE_TYPE = 'COMMON'"))
+        lat, lon, radius_m, out_fields="OBJECTID,PARCELID,DATE_EXPIRY", where="FEATURE_TYPE = 'COMMON'"))
 
 
 GROUND = {
