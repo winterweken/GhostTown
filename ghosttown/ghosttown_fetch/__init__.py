@@ -12,7 +12,7 @@ HOMEPAGE = "https://github.com/winterweken/GhostTown"
 
 BUILDING_KINDS = ("building", "building_on_site", "building_guessed")
 GROUND_KINDS = ("water", "road", "sidewalk", "parking", "rail", "green", "ground")
-KINDS = BUILDING_KINDS + GROUND_KINDS + ("tree", "parcel", "parcel_on_site")
+KINDS = BUILDING_KINDS + GROUND_KINDS + ("contour", "tree", "parcel", "parcel_on_site")
 
 LAYERS = ("buildings", "terrain", "roads", "sidewalks", "parking", "rail",
           "green", "water", "trees", "parcels", "photo", "lidar", "applications")

@@ -47,6 +47,11 @@ Each build makes one collection, `Context · <site>`:
   same flat-topped blocks the City publishes as SketchUp and AutoCAD files.
 - **Ground:** one draped surface per kind (road, sidewalk, parking, rail, water, green, plain ground).
   The pieces share their edges, so there are no cracks or overlaps. Water lies flat at its shoreline.
+- **Contours:** the terrain's contour lines every 0.5 m, at round heights above sea level, merged into one
+  object with its own `Context - Contour` material in the `Contours · <site>` collection, drawn in front so
+  they read over the ground they lie on. The layer to make a Revit toposolid from. A big or hilly site is
+  thinned to stay under Revit's 10,000 import points: simplified in plan first, then every 1, 2 or 5 m,
+  as a map would. Flat ground has none.
 - **Trees:** a trunk and a low-poly crown each, sized from the City's tree heights, merged into one object.
 - **Parcels:** lot lines draped 15 cm above the ground.
 - **Aerial photo** (Toronto, Windsor, and Ontario): The municipality's or Province's newest aerial orthophoto of the site, kept inside the .blend file,
@@ -139,6 +144,11 @@ survey point and its **Ground** choice:
 
 ![HTO Park on the Toronto waterfront switching from Colours to Realistic in Ghost Town: textured ground and water on a drum of earth, towers cut at the edge](media/realistic-hto.gif)
 
+When the site has contour lines (any ground that isn't flat):
+
+- **Save Contours (DXF)…** writes the contour lines as a DXF on one `Context - Contour` layer, the import
+  Revit builds a toposolid from. See [Taking it into Revit](#taking-it-into-revit).
+
 When the site has an aerial photo:
 
 - **Roofs: Plain | Photo** puts the photo on the roofs of buildings up to a height you set (20 m to start).
@@ -204,7 +214,8 @@ Ghost Town keeps the geometry friendly to exporters and to Revit: metres, closed
 cleaned of edges under 3 mm, and stable material names.
 
 **Export for Revit…** in the Site panel writes the picked site as one OBJ, ready to import origin to origin:
-metres, Z up, every piece on its `Context - …` material, the ground and roofs in their plain colours
+metres, Z up, every face on its `Context - …` material (the parcel and contour lines come as plain lines,
+since OBJ has no material for lines), the ground and roofs in their plain colours
 whatever the site shows (no photo, no Realistic earth or edge trim; the site goes back to what it showed),
 and Roof detail applied. It takes the site's visible objects, with the development application boxes
 (untick **Development applications** in the file browser to leave them out) and without Street Look's
@@ -214,7 +225,7 @@ spaces (`Context_-_Building`).
 To export by hand instead:
 
 - **OBJ:** set **Up Axis: Z** (Blender's default is Y).
-- **FBX:** tick **Loose Edges** if you want the parcel lines.
+- **FBX:** tick **Loose Edges** if you want the parcel and contour lines.
 - In Revit, import **origin to origin**. The material names become the layers or materials you control
   under Object Styles › Imported Objects.
 - Before exporting, set the site's **Ground** to Colours and **Roofs** to Plain, so every piece keeps its
@@ -232,6 +243,14 @@ To export by hand instead:
 - LiDAR roofs export as meshes, which Revit imports as DirectShapes: heavier than prisms. Exporters apply
   Roof detail (modifiers are applied by default), so keep the site under the panel's budget, or use Fitted
   or Flat roofs.
+- **Topo.** The OBJ carries the contour lines, but Revit builds a toposolid only from the layers of a
+  DWG, DXF or DGN import. So press **Save Contours (DXF)…** in the Site panel, which writes the site's
+  contour lines as a DXF on one `Context - Contour` layer, and in Revit **Import CAD** it with the units
+  in meters, origin to origin. Then Toposolid › Create from Import › Create from CAD, and tick the
+  `Context - Contour` layer. Revit places the toposolid's points along the lines and builds its own
+  surface, and the ground pieces stay as context. Each line sits at its height in the model's metres, so
+  the toposolid lands on the model imported origin to origin. Revit thins an import past 10,000 points
+  (20,000 in Revit 2026, adjustable), which is why Ghost Town keeps a site's lines under that.
 - To use the aerial photo in Revit, **Save Site Photo…**, then in a site plan use **Insert › Image**, set
   the image's width to the width Ghost Town reports (twice the radius, in metres), and centre it on the
   origin.

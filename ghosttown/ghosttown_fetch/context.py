@@ -13,7 +13,7 @@ import urllib.parse
 from . import APPLICATION_GROUPS, BUILDING_KINDS, CREDITS, GROUND_KINDS, KINDS, SCHEMA, SOURCE_NAMES, TOOL
 
 _ORDER = {kind: i for i, kind in enumerate(
-    GROUND_KINDS + BUILDING_KINDS + ("tree", "parcel", "parcel_on_site"))}
+    GROUND_KINDS + ("contour",) + BUILDING_KINDS + ("tree", "parcel", "parcel_on_site"))}
 _MAX_PROBLEMS = 20
 _DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 APPLICATION_KEYS = ("number", "type", "status", "submitted", "address", "description", "source", "url")
@@ -74,7 +74,7 @@ def finish(doc):
 
 
 def iter_elements(doc):
-    """Elements in build order: ground kinds, then buildings, trees, parcels (stable within a kind)."""
+    """Elements in build order: ground kinds, contours, then buildings, trees, parcels (stable within a kind)."""
     return iter(sorted(doc["elements"], key=lambda el: _ORDER.get(el["kind"], len(_ORDER))))
 
 

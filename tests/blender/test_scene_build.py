@@ -1,6 +1,7 @@
 import bpy
 
 from ghosttown import scene_build
+from ghosttown.ghosttown_fetch import context as ctx
 from helpers import closed_and_outward, load_fixture, mesh_arrays
 
 SITE = "320 Bay St"
@@ -190,3 +191,21 @@ def test_an_older_context_without_a_survey_point_still_builds():
     root = _build(doc)
     origin, = [ob for ob in root.objects if ob.get("ctx_id") == "origin"]
     assert not [k for k in origin.keys() if k.startswith("survey_")] and origin["lat"] == 43.649667
+
+
+def test_contour_lines_are_one_object_on_their_own_layer_drawn_in_front():
+    doc = load_fixture("mini_context.json")
+    for height, z in ((85.0, 0.3), (85.5, 0.8)):
+        pts = [[-10, -10 + z, z], [0, -5 + z, z], [10, -10 + z, z]]
+        doc["elements"].append(ctx.element(f"contour:{height:g}", "contour", lines=[{"kind": "contour", "pts": pts}]))
+    root = _build(doc)
+    assert [c.name for c in root.children] == [f"{g} · {SITE}" for g in ("Buildings", "Ground", "Contours", "Trees", "Parcels")]
+    lines, = root.children[f"Contours · {SITE}"].objects
+    assert (lines.name, lines["ctx_id"], lines["ctx_kind"]) == (f"Contour · {SITE}", "merged:contour", "contour")
+    assert [m.name for m in lines.data.materials] == ["Context - Contour"]
+    assert len(lines.data.edges) == 4 and len(lines.data.polygons) == 0 and len(lines.data.vertices) == 6
+    assert lines.show_in_front and not lines.hide_render
+    assert sorted({round(v.co.z, 3) for v in lines.data.vertices}) == [0.3, 0.8]
+    road, = root.children[f"Ground · {SITE}"].objects   # the other layers are as they were
+    parcels, = root.children[f"Parcels · {SITE}"].objects
+    assert not road.show_in_front and not parcels.show_in_front and len(parcels.data.edges) == 4

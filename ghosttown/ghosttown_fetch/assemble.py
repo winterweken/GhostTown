@@ -17,8 +17,8 @@ import numpy as np
 import shapely
 from shapely.geometry import Point
 
-from . import (BUILDING_KINDS, applications, buildings, construction, fitted_roofs, ground, lidar_roofs, parcels,
-               providers, region, survey, trees)
+from . import (BUILDING_KINDS, applications, buildings, construction, contours, fitted_roofs, ground, lidar_roofs,
+               parcels, providers, region, survey, trees)
 from . import context as ctx
 from . import terrain as terrain_mod
 from .frame import Frame
@@ -484,5 +484,8 @@ def assemble(request, net, *, progress=None, now=None):
         ctx.note(doc, "warn", "ground", f"The ground pieces couldn't be laid out ({str(e)[:80]}), so the ground is plain.")
         surface = ground.elements(ground.layout({}, radius, include_ground=plain), terrain)
     doc["elements"].extend(surface)
+    if "terrain" in layers:
+        progress("Contours", 88)
+        doc["elements"].extend(contours.elements(terrain, radius))
     progress("Writing", 95)
     return ctx.finish(doc)

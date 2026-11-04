@@ -14,7 +14,7 @@ SHAPE_KEYS = {"flat": FLAT_KEY, "fitted": FITTED_KEY, "lidar": LIDAR_KEY}  # roo
 ROOF_GROUP = "roof interior"    # LiDAR roof vertices off the outline: the only ones Roof detail may move
 DETAIL_MODIFIER = "Ghost Town roof detail"
 EDGE_TRIM = "Ghost Town edge trim"   # site_realistic.TRIM: Realistic's Boolean, which must stay the last modifier
-SITE_KINDS = BUILDING_KINDS + GROUND_KINDS + ("tree", "parcel", "parcel_on_site", "facade_detail")  # exported kinds
+SITE_KINDS = BUILDING_KINDS + GROUND_KINDS + ("contour", "tree", "parcel", "parcel_on_site", "facade_detail")  # exported
 
 
 def made_objects(root, kinds):
