@@ -159,6 +159,37 @@ def test_a_big_hilly_site_stays_under_revits_10000_points_on_a_coarser_interval(
     assert len(els) >= 60 / 5                                                        # 60 m of relief at 5 m at worst
 
 
+def _star(radius, corners=100):
+    """A closed ring of 101 points whose corners step 10 m in and out, so no tolerance here can drop one."""
+    angles = np.linspace(0.0, 2 * math.pi, corners, endpoint=False)
+    r = radius + 10.0 * (-1.0) ** np.arange(corners)
+    xy = np.column_stack([r * np.cos(angles), r * np.sin(angles)])
+    return shapely.LineString(np.vstack([xy, xy[:1]]))
+
+
+def test_steep_ground_goes_past_5_m_to_the_next_round_interval_that_fits():
+    levels = {100.0 + 0.5 * k: [_star(500.0)] for k in range(1600)}       # 100.0 to 899.5 m, 101 points a level
+    interval, _, out = contours.thinned(levels)
+    assert interval == 10.0 and sorted(out) == [100.0 + 10.0 * k for k in range(80)]   # every 5 m is 16,160 points
+    assert sum(shapely.get_num_coordinates(line) for lines in out.values() for line in lines) == 8080
+
+
+def test_one_level_too_big_for_the_budget_is_still_drawn():
+    class Bumps:
+        """An egg-carton of 16 m bumps under half a metre high: thousands of small rings at one level."""
+        source = "test"
+        ground_at_centre_m = 100.3
+        cell_m = 1.0
+
+        def z(self, xs, ys):
+            xs, ys = np.asarray(xs, dtype=float), np.asarray(ys, dtype=float)
+            return 0.4 * np.cos(2 * math.pi * xs / 16.0) * np.cos(2 * math.pi * ys / 16.0)
+
+    els = contours.elements(Bumps(), 400.0)
+    assert [el["id"] for el in els] == ["contour:100"]       # no wider interval has fewer levels than this one
+    assert _points(els) > contours.MAX_POINTS and contours.count_points(els) == _points(els)
+
+
 def test_a_small_site_keeps_the_half_metre_interval_and_the_fine_tolerance():
     els = _by_id(contours.elements(Cone(), R))
     assert "contour:100.5" in els and "contour:119.5" in els

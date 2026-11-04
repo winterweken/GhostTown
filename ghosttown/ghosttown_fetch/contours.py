@@ -5,8 +5,9 @@ Levels are round heights above sea level, every 0.5 m, so a line is at 85.0 m, n
 centre; each line's z is that height in local metres, exact and constant along it. Lines are drawn by
 marching squares on the terrain's own grid, merged into polylines, cut to the site circle and simplified in
 plan. Revit thins an import past MAX_POINTS its own way, so a site that would pass it is thinned here first:
-the finest of SIMPLIFY_M that fits, then, as a map does on a big or hilly site, the next round interval of
-INTERVALS_M. Flat ground has no contours."""
+the finest of SIMPLIFY_M that fits, then, as a map does on a big or hilly site, the next round interval that
+does: INTERVALS_M, and on through 10, 20, 50 m for mountains. Flat ground has no contours."""
+import itertools
 import math
 
 import numpy as np
@@ -93,17 +94,35 @@ def _points(levels):
     return sum(shapely.get_num_coordinates(line) for lines in levels.values() for line in lines)
 
 
+def _intervals():
+    """INTERVALS_M, then on through the round intervals a map uses on steeper ground: 10, 20, 50, 100 m …"""
+    yield from INTERVALS_M
+    for decade in itertools.count(1):
+        for step in (1.0, 2.0, 5.0):
+            yield step * 10.0 ** decade
+
+
 def thinned(levels):
     """(interval, tolerance, {height: [LineString]}): the 0.5 m levels simplified within the finest tolerance that
-    keeps the site under MAX_POINTS; failing that, every second, fourth or tenth level; failing that, the coarsest
-    of both."""
-    for interval in INTERVALS_M:
+    keeps the site under MAX_POINTS; failing that, the levels on the next round interval that does (1, 2, 5, 10,
+    20 m …). The result is over MAX_POINTS only when no interval can help, a level alone being too much: then the
+    widest interval that still has a level, at the coarsest tolerance (count_points tells)."""
+    coarsest = INTERVALS_M[0], SIMPLIFY_M[0], {}
+    relief = max(levels) - min(levels) if levels else 0.0
+    for interval in _intervals():
         subset = {h: lines for h, lines in levels.items() if abs(h / interval - round(h / interval)) < 1e-9}
-        for tolerance in SIMPLIFY_M:
+        for tolerance in SIMPLIFY_M if subset else ():
             out = {h: [shapely.simplify(line, tolerance) for line in lines] for h, lines in subset.items()}
             if _points(out) <= MAX_POINTS:
                 return interval, tolerance, out
-    return interval, tolerance, out
+            coarsest = interval, tolerance, out
+        if interval > relief:    # past the site's relief an interval keeps one level at most: nothing left to thin
+            return coarsest
+
+
+def count_points(elements):
+    """How many points the contour elements hold, which is what Revit counts against its import limit."""
+    return sum(len(line["pts"]) for el in elements for line in el["lines"])
 
 
 def elements(terrain, radius_m):

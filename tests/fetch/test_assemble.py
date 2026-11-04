@@ -205,6 +205,19 @@ def test_the_terrain_layer_adds_contour_lines_at_round_heights(tmp_path):
     assert doc["counts"]["contour"] == len(lines) and ctx.validate(doc) == []
     heights = [float(e["id"].split(":")[1]) for e in lines]
     assert all(h * 2 == int(h * 2) for h in heights) and heights == sorted(heights)   # every 0.5 m, in order
+    assert all(n["code"] != "contours" for n in doc["notes"])                         # within Revit's import points
+
+
+def test_contours_over_revits_import_points_are_kept_and_the_build_says_so(tmp_path, monkeypatch):
+    from ghosttown_fetch import contours
+
+    monkeypatch.setattr(contours, "MAX_POINTS", 1)          # any line is over it, whatever the interval
+    doc = assemble(_req(tmp_path), _net())
+    lines = [e for e in doc["elements"] if e["kind"] == "contour"]
+    points = sum(len(line["pts"]) for e in lines for line in e["lines"])
+    note, = [n for n in doc["notes"] if n["code"] == "contours"]
+    assert lines and note["level"] == "warn"
+    assert f"have {points:,} points, more than the 1 Revit takes" in note["text"]
 
 
 def test_flat_ground_and_a_build_without_the_terrain_layer_have_no_contours(tmp_path):

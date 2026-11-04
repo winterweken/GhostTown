@@ -50,8 +50,8 @@ Each build makes one collection, `Context · <site>`:
 - **Contours:** the terrain's contour lines every 0.5 m, at round heights above sea level, merged into one
   object with its own `Context - Contour` material in the `Contours · <site>` collection, drawn in front so
   they read over the ground they lie on. The layer to make a Revit toposolid from. A big or hilly site is
-  thinned to stay under Revit's 10,000 import points: simplified in plan first, then every 1, 2 or 5 m,
-  as a map would. Flat ground has none.
+  thinned to stay under Revit's 10,000 import points: simplified in plan first, then every 1, 2, 5 m or
+  wider, as a map would. Flat ground has none.
 - **Trees:** a trunk and a low-poly crown each, sized from the City's tree heights, merged into one object.
 - **Parcels:** lot lines draped 15 cm above the ground.
 - **Aerial photo** (Toronto, Windsor, and Ontario): The municipality's or Province's newest aerial orthophoto of the site, kept inside the .blend file,

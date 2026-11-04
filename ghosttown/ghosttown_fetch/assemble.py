@@ -189,6 +189,8 @@ NOTE_UNPLACED = ("{n} building permit{s} around the site couldn't be placed: the
 NOTE_NO_PARCEL = "{n} development application{s} {were} left out: not inside any parcel."
 NOTE_STATUS = ("The City gave {labels} as a development application status, which Ghost Town doesn't know yet, so "
                "it is shown as Under review.")
+NOTE_CONTOURS = ("The contour lines have {points:,} points, more than the {limit:,} Revit takes from an import, "
+                 "so Revit will thin them its own way.")
 
 
 def _counted(n):
@@ -486,6 +488,10 @@ def assemble(request, net, *, progress=None, now=None):
     doc["elements"].extend(surface)
     if "terrain" in layers:
         progress("Contours", 88)
-        doc["elements"].extend(contours.elements(terrain, radius))
+        lines = contours.elements(terrain, radius)
+        doc["elements"].extend(lines)
+        points = contours.count_points(lines)
+        if points > contours.MAX_POINTS:    # a level alone is too much, so no interval could thin it
+            ctx.note(doc, "warn", "contours", NOTE_CONTOURS.format(points=points, limit=contours.MAX_POINTS))
     progress("Writing", 95)
     return ctx.finish(doc)
