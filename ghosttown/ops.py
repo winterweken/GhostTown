@@ -6,7 +6,8 @@ import time
 import bpy
 from bpy.props import BoolProperty, EnumProperty, IntProperty, StringProperty
 
-from . import georef, look_build, prefs, revit_export, runner, scene_build, site_apps, site_photo, site_use
+from . import (georef, look_build, prefs, revit_export, runner, scene_build, site_apps, site_contours, site_photo,
+               site_use)
 from .ghosttown_fetch import context as ctx
 from .ghosttown_fetch import look_schema as ls
 from .ghosttown_fetch import request as rq
@@ -542,6 +543,40 @@ class GHOSTTOWN_OT_export_revit(bpy.types.Operator):
             return {"CANCELLED"}
         self.report({"INFO"}, f"Exported {count} objects to {os.path.basename(path)}. In Revit, import it "
                               "origin to origin.")
+        return {"FINISHED"}
+
+
+class GHOSTTOWN_OT_save_contours(bpy.types.Operator):
+    bl_idname = "ghosttown.save_contours"
+    bl_label = "Save Contours (DXF)…"
+    bl_description = ("Save the picked site's contour lines as a DXF on one layer, for Revit's Toposolid › "
+                      "Create from Import")
+
+    filepath: StringProperty(subtype="FILE_PATH")
+    filter_glob: StringProperty(default="*.dxf", options={"HIDDEN"})
+
+    @classmethod
+    def poll(cls, context):
+        root = site_use.picked(context)
+        return context.mode == "OBJECT" and root is not None and bool(site_contours.contour_objects(root))
+
+    def invoke(self, context, event):
+        name = bpy.path.clean_name(site_use.picked(context).get("ctx_label") or "site") + " contours.dxf"
+        folder = os.path.dirname(bpy.data.filepath) if bpy.data.filepath else os.path.expanduser("~")
+        self.filepath = os.path.join(folder, name)
+        context.window_manager.fileselect_add(self)
+        return {"RUNNING_MODAL"}
+
+    def execute(self, context):
+        path = bpy.path.ensure_ext(bpy.path.abspath(self.filepath), ".dxf")
+        try:
+            count = site_contours.save(site_use.picked(context), path)
+        except (OSError, ValueError) as e:
+            self.report({"ERROR"}, f"Couldn't save the contours ({e}).")
+            return {"CANCELLED"}
+        self.report({"INFO"}, f"Saved {count} contour line{'' if count == 1 else 's'} to {os.path.basename(path)}. "
+                              "In Revit: Import CAD with units in meters, origin to origin, then Toposolid › Create "
+                              "from Import › Create from CAD and tick Context - Contour.")
         return {"FINISHED"}
 
 

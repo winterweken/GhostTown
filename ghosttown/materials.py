@@ -18,7 +18,7 @@ PREFIX = "Context - "
 LABELS = {
     "building": "Building", "building_on_site": "Building (on site)", "building_guessed": "Building (height guessed)",
     "parcel": "Parcel", "parcel_on_site": "Parcel (site)",
-    "ground": "Ground", "road": "Road", "sidewalk": "Sidewalk", "parking": "Parking",
+    "ground": "Ground", "road": "Road", "sidewalk": "Sidewalk", "parking": "Parking", "contour": "Contour",
     "rail": "Rail", "green": "Green", "water": "Water", "tree": "Tree",
     "facade_detail": "Facade detail",
 }
@@ -27,6 +27,7 @@ COLOURS = {
     "parcel": (0.55, 0.25, 0.60),
     "ground": (0.80, 0.76, 0.66), "road": (0.33, 0.33, 0.35), "sidewalk": (0.70, 0.70, 0.70),
     "parking": (0.52, 0.52, 0.55), "rail": (0.45, 0.32, 0.22), "tree": (0.18, 0.42, 0.20),
+    "contour": (0.55, 0.33, 0.16),
     "facade_detail": (0.08, 0.085, 0.09),
 }
 # The kinds the City of Toronto's sun/shadow study has a colour for take its palette (BHPlus bh_shadows/toronto.py),

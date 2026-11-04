@@ -1,6 +1,8 @@
 """context.json -> Blender collections and objects. Never uses bpy.ops.
 
-Buildings get one object each; ground kinds, trees and parcels are merged per kind.
+Buildings get one object each; ground kinds, contours, trees and parcels are merged per kind. The contour
+lines get their own Contours collection and are drawn in front, so they read over the ground they lie on:
+the layer to make a Revit toposolid from.
 The root collection remembers which collections and objects this build made (by tag and by
 name), so a re-run removes exactly those and keeps everything the user added, duplicated or
 linked elsewhere.
@@ -18,7 +20,7 @@ from .ghosttown_fetch import BUILDING_KINDS
 from .ghosttown_fetch import context as ctx
 
 ROOT_PREFIX = "Context · "
-GROUP_ORDER = ("Buildings", "Ground", "Trees", "Parcels")
+GROUP_ORDER = ("Buildings", "Ground", "Contours", "Trees", "Parcels")
 MAX_LABEL = 60
 LOOK_DROPPED = "The street look couldn't be put back on the rebuilt site; apply it again."
 
@@ -26,6 +28,8 @@ LOOK_DROPPED = "The street look couldn't be put back on the rebuilt site; apply 
 def _group(kind):
     if kind in BUILDING_KINDS:
         return "Buildings"
+    if kind == "contour":
+        return "Contours"
     if kind == "tree":
         return "Trees"
     if kind in ("parcel", "parcel_on_site"):
@@ -95,6 +99,8 @@ def build(scene, doc, folder=None, *, keep_look=True, report=None):
             ob = _mesh_object(name, verts, edges=items, kinds=[kind])
         ob["ctx_id"] = f"merged:{kind}"
         ob["ctx_kind"] = kind
+        if kind == "contour":
+            ob.show_in_front = True    # the lines lie exactly on the ground: drawn in front, they stay visible
         groups[_group(kind)].objects.link(ob)
         made.append(ob.name)
 
