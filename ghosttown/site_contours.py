@@ -4,15 +4,21 @@ points along them. The OBJ from Export for Revit carries the same lines, but Rev
 the layers of a DWG, DXF or DGN import.
 
 The file is an ASCII DXF of release 12, the form every reader opens: one 3D POLYLINE per contour line on the
-`Context - Contour` layer, a ring flagged closed with its points written once. Coordinates are the model's metres,
-origin at the site centre, so the DXF imported origin to origin lands on the OBJ."""
+`CONTEXT_-_CONTOUR` layer, a ring flagged closed with its points written once. The layer can't be named
+`Context - Contour` after the lines' material: a release 12 name holds only A-Z, 0-9, $, _ and -, 31 of them at
+most, and AutoCAD is reported to refuse release 12 files whose layer names have spaces, commas or dots in
+them, or are too long. So the layer is the material's name in those letters. Coordinates are the model's
+metres, origin at the site centre, so the DXF imported origin to origin lands on the OBJ."""
 import math
+import re
 
 import numpy as np
 
 from . import materials, site_use
 
 ACADVER = "AC1009"   # release 12
+NAME_MAX = 31        # the most characters a release 12 name holds
+_NOT_IN_A_NAME = re.compile(r"[^A-Z0-9$_-]")   # and every character it can't hold
 COLOUR = 34          # AutoCAD colour index: a brown, like the Contour material
 RING_GAP_M = 0.001   # a chain whose ends meet this closely is a ring: the fetcher repeats a ring's first point last
 _OPEN, _CLOSED = 8, 9   # POLYLINE flags: 3D polyline, and a closed one
@@ -75,10 +81,22 @@ def _num(value):
     return "0.000" if text == "-0.000" else text
 
 
+def layer_name(name):
+    """`name` in release 12's letters: upper case, an underscore for each character outside A-Z, 0-9, $, _ and -,
+    and 31 characters at most."""
+    return _NOT_IN_A_NAME.sub("_", name.upper())[:NAME_MAX]
+
+
+def contour_layer():
+    """The DXF's layer, which is the name Revit lists to tick: the Contour material's, in release 12's letters."""
+    return layer_name(materials.material_name("contour"))
+
+
 def dxf(lines, layer):
     """The DXF text: a release 12 header, the CONTINUOUS linetype, layers 0 and `layer`, then one POLYLINE with
-    its VERTEX entries and SEQEND per line, every entity on `layer`. Group code on one line, right-justified in
-    three characters as AutoCAD writes it, value on the next, CR LF between."""
+    its VERTEX entries and SEQEND per line, every entity on `layer`, which is written as given and so has to be
+    a release 12 name (layer_name). Group code on one line, right-justified in three characters as AutoCAD
+    writes it, value on the next, CR LF between."""
     out = [(0, "SECTION"), (2, "HEADER"), (9, "$ACADVER"), (1, ACADVER), (0, "ENDSEC"),
            (0, "SECTION"), (2, "TABLES"),
            (0, "TABLE"), (2, "LTYPE"), (70, 1),
@@ -106,5 +124,5 @@ def save(root, path):
     if not lines:
         raise ValueError("this site has no contour lines")
     with open(path, "w", encoding="ascii", newline="") as f:
-        f.write(dxf(lines, materials.material_name("contour")))
+        f.write(dxf(lines, contour_layer()))
     return len(lines)
