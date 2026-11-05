@@ -574,9 +574,11 @@ class GHOSTTOWN_OT_save_contours(bpy.types.Operator):
         except (OSError, ValueError) as e:
             self.report({"ERROR"}, f"Couldn't save the contours ({e}).")
             return {"CANCELLED"}
+        # Whole in the Info editor; the status bar cuts the middle out of a report wider than its banner.
         self.report({"INFO"}, f"Saved {count} contour line{'' if count == 1 else 's'} to {os.path.basename(path)}. "
-                              "In Revit: Import CAD with units in meters, origin to origin, then Toposolid › Create "
-                              "from Import › Create from CAD and tick Context - Contour.")
+                              "In Revit: Import CAD with Current View Only unticked, units in meters, origin to "
+                              "origin; then in a 3D view, Toposolid › Create from Import › Create from CAD and "
+                              f"tick {site_contours.contour_layer()}.")
         return {"FINISHED"}
 
 
