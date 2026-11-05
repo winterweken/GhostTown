@@ -52,10 +52,11 @@ def query(net, service, layer=None, params=None, *, source="toronto", source_nam
         params, layer = layer, None
     url = layer_url(service, layer, base_url=base_url, server_type=server_type)
     name = source_name or ("The City of Toronto" if source == "toronto" else "The ArcGIS service")
+    accept = accept or (lambda body: check(body, name))     # an answer is refused in the name of its own source
     features, seen, offset = [], set(), 0
     for _ in range(MAX_PAGES):
         data = urllib.parse.urlencode({**params, "resultOffset": str(offset)}).encode("ascii")
-        page = _load(net.get(url, source=source, data=data, check=accept or check, max_age_days=max_age_days), name)
+        page = _load(net.get(url, source=source, data=data, check=accept, max_age_days=max_age_days), name)
         got = page.get("features") or []
         marks = [_mark(feature) for feature in got]
         features += [feature for feature, mark in zip(got, marks) if mark not in seen]
@@ -85,8 +86,18 @@ def _load(body, source_name="The City of Toronto"):
     if not isinstance(doc, dict):
         raise SourceError(f"{source_name} sent an answer that isn't JSON; try again in a minute.")
     if "error" in doc:
-        error = doc["error"]
-        detail = error.get("message", error) if isinstance(error, dict) else error
-        raise SourceError(f"{source_name} refused a query ({str(detail)[:120]}); try again in a minute.")
+        raise SourceError(f"{source_name} refused a query ({str(_reason(doc['error']))[:120]}); try again in a minute.")
     return doc
+
+
+def _reason(error):
+    """What a refusal says for itself: its message, or its details when the message is empty, as ArcGIS Online's
+    is (seen 2026-11-05)."""
+    if not isinstance(error, dict):
+        return error
+    message = error.get("message", error)
+    details = error.get("details")
+    if message or not details:
+        return message
+    return "; ".join(str(detail) for detail in details) if isinstance(details, list) else details
 
