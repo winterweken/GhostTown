@@ -197,6 +197,16 @@ def test_the_operator_reports_the_layer_the_file_has():
     assert layer == LAYER
 
 
+def test_the_operator_reports_how_revit_has_to_import_the_file():
+    """Of what Autodesk's help asks for a toposolid from an import, two things fall to the user: the import
+    isn't made with Current View Only, and the toposolid is made in a 3D view. The file can't say its units,
+    so the report does."""
+    _, (_, said) = saved_by_the_operator()
+    needed = ("Current View Only unticked", "units in meters", "origin to origin", "in a 3D view")
+    missing = [words for words in needed if words not in said]
+    assert not missing, (missing, said)
+
+
 def test_a_moved_site_shifts_the_heights():
     root = contour_site()
     lines, = site_contours.contour_objects(root)
