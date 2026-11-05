@@ -329,7 +329,9 @@ Natural Resources Canada, the Province of Ontario, OpenStreetMap or Mapillary.
 
 ## Known limits
 
-- Outside Toronto there are no roads, trees or parcels yet, and outside Canada the ground is flat.
+- Outside Toronto, Windsor, Mississauga, Markham and Hamilton there are no roads, trees or parcels yet, and
+  outside Canada the ground is flat. Trees come with Toronto and Windsor only, and Markham has no parks or water.
+- A site that lies inside one large lot, such as a big park or a campus, has no lot line: none crosses it.
 - Buildings are flat-topped prisms unless they have measured roofs (Ontario, outside the City of Toronto's
   3D Massing model). LiDAR roofs carry no roof planes, just measured points.
 - Fitted roofs give a house one roof for its whole outline, so an L-shaped house whose wings have their own
