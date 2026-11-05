@@ -30,7 +30,7 @@ Ghost Town is a free, open-source extension for Blender 5.2 and later. It is at 
 |---|---|---|---|---|
 | **City of Toronto** | City 3D Massing model, newest edition: stepped parts with measured heights | NRCan elevation, 2 m grid | Roads, sidewalks, parking, rail, water, parks, trees, parcels, aerial photo | Yes |
 | **City of Windsor** | Municipal building outlines with measured top and ground heights | NRCan elevation, 2 m grid | Roads, Detroit River & water bodies, parks, sidewalks, trees, parcels, aerial photo | Type coordinates |
-| **Mississauga, Markham, Hamilton** | Municipal building footprints (Mississauga) or OpenStreetMap | NRCan elevation | Roads, water bodies (Lake Ontario), parks, municipal parcels, aerial photo | Type coordinates |
+| **Mississauga, Markham, Hamilton** | Municipal building footprints (Mississauga) or OpenStreetMap | NRCan elevation | Roads, municipal parcels, aerial photo; in Mississauga and Hamilton also water bodies (Lake Ontario) and parks | Type coordinates |
 | **Elsewhere in Canada** | OpenStreetMap | NRCan elevation where available | Plain ground only | Not yet (type coordinates) |
 | **Rest of the world** | OpenStreetMap | Flat | Plain ground only | Not yet (type coordinates) |
 
@@ -279,7 +279,7 @@ you used. The panel lists them after every build.
 | City of Toronto open data | Buildings (3D Massing, newest yearly edition), aerial photo, ground, trees, parcels, addresses, city boundary, development applications, building permits | Contains information licensed under the Open Government Licence – Toronto |
 | City of Windsor open data | Buildings (measured heights), aerial orthophoto, roads, water (Detroit River, retention ponds, creeks), parks, sidewalks, trees, property parcels, city boundary | Contains information licensed under the Open Government Licence – City of Windsor |
 | City of Mississauga open data | Building footprints, roads, water bodies (Lake Ontario, creeks), parks, tax and property parcels | Contains information licensed under the Open Government Licence – City of Mississauga |
-| City of Markham open data | Roads, parks, property assessment parcels | Contains information licensed under the Open Government Licence – City of Markham |
+| City of Markham open data | Roads, property assessment parcels | Contains information licensed under the Open Government Licence – City of Markham |
 | City of Hamilton open data | Roads, water bodies (Hamilton Harbour, Lake Ontario), parks, assessment parcels | Contains information licensed under the Open Government Licence – City of Hamilton |
 | Natural Resources Canada (HRDEM) | Terrain | Contains information licensed under the Open Government Licence – Canada |
 | Geospatial Ontario | Ontario Imagery aerial orthophotography, LiDAR DTM/DSM | Contains information licensed under the Open Government Licence – Ontario |

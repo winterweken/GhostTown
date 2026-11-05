@@ -9,6 +9,8 @@ entries below name the other recorders, and say where an answer was cut down or 
   `datacube.services.geo.ca/wrapper/ogc/elevation-hrdem-mosaic` (WCS 1.1.1, coverage `dtm`, EPSG:3857, a
   ±200 m box, GRIDOFFSETS 2,-2). Contains information licensed under the Open Government Licence – Canada.
   The London file is NRCan's 1×1 placeholder for a site outside Canada.
+- `municipal_layer_fields.json`: the field names of each layer the municipal providers ask of Windsor, Mississauga,
+  Markham and Hamilton, read from each layer's own description on 2026-11-05 (names only, no data).
 - `bay/toronto_*.json.gz`: City of Toronto open data. Contains information licensed under the Open Government
   Licence – Toronto.
 - `bay/massing_subset.zip`: a slice of the City of Toronto 3D Massing model (2025), recorded by

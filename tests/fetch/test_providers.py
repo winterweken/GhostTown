@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 import pytest
 import shapely
 
@@ -6,7 +7,7 @@ import shapely
 from ghosttown_fetch import assemble, providers, terrain
 from ghosttown_fetch.frame import Frame
 from ghosttown_fetch.net import SourceError
-from fakes import FakeNet
+from fakes import FakeNet, form
 from toronto_samples import square, page
 
 
@@ -202,8 +203,79 @@ def test_municipal_ground_specs_cover_roads_water_green():
     assert "water" in providers.HAMILTON.ground_specs
     assert "green" in providers.HAMILTON.ground_specs
 
-    assert "road" in providers.MARKHAM.ground_specs
-    assert "green" in providers.MARKHAM.ground_specs
+    assert set(providers.MARKHAM.ground_specs) == {"road"}     # no layer of the City's parks is known
+
+
+# The field names of every city layer the providers ask, as each layer's description gave them on 2026-11-05. Five of
+# them, all on ArcGIS Online, have no OBJECTID field: their features' ids follow FID.
+LAYER_FIELDS = json.loads((Path(__file__).parent / "fixtures" / "municipal_layer_fields.json").read_text(encoding="utf-8"))
+# ArcGIS Online's answer to a query ordered by a field its layer doesn't have (seen 2026-11-05), byte for byte.
+REFUSAL = b'{"error":{"code":400,"message":"","details":["\'OBJECTID\' parameter is invalid"]}}'
+
+
+def _layer(url):
+    return url.split("/services/")[1].removesuffix("/query")
+
+
+def _city_server(*features):
+    """A FakeNet answer that behaves like a city's ArcGIS server: a page of `features`, or its refusal of a query
+    ordered by a field the layer doesn't have."""
+    def answer(url, data):
+        order = form(data).get("orderByFields")
+        return REFUSAL if order and order not in LAYER_FIELDS[_layer(url)] else page(*features)
+    return answer
+
+
+def _asked(prov, lat, lon):
+    """{layer: the field its query is ordered by} for every parcel, building, ground and tree layer `prov` asks."""
+    frame, net = Frame(lat, lon), FakeNet({prov.source_key: _city_server()})
+    prov.fetch_parcels(net, lat, lon, 300)
+    prov.fetch_buildings(net, lat, lon, 300)
+    prov.fetch_ground(net, lat, lon, 300, frame)
+    prov.fetch_trees(net, lat, lon, 300)
+    return {_layer(url): form(data).get("orderByFields") for url, _, data in net.calls}
+
+
+@pytest.mark.parametrize("prov", list(providers.PROVIDERS.values()), ids=list(providers.PROVIDERS))
+def test_every_layer_a_city_is_asked_for_is_ordered_by_a_field_it_has(prov):
+    lat, lon = (prov.box[0] + prov.box[1]) / 2, (prov.box[2] + prov.box[3]) / 2
+    asked = _asked(prov, lat, lon)      # a refusal would be raised here
+    assert asked and all(order in LAYER_FIELDS[layer] for layer, order in asked.items())
+
+
+def test_mississaugas_ground_is_fetched_though_two_of_its_layers_have_no_objectid():
+    lat, lon = 43.589, -79.644
+    frame = Frame(lat, lon)
+    net = FakeNet({"mississauga": _city_server(_w_poly(0, 0, 20, frame, FID=1))})
+    assert set(providers.MISSISSAUGA.fetch_ground(net, lat, lon, 300, frame)) == {"water", "road", "green"}
+
+
+def test_the_ground_layers_that_have_no_objectid_are_ordered_by_fid():
+    asked = _asked(providers.MISSISSAUGA, 43.589, -79.644)
+    assert asked["Waterbody/FeatureServer/0"] == "FID" and asked["StreetCentreline/FeatureServer/0"] == "FID"
+
+
+def test_markhams_ground_is_its_roads_alone():
+    # Park_Areas, the layer first asked for Markham's parks, is four districts that cover the whole city (seen
+    # 2026-11-05): with it a Markham site is green from edge to edge. No layer of the City's parks is known.
+    lat, lon = 43.856, -79.337
+    frame = Frame(lat, lon)
+    net = FakeNet({"markham": _city_server(_w_poly(0, 0, 20, frame, FID=1))})
+    assert set(providers.MARKHAM.fetch_ground(net, lat, lon, 300, frame)) == {"road"}
+    assert [_layer(url) for url, _, _ in net.calls] == ["StreetRoads/FeatureServer/0"]
+
+
+def test_windsors_road_centrelines_are_ordered_by_the_field_their_ids_follow():
+    # The layer has an OBJECTID too, null on every feature (seen 2026-11-05): its features' ids follow OBJECTID_1.
+    assert _asked(providers.WINDSOR, 42.317, -83.036)["Transportation/MapServer/16"] == "OBJECTID_1"
+
+
+def test_a_ground_layer_whose_spec_names_no_order_field_is_ordered_by_objectid():
+    prov = providers.MunicipalProvider("anytown", "City of Anytown", (0.0, 1.0, 0.0, 1.0), ground_specs={
+        "green": [{"url": "https://example.org/arcgis/rest/services/Parks/FeatureServer/0/query"}]})
+    net = FakeNet({"anytown": page()})
+    prov.fetch_ground(net, 0.5, 0.5, 300, Frame(0.5, 0.5))
+    assert [form(data).get("orderByFields") for _, _, data in net.calls] == ["OBJECTID"]
 
 
 def test_windsor_photo_fetch(tmp_path):
