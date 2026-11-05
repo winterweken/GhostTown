@@ -39,25 +39,38 @@ def radius_params(lat, lon, radius_m, *, out_fields="*", where="1=1", order_by="
 
 def query(net, service, layer=None, params=None, *, source="toronto", source_name=None,
           base_url=None, server_type="FeatureServer", accept=None, max_age_days=None):
-    """Every feature for one query. Page sizes are not reliable, so keep asking while the server
-    says there is more and the last page was not empty. `accept(body)` may raise SourceError to
-    refuse an answer before it is cached. `max_age_days`: how long a stored page is used (the cache's
-    30 days when None)."""
+    """Every feature for one query, each once. Page sizes are not reliable, so keep asking while the server
+    says there is more and the last page was not empty, each time from the number of features received so far.
+    The City of Toronto's server takes a page from the rows around the circle and only then drops the ones
+    outside it (seen 2026-11-05), so its pages are short and its `resultOffset` counts rows, not features: the
+    next page starts inside the last one and brings its tail again. An offset like that never passes a row not
+    yet read, so nothing is missed, and what an earlier page already brought is left out. Asking by key instead
+    (`OBJECTID` above the last one) would lose features on ArcGIS Online, where Mississauga, Markham and Hamilton
+    are: it ignores `orderByFields` on these queries. `accept(body)` may raise SourceError to refuse an answer
+    before it is cached. `max_age_days`: how long a stored page is used (the cache's 30 days when None)."""
     if params is None and isinstance(layer, dict):
         params, layer = layer, None
     url = layer_url(service, layer, base_url=base_url, server_type=server_type)
     name = source_name or ("The City of Toronto" if source == "toronto" else "The ArcGIS service")
-    features, offset = [], 0
+    features, seen, offset = [], set(), 0
     for _ in range(MAX_PAGES):
         data = urllib.parse.urlencode({**params, "resultOffset": str(offset)}).encode("ascii")
         page = _load(net.get(url, source=source, data=data, check=accept or check, max_age_days=max_age_days), name)
         got = page.get("features") or []
-        features += got
+        marks = [_mark(feature) for feature in got]
+        features += [feature for feature, mark in zip(got, marks) if mark not in seen]
+        seen.update(marks)
         more = page.get("exceededTransferLimit") or (page.get("properties") or {}).get("exceededTransferLimit")
         if not more or not got:
             return features
         offset += len(got)
     raise SourceError(f"{name} returned too many pages; try a smaller radius.")
+
+
+def _mark(feature):
+    """What tells one feature from the rest: the id its server gave it, else everything it says."""
+    mark = feature.get("id")
+    return mark if isinstance(mark, (int, float, str)) else json.dumps(feature, sort_keys=True)
 
 
 def check(body, source_name="The City of Toronto"):
