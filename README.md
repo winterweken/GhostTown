@@ -22,7 +22,7 @@ between colours by kind and the aerial photo. The build is shortened here. Data:
 Natural Resources Canada (see [Data and credits](#data-and-credits)).*
 
 Ghost Town is a free, open-source extension for Blender 5.2 and later. It is at an early stage
-(version 0.6): Toronto, Windsor, Mississauga, Markham, and Hamilton are covered in depth with municipal open data, with georeferencing and aerial orthophotography across Lake Ontario and southern Ontario.
+(version 0.8): Toronto, Windsor, Mississauga, Markham, and Hamilton are covered in depth with municipal open data, with georeferencing and aerial orthophotography across Lake Ontario and southern Ontario.
 
 ## What you get
 
@@ -146,7 +146,7 @@ survey point and its **Ground** choice:
 
 When the site has contour lines (any ground that isn't flat):
 
-- **Save Contours (DXF)…** writes the contour lines as a DXF on one `Context - Contour` layer, the import
+- **Save Contours (DXF)…** writes the contour lines as a DXF on one `CONTEXT_-_CONTOUR` layer, the import
   Revit builds a toposolid from. See [Taking it into Revit](#taking-it-into-revit).
 
 When the site has an aerial photo:
@@ -245,12 +245,14 @@ To export by hand instead:
   or Flat roofs.
 - **Topo.** The OBJ carries the contour lines, but Revit builds a toposolid only from the layers of a
   DWG, DXF or DGN import. So press **Save Contours (DXF)…** in the Site panel, which writes the site's
-  contour lines as a DXF on one `Context - Contour` layer, and in Revit **Import CAD** it with the units
-  in meters, origin to origin. Then Toposolid › Create from Import › Create from CAD, and tick the
-  `Context - Contour` layer. Revit places the toposolid's points along the lines and builds its own
-  surface, and the ground pieces stay as context. Each line sits at its height in the model's metres, so
-  the toposolid lands on the model imported origin to origin. Revit thins an import past 10,000 points
-  (20,000 in Revit 2026, adjustable), which is why Ghost Town keeps a site's lines under that.
+  contour lines as a DXF on one `CONTEXT_-_CONTOUR` layer (a release 12 DXF's names are upper
+  case, without spaces), and in Revit **Import CAD** it with **Current View Only** unticked, the units
+  in meters, origin to origin. Then, in a 3D view, Toposolid › Create from Import › Create from CAD,
+  click the imported DXF, and tick the `CONTEXT_-_CONTOUR` layer. Revit places the toposolid's points
+  along the lines and builds its own surface, and the ground pieces stay as context. Each line sits at
+  its height in the model's metres, so the toposolid lands on the model imported origin to origin.
+  Revit thins an import past 10,000 points (20,000 in Revit 2026, adjustable), which is why Ghost Town
+  keeps a site's lines under that.
 - To use the aerial photo in Revit, **Save Site Photo…**, then in a site plan use **Insert › Image**, set
   the image's width to the width Ghost Town reports (twice the radius, in metres), and centre it on the
   origin.
