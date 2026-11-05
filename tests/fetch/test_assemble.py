@@ -149,14 +149,22 @@ def test_a_geometry_error_in_one_layer_is_a_warning_not_a_failed_build(tmp_path,
     assert ctx.validate(doc) == []
 
 
-def _empty_part_error(*args, **kwargs):
-    import shapely
+def _shapely_error(kind):
+    """A stand-in for a builder or a source that raises one of shapely's own errors, none of them a GEOSException."""
+    def raises(*args, **kwargs):
+        import shapely
 
-    raise shapely.errors.EmptyPartError("Can't create MultiLineString with empty component")   # not a GEOSException
+        raise getattr(shapely.errors, kind)("Can't create MultiLineString with empty component")
+    return raises
 
 
-def test_a_shapely_error_of_another_kind_in_one_layer_is_a_warning_too(tmp_path, monkeypatch):
-    monkeypatch.setattr("ghosttown_fetch.parcels.from_toronto", _empty_part_error)
+_empty_part_error = _shapely_error("EmptyPartError")
+OTHER_KINDS = ["EmptyPartError", "GeometryTypeError"]
+
+
+@pytest.mark.parametrize("kind", OTHER_KINDS)
+def test_a_shapely_error_of_another_kind_in_one_layer_is_a_warning_too(tmp_path, monkeypatch, kind):
+    monkeypatch.setattr("ghosttown_fetch.parcels.from_toronto", _shapely_error(kind))
     doc = assemble(_req(tmp_path), _net())
     assert any(n["code"] == "city_parcels" and n["level"] == "warn" and "couldn't be built" in n["text"] for n in doc["notes"])
     ids = {e["id"] for e in doc["elements"]}
@@ -164,8 +172,9 @@ def test_a_shapely_error_of_another_kind_in_one_layer_is_a_warning_too(tmp_path,
     assert ctx.validate(doc) == []
 
 
-def test_a_shapely_error_of_another_kind_while_reading_city_ground_gives_plain_ground(tmp_path, monkeypatch):
-    monkeypatch.setattr("ghosttown_fetch.sources.toronto.fetch_ground", _empty_part_error)
+@pytest.mark.parametrize("kind", OTHER_KINDS)
+def test_a_shapely_error_of_another_kind_while_reading_city_ground_gives_plain_ground(tmp_path, monkeypatch, kind):
+    monkeypatch.setattr("ghosttown_fetch.sources.toronto.fetch_ground", _shapely_error(kind))
     doc = assemble(_req(tmp_path), _net())
     assert any(n["code"] == "city_ground" and n["level"] == "warn" and "couldn't be read" in n["text"] for n in doc["notes"])
     ids = {e["id"] for e in doc["elements"]}
