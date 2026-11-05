@@ -2,13 +2,14 @@ import ghosttown_fetch as cf
 
 
 def test_version_and_tool():
-    assert cf.__version__ == "0.7.0"
-    assert cf.TOOL == "ghosttown 0.7.0"
+    assert cf.__version__ == "0.8.0"
+    assert cf.TOOL == "ghosttown 0.8.0"
     assert cf.SCHEMA == 1
 
 
 def test_kinds_are_unique_and_grouped():
-    assert len(cf.KINDS) == len(set(cf.KINDS)) == 13
+    assert len(cf.KINDS) == len(set(cf.KINDS)) == 14
+    assert "contour" in cf.KINDS and "contour" not in cf.GROUND_KINDS   # lines, never ground
     assert set(cf.GROUND_KINDS) <= set(cf.KINDS)
     assert set(cf.BUILDING_KINDS) <= set(cf.KINDS)
     assert "ground" in cf.GROUND_KINDS

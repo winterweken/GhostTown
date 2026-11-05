@@ -46,4 +46,27 @@ def test_fetch_parcels_asks_for_common_lots_only():
     url, _, data = net.calls[0]
     assert url.endswith("/cot_geospatial27/FeatureServer/36/query")
     assert form(data)["where"] == "FEATURE_TYPE = 'COMMON'"
-    assert form(data)["outFields"] == "OBJECTID,PARCELID,ADDRESS_NUMBER,LINEAR_NAME_FULL,DATE_EXPIRY"
+    assert form(data)["outFields"] == "OBJECTID,PARCELID,DATE_EXPIRY"
+
+
+# The City's Property Boundary layer as it answered on 2026-11-04: its fields (ADDRESS_NUMBER and LINEAR_NAME_FULL
+# had gone from it), and its answer to a query that asks for a field it doesn't have.
+PROPERTY_BOUNDARY_FIELDS = {"OBJECTID", "Shape__Area", "Shape__Length", "FEATURE_TYPE", "DATE_EFFECTIVE",
+                            "DATE_EXPIRY", "STATEDAREA", "TRANS_ID_CREATE", "TRANS_ID_EXPIRE", "PARCELID",
+                            "GEOM_AREA", "SYSTEMSTARTDATE"}
+REFUSAL = b'{"error":{"code":400,"extendedCode":-2147467259,"message":"Unable to complete operation.","details":[]}}'
+
+
+def _property_boundary(*features):
+    """A FakeNet answer that behaves like the City's layer: the page, or its refusal of a field it doesn't have."""
+    def answer(url, data):
+        asked = set(form(data)["outFields"].split(","))
+        return page(*features) if asked <= PROPERTY_BOUNDARY_FIELDS else REFUSAL
+    return answer
+
+
+def test_fetch_parcels_asks_only_for_fields_the_citys_layer_has():
+    net = FakeNet({"toronto": _property_boundary(square(0, 0, 20, OBJECTID=13408, PARCELID=5464980,
+                                                        DATE_EXPIRY=32503698000000))})
+    found = toronto.fetch_parcels(net, LAT0, LON0, 150)
+    assert [f["properties"]["PARCELID"] for f in found] == [5464980]

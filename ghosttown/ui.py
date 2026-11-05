@@ -3,7 +3,7 @@ import textwrap
 
 import bpy
 
-from . import georef, look_build, materials, ops, prefs, runner, site_apps, site_use
+from . import georef, look_build, materials, ops, prefs, runner, site_apps, site_contours, site_use
 from .ghosttown_fetch import app_boxes
 from .ghosttown_fetch import context as ctx
 
@@ -190,6 +190,8 @@ class GHOSTTOWN_PT_site(bpy.types.Panel):
             for line in georef.survey_lines(point):
                 col.label(text=line)
         layout.operator("ghosttown.export_revit", icon="EXPORT")
+        if site_contours.contour_objects(root):
+            layout.operator("ghosttown.save_contours", icon="EXPORT")
         box = layout.box()
         choice = site_use.ground_choice(root)
         options = [("colours", "Colours")] + ([("photo", "Photo")] if site_use.has_photo(root) else []) \
