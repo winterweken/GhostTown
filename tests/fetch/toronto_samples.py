@@ -26,6 +26,11 @@ def square(x0, y0, size, **props):
     return polygon([(x0, y0), (x0 + size, y0), (x0 + size, y0 + size), (x0, y0 + size)], **props)
 
 
+def multipolygon(*parts, **props):
+    """One feature whose shape is several polygons, each given as a polygon() or square() feature."""
+    return _feature({"type": "MultiPolygon", "coordinates": [part["geometry"]["coordinates"] for part in parts]}, props)
+
+
 def line(pts, **props):
     return _feature({"type": "LineString", "coordinates": [_ll(x, y) for x, y in pts]}, props)
 

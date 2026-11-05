@@ -30,7 +30,9 @@ def from_features(features, frame, terrain, radius_m, *, source_key="toronto",
         lines = []
         for poly in polygons(to_local(geom, frame)):
             clipped = poly.boundary.intersection(site)
-            parts = [p for p in shapely.get_parts(clipped) if p.geom_type == "LineString"]
+            # A boundary that misses the circle (a lot that holds the whole site, a piece of a lot outside it) clips to
+            # one empty line, which MultiLineString refuses.
+            parts = [p for p in shapely.get_parts(clipped) if p.geom_type == "LineString" and not p.is_empty]
             if not parts:
                 continue
             merged = shapely.line_merge(MultiLineString(parts))

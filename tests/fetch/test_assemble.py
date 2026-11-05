@@ -9,7 +9,7 @@ from fakes import FakeNet, router
 from osm_samples import body, way
 from osm_samples import square as osm_square
 from tiff_samples import east_slope_tiff
-from toronto_samples import LAT0, LON0, page, point, polygon, square
+from toronto_samples import LAT0, LON0, multipolygon, page, point, polygon, square
 import photo_samples
 
 OUTLINE = "Building Outline"
@@ -95,6 +95,16 @@ def test_one_city_layer_failing_is_a_warning_not_a_failure(tmp_path):
     doc = assemble(_req(tmp_path), _net(toronto=_city(**{"cot_geospatial3/FeatureServer/10/": DOWN})))
     assert any(n["code"] == "city_trees" and n["level"] == "warn" for n in doc["notes"])
     assert "toronto:building:7" in {e["id"] for e in doc["elements"]}
+
+
+def test_lots_whose_edges_miss_the_circle_do_not_fail_the_build(tmp_path):
+    lots = page(square(-400, -400, 800, OBJECTID=1, PARCELID=77),                                   # holds the whole circle
+                multipolygon(square(100, -20, 200), square(400, 0, 20), OBJECTID=2, PARCELID=88),   # its second piece is outside
+                square(-20, -20, 40, OBJECTID=3, PARCELID=55))
+    doc = assemble(_req(tmp_path), _net(toronto=_city(**{"cot_geospatial27/FeatureServer/36/": lots})))
+    assert {e["id"] for e in doc["elements"] if e["kind"] == "parcel"} == {"toronto:parcel:88", "toronto:parcel:55"}
+    assert [n for n in doc["notes"] if n["code"] == "city_parcels"] == []
+    assert "toronto:building:7" in {e["id"] for e in doc["elements"]} and ctx.validate(doc) == []
 
 
 def test_when_every_data_source_fails_nothing_is_fetched(tmp_path):
