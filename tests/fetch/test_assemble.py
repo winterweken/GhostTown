@@ -9,7 +9,7 @@ from fakes import FakeNet, router
 from osm_samples import body, way
 from osm_samples import square as osm_square
 from tiff_samples import east_slope_tiff
-from toronto_samples import LAT0, LON0, page, point, polygon, square
+from toronto_samples import LAT0, LON0, line, multipolygon, page, point, polygon, square
 import photo_samples
 
 OUTLINE = "Building Outline"
@@ -97,6 +97,16 @@ def test_one_city_layer_failing_is_a_warning_not_a_failure(tmp_path):
     assert "toronto:building:7" in {e["id"] for e in doc["elements"]}
 
 
+def test_lots_whose_edges_miss_the_circle_do_not_fail_the_build(tmp_path):
+    lots = page(square(-400, -400, 800, OBJECTID=1, PARCELID=77),                                   # holds the whole circle
+                multipolygon(square(100, -20, 200), square(400, 0, 20), OBJECTID=2, PARCELID=88),   # its second piece is outside
+                square(-20, -20, 40, OBJECTID=3, PARCELID=55))
+    doc = assemble(_req(tmp_path), _net(toronto=_city(**{"cot_geospatial27/FeatureServer/36/": lots})))
+    assert {e["id"] for e in doc["elements"] if e["kind"] == "parcel"} == {"toronto:parcel:88", "toronto:parcel:55"}
+    assert [n for n in doc["notes"] if n["code"] == "city_parcels"] == []
+    assert "toronto:building:7" in {e["id"] for e in doc["elements"]} and ctx.validate(doc) == []
+
+
 def test_when_every_data_source_fails_nothing_is_fetched(tmp_path):
     everything_down = router({"FeatureServer/40/": page(CITY), "package_show?id=3d-massing": DOWN, "FeatureServer/": DOWN})
     with pytest.raises(NothingFetched, match="503"):
@@ -137,6 +147,71 @@ def test_a_geometry_error_in_one_layer_is_a_warning_not_a_failed_build(tmp_path,
     ids = {e["id"] for e in doc["elements"]}
     assert "tree:toronto:9" in ids and "ground:road" in ids and not any(i.startswith("toronto:building") for i in ids)
     assert ctx.validate(doc) == []
+
+
+def _shapely_error(kind):
+    """A stand-in for a builder or a source that raises one of shapely's own errors, none of them a GEOSException."""
+    def raises(*args, **kwargs):
+        import shapely
+
+        raise getattr(shapely.errors, kind)("Can't create MultiLineString with empty component")
+    return raises
+
+
+_empty_part_error = _shapely_error("EmptyPartError")
+OTHER_KINDS = ["EmptyPartError", "GeometryTypeError"]
+
+
+@pytest.mark.parametrize("kind", OTHER_KINDS)
+def test_a_shapely_error_of_another_kind_in_one_layer_is_a_warning_too(tmp_path, monkeypatch, kind):
+    monkeypatch.setattr("ghosttown_fetch.parcels.from_toronto", _shapely_error(kind))
+    doc = assemble(_req(tmp_path), _net())
+    assert any(n["code"] == "city_parcels" and n["level"] == "warn" and "couldn't be built" in n["text"] for n in doc["notes"])
+    ids = {e["id"] for e in doc["elements"]}
+    assert {"toronto:building:7", "tree:toronto:9", "ground:road"} <= ids and not any(i.startswith("toronto:parcel") for i in ids)
+    assert ctx.validate(doc) == []
+
+
+@pytest.mark.parametrize("kind", OTHER_KINDS)
+def test_a_shapely_error_of_another_kind_while_reading_city_ground_gives_plain_ground(tmp_path, monkeypatch, kind):
+    monkeypatch.setattr("ghosttown_fetch.sources.toronto.fetch_ground", _shapely_error(kind))
+    doc = assemble(_req(tmp_path), _net())
+    assert any(n["code"] == "city_ground" and n["level"] == "warn" and "couldn't be read" in n["text"] for n in doc["notes"])
+    ids = {e["id"] for e in doc["elements"]}
+    assert {"toronto:building:7", "toronto:parcel:55"} <= ids and {i for i in ids if i.startswith("ground:")} == {"ground:ground"}
+    assert ctx.validate(doc) == []
+
+
+def test_a_shape_that_cannot_be_read_costs_that_shape_only(tmp_path):
+    odd = line([(0, 20), (50, 20)], OBJECTID=8)     # a line with an empty part: shapely refuses to make it
+    odd["geometry"] = {"type": "MultiLineString", "coordinates": [odd["geometry"]["coordinates"], []]}
+    road = polygon([(-200, -4), (200, -4), (200, 4), (-200, 4)], OBJECTID=2)
+    doc = assemble(_req(tmp_path), _net(toronto=_city(**{"cot_geospatial3/FeatureServer/3/": page(odd, road)})))
+    assert {"ground:road", "toronto:building:7", "toronto:parcel:55"} <= {e["id"] for e in doc["elements"]}
+    assert all(n["code"] != "city_ground" for n in doc["notes"]) and ctx.validate(doc) == []
+
+
+def _a_mistake(*args, **kwargs):
+    raise TypeError("unsupported operand type(s)")     # a fault in the code, not a shape a source sent
+
+
+def test_an_error_that_is_not_shapelys_still_fails_the_build_where_a_layer_is_built(tmp_path, monkeypatch):
+    monkeypatch.setattr("ghosttown_fetch.parcels.from_toronto", _a_mistake)
+    with pytest.raises(TypeError):
+        assemble(_req(tmp_path), _net())
+
+
+def test_an_error_that_is_not_shapelys_still_fails_the_build_where_a_layer_is_read(tmp_path, monkeypatch):
+    monkeypatch.setattr("ghosttown_fetch.sources.toronto.fetch_ground", _a_mistake)
+    with pytest.raises(TypeError):
+        assemble(_req(tmp_path), _net())
+
+
+def test_a_source_that_fails_with_a_shapely_error_counts_as_failed(tmp_path, monkeypatch):
+    # The roads are the one thing asked for and their layer can't be read: nothing was fetched.
+    monkeypatch.setattr("ghosttown_fetch.sources.toronto.fetch_ground", _empty_part_error)
+    with pytest.raises(NothingFetched, match="couldn't be read"):
+        assemble(_req(tmp_path, layers=["roads"]), _net())
 
 
 def test_if_the_ground_pieces_cannot_be_laid_out_the_ground_is_plain(tmp_path, monkeypatch):

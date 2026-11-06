@@ -1,3 +1,4 @@
+import pytest
 from shapely.geometry import LineString, MultiPolygon, Polygon
 
 from ghosttown_fetch.geom import polygons, rings
@@ -75,6 +76,31 @@ def test_feature_geometry_reads_geojson_and_survives_junk():
     assert feature_geometry({"properties": {}}) is None
     assert feature_geometry({"geometry": {"type": "Polygon", "coordinates": "nonsense"}}) is None
     assert feature_geometry(None) is None
+
+
+LINE = [[-79.38, 43.65], [-79.37, 43.65]]
+RING = [[-79.38, 43.65], [-79.37, 43.65], [-79.37, 43.66], [-79.38, 43.65]]
+
+
+@pytest.mark.parametrize("geometry", [
+    {"type": "MultiLineString", "coordinates": [LINE, []]},
+    {"type": "GeometryCollection", "geometries": [{"type": "MultiLineString", "coordinates": [LINE, []]}]},
+    {"type": "MultiPolygon", "coordinates": [[RING], []]},
+    {"type": "Curve", "coordinates": LINE},
+], ids=["a MultiLineString with an empty line", "a collection holding one", "a MultiPolygon with an empty polygon",
+        "a type GeoJSON doesn't have"])
+def test_feature_geometry_gives_none_for_a_shape_shapely_refuses(geometry):
+    from ghosttown_fetch.geom import feature_geometry
+
+    assert feature_geometry({"type": "Feature", "properties": {}, "geometry": geometry}) is None
+
+
+def test_feature_geometry_reads_a_collection_that_holds_an_empty_member():
+    from ghosttown_fetch.geom import feature_geometry
+
+    geom = feature_geometry({"geometry": {"type": "GeometryCollection", "geometries": [
+        {"type": "Polygon", "coordinates": [RING]}, {"type": "LineString", "coordinates": []}]}})
+    assert [(part.geom_type, part.is_empty) for part in geom.geoms] == [("Polygon", False), ("LineString", True)]
 
 
 def test_rings_that_nearly_touch_are_separated_before_rounding_makes_them_touch():

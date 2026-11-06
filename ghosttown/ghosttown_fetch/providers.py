@@ -97,7 +97,10 @@ class MunicipalProvider:
                 url = spec["url"]
                 where = spec.get("where", "1=1")
                 buffer_m = spec.get("buffer_m")
-                params = arcgis.radius_params(lat, lon, radius_m, out_fields="*", where=where)
+                # ArcGIS Online refuses a query ordered by a field its layer doesn't have (seen 2026-11-05), so a
+                # layer without an OBJECTID names its own field in "order_by".
+                params = arcgis.radius_params(lat, lon, radius_m, out_fields="*", where=where,
+                                              order_by=spec.get("order_by", "OBJECTID"))
                 for feature in arcgis.query(net, url, params, source=self.source_key, source_name=self.name):
                     geom = feature_geometry(feature)
                     if geom is None:
@@ -184,7 +187,7 @@ WINDSOR = MunicipalProvider(
             {"url": "https://mappmycity.ca/arcgis/rest/services/ParksEnvironment/MapServer/9/query", "where": "1=1", "buffer_m": 3.0},
         ],
         "road": [
-            {"url": "https://mappmycity.ca/arcgis/rest/services/Transportation/MapServer/16/query", "where": "1=1", "buffer_m": 4.5},
+            {"url": "https://mappmycity.ca/arcgis/rest/services/Transportation/MapServer/16/query", "where": "1=1", "buffer_m": 4.5, "order_by": "OBJECTID_1"},
             {"url": "https://mappmycity.ca/arcgis/rest/services/Transportation/MapServer/7/query", "where": "1=1"},
         ],
         "green": [
@@ -228,10 +231,10 @@ MISSISSAUGA = MunicipalProvider(
     },
     ground_specs={
         "water": [
-            {"url": "https://services6.arcgis.com/hM5ymMLbxIyWTjn2/arcgis/rest/services/Waterbody/FeatureServer/0/query", "where": "1=1"},
+            {"url": "https://services6.arcgis.com/hM5ymMLbxIyWTjn2/arcgis/rest/services/Waterbody/FeatureServer/0/query", "where": "1=1", "order_by": "FID"},
         ],
         "road": [
-            {"url": "https://services6.arcgis.com/hM5ymMLbxIyWTjn2/arcgis/rest/services/StreetCentreline/FeatureServer/0/query", "where": "1=1", "buffer_m": 4.5},
+            {"url": "https://services6.arcgis.com/hM5ymMLbxIyWTjn2/arcgis/rest/services/StreetCentreline/FeatureServer/0/query", "where": "1=1", "buffer_m": 4.5, "order_by": "FID"},
         ],
         "green": [
             {"url": "https://services6.arcgis.com/hM5ymMLbxIyWTjn2/arcgis/rest/services/Park_Boundary/FeatureServer/1/query", "where": "1=1"},
@@ -255,9 +258,8 @@ MARKHAM = MunicipalProvider(
         "road": [
             {"url": "https://services3.arcgis.com/OWiFbQmr7Eu5DHn1/arcgis/rest/services/StreetRoads/FeatureServer/0/query", "where": "1=1", "buffer_m": 4.5},
         ],
-        "green": [
-            {"url": "https://services3.arcgis.com/OWiFbQmr7Eu5DHn1/arcgis/rest/services/Park_Areas/FeatureServer/0/query", "where": "1=1"},
-        ],
+        # No parks: Park_Areas, the City's one layer by that name, is four districts that cover the whole city (seen
+        # 2026-11-05), and a site would come out green from edge to edge.
     },
 )
 

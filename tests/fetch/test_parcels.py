@@ -8,7 +8,7 @@ from ghosttown_fetch.sources import toronto
 from ghosttown_fetch.terrain import FlatTerrain
 from fakes import FakeNet, form
 from terrains import Ramp
-from toronto_samples import LAT0, LON0, page, square
+from toronto_samples import LAT0, LON0, multipolygon, page, square
 
 F = Frame(LAT0, LON0)
 
@@ -32,6 +32,26 @@ def test_parcels_are_clipped_to_the_circle():
     el, = parcels.from_toronto(_features(square(-50, -10, 100, OBJECTID=2)), F, FlatTerrain(), 30)
     pts = np.vstack([np.array(line["pts"]) for line in el["lines"]])
     assert np.hypot(pts[:, 0], pts[:, 1]).max() <= 30.001 and el["id"] == "toronto:parcel:2" and el["name"] == ""
+
+
+def test_a_lot_that_holds_the_whole_circle_has_no_line_and_the_other_lots_are_still_built():
+    # A site inside one large lot (a park, seen 2026-11-05): the lot's edge never meets the circle.
+    els = parcels.from_toronto(_features(square(-200, -200, 400, OBJECTID=1, PARCELID=77),
+                                         square(0, 0, 20, OBJECTID=2, PARCELID=55)), F, FlatTerrain(), 100)
+    assert [el["id"] for el in els] == ["toronto:parcel:55"]
+
+
+def test_a_lot_of_two_pieces_has_lines_only_from_the_piece_that_crosses_the_circle():
+    # A lot of two polygons (seen 2026-11-05): one lies well outside the circle, the other crosses it.
+    lot = multipolygon(square(361, 0, 20), square(20, -10, 100), OBJECTID=4247)
+    el, = parcels.from_features(_features(lot), F, FlatTerrain(), 30, source_key="windsor", id_field="OBJECTID")
+    line, = el["lines"]
+    pts = np.array(line["pts"])[:, :2]
+    assert el["id"] == "windsor:parcel:4247"
+    # the crossing piece's corner at (20, -10) is inside the circle; its two edges leave it at y = √(30² − 20²)
+    # and x = √(30² − 10²)
+    assert np.allclose(sorted([tuple(pts[0]), tuple(pts[-1])]), [(20.0, 22.361), (28.284, -10.0)], atol=0.01)
+    assert [20.0, -10.0] in pts.tolist() and np.hypot(pts[:, 0], pts[:, 1]).max() <= 30.001
 
 
 def test_parcel_lines_follow_the_terrain():
