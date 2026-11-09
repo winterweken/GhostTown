@@ -103,6 +103,6 @@ def feature_geometry(feature):
         return None
     try:
         geom = shapely.geometry.shape(g)
-    except (ValueError, TypeError, AttributeError, KeyError, IndexError, shapely.errors.GEOSException):
-        return None
+    except (ValueError, TypeError, AttributeError, KeyError, IndexError, shapely.errors.ShapelyError):
+        return None     # shapely has errors of its own beside GEOS's: an empty part, a type it doesn't know
     return None if geom.is_empty else geom

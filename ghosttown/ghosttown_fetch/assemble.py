@@ -330,7 +330,7 @@ def assemble(request, net, *, progress=None, now=None):
             failed += 1
             ctx.note(doc, "warn", code, str(e))
             return None
-        except shapely.errors.GEOSException as e:  # sources turn answers into geometry as they read them
+        except shapely.errors.ShapelyError as e:  # sources turn answers into geometry as they read them
             failed += 1
             ctx.note(doc, "warn", code, f"{stage} couldn't be read ({str(e)[:80]}).")
             return None
@@ -340,7 +340,7 @@ def assemble(request, net, *, progress=None, now=None):
     def built(code, what, make):
         try:
             return make()
-        except shapely.errors.GEOSException as e:
+        except shapely.errors.ShapelyError as e:  # GEOS's errors and shapely's own (an empty part, say)
             ctx.note(doc, "warn", code, f"{what} couldn't be built from the source geometry ({str(e)[:80]}).")
             return []
 

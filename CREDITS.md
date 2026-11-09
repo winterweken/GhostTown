@@ -13,7 +13,7 @@ Ghost Town downloads open data at build time. Credit the sources you use in anyt
 - **City of Mississauga** open data (building footprints, roads, water bodies, parks, property & tax parcels):
   Contains information licensed under the Open Government Licence – City of Mississauga.
   https://opendata.mississauga.ca/
-- **City of Markham** open data (roads, parks, property assessment parcels):
+- **City of Markham** open data (roads, property assessment parcels):
   Contains information licensed under the Open Government Licence – City of Markham.
   https://data-markham.opendata.arcgis.com/
 - **City of Hamilton** open data (roads, water bodies, parks, assessment parcels):

@@ -22,7 +22,7 @@ between colours by kind and the aerial photo. The build is shortened here. Data:
 Natural Resources Canada (see [Data and credits](#data-and-credits)).*
 
 Ghost Town is a free, open-source extension for Blender 5.2 and later. It is at an early stage
-(version 0.8): Toronto, Windsor, Mississauga, Markham, and Hamilton are covered in depth with municipal open data, with georeferencing and aerial orthophotography across Lake Ontario and southern Ontario.
+(version 0.8): Toronto, Windsor, Mississauga, Markham, and Hamilton are covered in depth with municipal open data and an aerial photo of the site, with georeferencing across Lake Ontario and southern Ontario.
 
 ## What you get
 
@@ -30,7 +30,7 @@ Ghost Town is a free, open-source extension for Blender 5.2 and later. It is at 
 |---|---|---|---|---|
 | **City of Toronto** | City 3D Massing model, newest edition: stepped parts with measured heights | NRCan elevation, 2 m grid | Roads, sidewalks, parking, rail, water, parks, trees, parcels, aerial photo | Yes |
 | **City of Windsor** | Municipal building outlines with measured top and ground heights | NRCan elevation, 2 m grid | Roads, Detroit River & water bodies, parks, sidewalks, trees, parcels, aerial photo | Type coordinates |
-| **Mississauga, Markham, Hamilton** | Municipal building footprints (Mississauga) or OpenStreetMap | NRCan elevation | Roads, water bodies (Lake Ontario), parks, municipal parcels, aerial photo | Type coordinates |
+| **Mississauga, Markham, Hamilton** | Municipal building footprints with guessed heights (Mississauga) or OpenStreetMap | NRCan elevation | Roads, municipal parcels, aerial photo; in Mississauga and Hamilton also water bodies (Lake Ontario) and parks | Type coordinates |
 | **Elsewhere in Canada** | OpenStreetMap | NRCan elevation where available | Plain ground only | Not yet (type coordinates) |
 | **Rest of the world** | OpenStreetMap | Flat | Plain ground only | Not yet (type coordinates) |
 
@@ -52,10 +52,12 @@ Each build makes one collection, `Context · <site>`:
   they read over the ground they lie on. The layer to make a Revit toposolid from. A big or hilly site is
   thinned to stay under Revit's 10,000 import points: simplified in plan first, then every 1, 2, 5 m or
   wider, as a map would. Flat ground has none.
-- **Trees:** a trunk and a low-poly crown each, sized from the City's tree heights, merged into one object.
+- **Trees:** a trunk and a low-poly crown each, merged into one object. Toronto's are sized from the City's tree
+  heights; Windsor's data has no heights, so its trees are all one size.
 - **Parcels:** lot lines draped 15 cm above the ground.
-- **Aerial photo** (Toronto, Windsor, and Ontario): The municipality's or Province's newest aerial orthophoto of the site, kept inside the .blend file,
-  for the ground and low roofs. See [Use](#use).
+- **Aerial photo** (Toronto, Windsor, Mississauga, Markham and Hamilton): the newest aerial orthophoto of the site,
+  the City's in Toronto and Windsor and the Province's in the other three, kept inside the .blend file, for the
+  ground and low roofs. See [Use](#use).
 - **Development applications** (Toronto, when ticked): a see-through box on every nearby site with an open
   development application, a building going up or one just finished, coloured by where it stands: under
   construction, recently built, appealed, under review, approved, or Committee of Adjustment. The boxes are in an
@@ -279,7 +281,7 @@ you used. The panel lists them after every build.
 | City of Toronto open data | Buildings (3D Massing, newest yearly edition), aerial photo, ground, trees, parcels, addresses, city boundary, development applications, building permits | Contains information licensed under the Open Government Licence – Toronto |
 | City of Windsor open data | Buildings (measured heights), aerial orthophoto, roads, water (Detroit River, retention ponds, creeks), parks, sidewalks, trees, property parcels, city boundary | Contains information licensed under the Open Government Licence – City of Windsor |
 | City of Mississauga open data | Building footprints, roads, water bodies (Lake Ontario, creeks), parks, tax and property parcels | Contains information licensed under the Open Government Licence – City of Mississauga |
-| City of Markham open data | Roads, parks, property assessment parcels | Contains information licensed under the Open Government Licence – City of Markham |
+| City of Markham open data | Roads, property assessment parcels | Contains information licensed under the Open Government Licence – City of Markham |
 | City of Hamilton open data | Roads, water bodies (Hamilton Harbour, Lake Ontario), parks, assessment parcels | Contains information licensed under the Open Government Licence – City of Hamilton |
 | Natural Resources Canada (HRDEM) | Terrain | Contains information licensed under the Open Government Licence – Canada |
 | Geospatial Ontario | Ontario Imagery aerial orthophotography, LiDAR DTM/DSM | Contains information licensed under the Open Government Licence – Ontario |
@@ -329,7 +331,9 @@ Natural Resources Canada, the Province of Ontario, OpenStreetMap or Mapillary.
 
 ## Known limits
 
-- Outside Toronto there are no roads, trees or parcels yet, and outside Canada the ground is flat.
+- Outside Toronto, Windsor, Mississauga, Markham and Hamilton there are no roads, trees or parcels yet, and
+  outside Canada the ground is flat. Trees come with Toronto and Windsor only, and Markham has no parks or water.
+- A site that lies inside one large lot, such as a big park or a campus, has no lot line: none crosses it.
 - Buildings are flat-topped prisms unless they have measured roofs (Ontario, outside the City of Toronto's
   3D Massing model). LiDAR roofs carry no roof planes, just measured points.
 - Fitted roofs give a house one roof for its whole outline, so an L-shaped house whose wings have their own
@@ -374,7 +378,7 @@ sidebar panel ─▶ request.json ─▶ fetcher process ─▶ context.json ─
 ## Roadmap
 
 - Worldwide address search.
-- OpenStreetMap roads, green space, water and trees outside Toronto.
+- OpenStreetMap roads, green space, water and trees outside the five cities.
 - Terrain outside Canada.
 - A site outline: cut your site out of the ground and mark its buildings and parcel.
 

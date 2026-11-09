@@ -81,6 +81,67 @@ def test_an_error_answer_is_a_source_error():
         arcgis.query(net, "cot_geospatial3", 2, {})
 
 
+# ArcGIS Online's refusal of a query ordered by a field its layer doesn't have (seen 2026-11-05): the message is empty
+# and the reason is in the details. And the City of Toronto's, of a query that names such a field (seen 2026-11-04).
+ONLINE_REFUSAL = b'{"error":{"code":400,"message":"","details":["\'OBJECTID\' parameter is invalid"]}}'
+CITY_REFUSAL = b'{"error":{"code":400,"extendedCode":-2147467259,"message":"Unable to complete operation.","details":[]}}'
+WATERBODY = "https://services6.arcgis.com/hM5ymMLbxIyWTjn2/arcgis/rest/services/Waterbody/FeatureServer/0/query"
+
+
+def _refusal_said(net, *args, **kwargs):
+    with pytest.raises(SourceError) as refused:
+        arcgis.query(net, *args, **kwargs)
+    return str(refused.value)
+
+
+def test_a_refusal_names_the_source_that_refused():
+    said = _refusal_said(FakeNet({"mississauga": ONLINE_REFUSAL}), WATERBODY, {}, source="mississauga",
+                         source_name="City of Mississauga")
+    assert said.startswith("City of Mississauga refused a query") and "Toronto" not in said
+
+
+def test_a_refusal_with_an_empty_message_gives_its_details_as_the_reason():
+    refusal = json.dumps({"error": {"code": 400, "message": "", "details": ["Invalid field: OBJECTID"]}}).encode()
+    assert "refused a query (Invalid field: OBJECTID);" in _refusal_said(FakeNet({"toronto": refusal}), "cot_geospatial3", 2, {})
+
+
+def test_several_details_are_joined_and_the_reason_is_still_cut_at_120_characters():
+    refusal = json.dumps({"error": {"code": 400, "message": "", "details": ["x" * 70, "y" * 70]}}).encode()
+    said = _refusal_said(FakeNet({"toronto": refusal}), "cot_geospatial3", 2, {})
+    assert said == f"The City of Toronto refused a query ({'x' * 70}; {'y' * 48}); try again in a minute."
+
+
+@pytest.mark.parametrize("details, reason", [("Invalid field: OBJECTID", "Invalid field: OBJECTID"), (7, "7")],
+                         ids=["a sentence", "a number"])
+def test_details_that_are_not_a_list_are_given_as_they_are(details, reason):
+    refusal = json.dumps({"error": {"code": 400, "message": "", "details": details}}).encode()
+    said = _refusal_said(FakeNet({"toronto": refusal}), "cot_geospatial3", 2, {})
+    assert said == f"The City of Toronto refused a query ({reason}); try again in a minute."
+
+
+@pytest.mark.parametrize("refusal, reason", [
+    (json.dumps({"error": {"code": 400, "message": "Invalid query"}}).encode(), "Invalid query"),
+    (CITY_REFUSAL, "Unable to complete operation."),
+], ids=["a message alone", "a message and empty details"])
+def test_a_city_of_toronto_refusal_names_the_city_and_gives_its_message(refusal, reason):
+    said = _refusal_said(FakeNet({"toronto": refusal}), "cot_geospatial3", 2, {})
+    assert said == f"The City of Toronto refused a query ({reason}); try again in a minute."
+
+
+def test_a_refusal_with_a_message_and_details_gives_the_message():
+    refusal = json.dumps({"error": {"code": 400, "message": "Unable to complete operation.",
+                                    "details": ["Parameter 'orderByFields' is invalid"]}}).encode()
+    said = _refusal_said(FakeNet({"toronto": refusal}), "cot_geospatial3", 2, {})
+    assert said == "The City of Toronto refused a query (Unable to complete operation.); try again in a minute."
+
+
+@pytest.mark.parametrize("error, reason", [("Service is busy", "Service is busy"), ({"code": 498}, "{'code': 498}")],
+                         ids=["an error that is a sentence", "an error with no message"])
+def test_a_refusal_that_is_not_the_usual_shape_is_given_as_it_is(error, reason):
+    said = _refusal_said(FakeNet({"toronto": json.dumps({"error": error}).encode()}), "cot_geospatial3", 2, {})
+    assert said == f"The City of Toronto refused a query ({reason}); try again in a minute."
+
+
 def test_non_json_is_a_source_error():
     with pytest.raises(SourceError, match="isn't JSON"):
         arcgis.query(FakeNet({"toronto": b"<html>busy</html>"}), "cot_geospatial3", 2, {})
