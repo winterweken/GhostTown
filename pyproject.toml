@@ -12,6 +12,6 @@ dev = ["numpy==2.3.4", "shapely==2.1.2", "pillow==11.3.0", "pytest>=8", "pytest-
 package = false
 
 [tool.pytest.ini_options]
-testpaths = ["tests/fetch"]
-pythonpath = ["ghosttown", "tests/fetch"]
+testpaths = ["tests/fetch", "tests/revit"]
+pythonpath = ["ghosttown", "tests/fetch", "revit/GhostTown.extension/lib"]
 addopts = "--disable-socket -q"

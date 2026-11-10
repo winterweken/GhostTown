@@ -2,6 +2,8 @@
 `Context - <Kind>` material. Ground and roofs show their plain colours for the export (no photo, no
 Realistic earth or edge trim) and go back to what the site showed. Uses bpy.ops.wm.obj_export, which has
 no data API."""
+import contextlib
+
 import bpy
 
 from . import site_apps, site_use
@@ -19,9 +21,12 @@ def objects_to_export(root, applications=True, detail=False):
     return [ob for ob in obs if ob.visible_get()]
 
 
-def export(context, root, path, applications=True, detail=False):
-    """Write the site to `path` (.obj, with its .mtl beside it) and return how many objects went in. The
-    selection is kept by name: plain ground deletes the Realistic earth, which comes back under its name."""
+@contextlib.contextmanager
+def plain_site(context, root, applications=True, detail=False):
+    """The site's objects for Revit (objects_to_export) with plain ground and roofs while the block runs: no
+    photo, no Realistic earth or edge trim. Afterwards the site shows what it showed, and the selection and
+    active object are back, kept by name: plain ground deletes the Realistic earth, which comes back under
+    its name. Export for Revit and Send to Revit both read the site through this."""
     ground, roofs = site_use.ground_choice(root), root.get("use_roofs")
     layer = context.view_layer
     selected = {ob.name for ob in layer.objects if ob.select_get()}
@@ -31,15 +36,7 @@ def export(context, root, path, applications=True, detail=False):
             site_use.apply_ground(root, "colours")
         if roofs == "photo":
             site_use.apply_roofs(root, "plain")
-        obs = objects_to_export(root, applications, detail)
-        for ob in layer.objects:
-            ob.select_set(ob in obs)
-        bpy.ops.wm.obj_export(filepath=path, check_existing=False, export_selected_objects=True,
-                              apply_modifiers=True, export_eval_mode="DAG_EVAL_VIEWPORT",
-                              forward_axis="Y", up_axis="Z", global_scale=1.0, export_materials=True,
-                              path_mode="STRIP", export_uv=False, export_colors=False,
-                              export_object_groups=True, export_triangulated_mesh=False)
-        return len(obs)
+        yield objects_to_export(root, applications, detail)
     finally:
         if roofs == "photo":
             site_use.apply_roofs(root, "photo")
@@ -48,3 +45,16 @@ def export(context, root, path, applications=True, detail=False):
         for ob in layer.objects:
             ob.select_set(ob.name in selected)
         layer.objects.active = layer.objects.get(active) if active else None
+
+
+def export(context, root, path, applications=True, detail=False):
+    """Write the site to `path` (.obj, with its .mtl beside it) and return how many objects went in."""
+    with plain_site(context, root, applications, detail) as obs:
+        for ob in context.view_layer.objects:
+            ob.select_set(ob in obs)
+        bpy.ops.wm.obj_export(filepath=path, check_existing=False, export_selected_objects=True,
+                              apply_modifiers=True, export_eval_mode="DAG_EVAL_VIEWPORT",
+                              forward_axis="Y", up_axis="Z", global_scale=1.0, export_materials=True,
+                              path_mode="STRIP", export_uv=False, export_colors=False,
+                              export_object_groups=True, export_triangulated_mesh=False)
+        return len(obs)

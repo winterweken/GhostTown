@@ -17,6 +17,7 @@ _CLASSES = (
     ops.GHOSTTOWN_OT_use_roof_shapes,
     ops.GHOSTTOWN_OT_save_photo,
     ops.GHOSTTOWN_OT_export_revit,
+    ops.GHOSTTOWN_OT_send_revit,
     ops.GHOSTTOWN_OT_save_contours,
     ops.GHOSTTOWN_OT_apps_bring_back,
     ops.GHOSTTOWN_OT_open_application,
