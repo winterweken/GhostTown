@@ -4,6 +4,7 @@ import bpy
 from bpy.props import IntProperty, StringProperty
 
 from .ghosttown_fetch.look_schema import TOKEN_ENV
+from .revit_bridge import DEFAULT_HOST, DEFAULT_PORT
 
 DEFAULT_OVERPASS = "https://overpass-api.de/api/interpreter"
 DEFAULT_BUDGET = 500_000
@@ -22,6 +23,13 @@ class GhostTownPreferences(bpy.types.AddonPreferences):
     revit_triangle_budget: IntProperty(
         name="Revit triangle budget", default=DEFAULT_BUDGET, min=10_000,
         description="A site with more triangles than this is flagged as heavy for Revit")
+    revit_host: StringProperty(
+        name="Revit host", default=DEFAULT_HOST,
+        description="The computer Revit runs on, with pyRevit's Routes server and Ghost Town's extension, for "
+                    "Send to Revit: localhost for this one, else its name or address on your network")
+    revit_port: IntProperty(
+        name="Revit port", default=DEFAULT_PORT, min=1, max=65535,
+        description="pyRevit Routes' port on that computer (48884 unless changed in pyRevit's settings)")
     mapillary_token: StringProperty(
         name="Mapillary token", subtype="PASSWORD",
         description="Your Mapillary client token, for Street Look. Create one at mapillary.com/dashboard/developers")
@@ -38,6 +46,9 @@ class GhostTownPreferences(bpy.types.AddonPreferences):
             col.label(text=line)
         col.prop(self, "overpass_url")
         col.prop(self, "revit_triangle_budget")
+        row = col.row(align=True)
+        row.prop(self, "revit_host")
+        row.prop(self, "revit_port")
         col.prop(self, "mapillary_token")
         col.label(text=f"Or set {TOKEN_ENV}.")
         col.label(text="The token is saved in Blender's preferences file, never in your scene's .blend files.")
@@ -71,6 +82,14 @@ def cache_dir(context):
 def triangle_budget(context):
     p = get(context)
     return p.revit_triangle_budget if p is not None else DEFAULT_BUDGET
+
+
+def revit_address(context):
+    """(host, port) Send to Revit posts to."""
+    p = get(context)
+    if p is None:
+        return DEFAULT_HOST, DEFAULT_PORT
+    return p.revit_host.strip() or DEFAULT_HOST, p.revit_port
 
 
 def token(context):

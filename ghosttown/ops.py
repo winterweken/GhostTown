@@ -6,8 +6,8 @@ import time
 import bpy
 from bpy.props import BoolProperty, EnumProperty, IntProperty, StringProperty
 
-from . import (georef, look_build, prefs, revit_export, runner, scene_build, site_apps, site_contours, site_photo,
-               site_use)
+from . import (georef, look_build, prefs, revit_bridge, revit_export, runner, scene_build, site_apps, site_contours,
+               site_photo, site_use)
 from .ghosttown_fetch import context as ctx
 from .ghosttown_fetch import look_schema as ls
 from .ghosttown_fetch import request as rq
@@ -544,6 +544,59 @@ class GHOSTTOWN_OT_export_revit(bpy.types.Operator):
         self.report({"INFO"}, f"Exported {count} objects to {os.path.basename(path)}. In Revit, import it "
                               "origin to origin.")
         return {"FINISHED"}
+
+
+def send_to_revit(context, root, applications, report, online=None):
+    """Send the site to the Revit in Preferences and report its answer as a build is reported. True when
+    Revit drew it."""
+    host, port = prefs.revit_address(context)
+    problem = revit_bridge.refusal(host, port, bpy.app.online_access if online is None else online)
+    if problem:
+        report({"ERROR"}, problem)
+        return False
+    data = revit_bridge.payload(context, root, applications)
+    window = getattr(context, "window", None)
+    if window is not None:
+        window.cursor_set("WAIT")      # Blender waits for Revit's answer: a big site takes minutes
+    try:
+        answer = revit_bridge.send(data, host, port)
+    except revit_bridge.BridgeError as e:
+        report({"ERROR"}, str(e))
+        return False
+    finally:
+        if window is not None:
+            window.cursor_set("DEFAULT")
+    for level, line in revit_bridge.report_lines(answer):
+        report({level}, line)
+    return bool(answer.get("ok"))
+
+
+class GHOSTTOWN_OT_send_revit(bpy.types.Operator):
+    bl_idname = "ghosttown.send_revit"
+    bl_label = "Send to Revit…"
+    bl_description = ("Send the picked site to Revit, open here or on another computer with pyRevit and Ghost "
+                      "Town's extension, which draws it as a toposolid, buildings, trees and lines")
+
+    applications: BoolProperty(name="Development applications", default=True,
+                               description="Include the site's development application boxes")
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode == "OBJECT" and site_use.picked(context) is not None
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, confirm_text="Send")
+
+    def draw(self, context):
+        host, port = prefs.revit_address(context)
+        col = self.layout.column()
+        col.label(text=f"To Revit at {host}:{port}")
+        col.label(text="(Preferences › Add-ons › Ghost Town)")
+        col.prop(self, "applications")
+
+    def execute(self, context):
+        sent = send_to_revit(context, site_use.picked(context), self.applications, self.report)
+        return {"FINISHED"} if sent else {"CANCELLED"}
 
 
 class GHOSTTOWN_OT_save_contours(bpy.types.Operator):

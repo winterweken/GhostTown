@@ -151,3 +151,11 @@ def test_the_revit_side_avoids_python_3_only_syntax():
                 assert all(a.annotation is None for a in args.args), path
             assert not (isinstance(node, ast.Call) and any(isinstance(a, ast.Starred) for a in node.args[:-1])), path
 
+
+
+def test_the_formats_match_on_both_sides():
+    with open(os.path.join(ROOT, "ghosttown", "revit_bridge.py"), encoding="utf-8") as f:
+        tree = ast.parse(f.read())
+    values = [n.value.value for n in tree.body if isinstance(n, ast.Assign)
+              and any(getattr(t, "id", "") == "FORMAT" for t in n.targets)]
+    assert values == [gs.FORMAT]

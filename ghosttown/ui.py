@@ -93,7 +93,7 @@ class GHOSTTOWN_PT_main(bpy.types.Panel):
 
 
 SITE_ICONS = ("EMPTY_AXIS", "COPYDOWN", "IMAGE_DATA", "INFO", "EXPORT", "MOD_DECIM", "ERROR", "HOME", "URL",
-              "LOOP_BACK", "OBJECT_DATA")
+              "LOOP_BACK", "OBJECT_DATA", "LINKED")
 HEAVY = ("Heavy for Revit: use Fitted or Flat roofs,", "or lower Roof detail, before exporting.")
 ROOF_SHAPES = {"flat": "Flat", "fitted": "Fitted", "lidar": "LiDAR"}
 
@@ -190,6 +190,7 @@ class GHOSTTOWN_PT_site(bpy.types.Panel):
             for line in georef.survey_lines(point):
                 col.label(text=line)
         layout.operator("ghosttown.export_revit", icon="EXPORT")
+        layout.operator("ghosttown.send_revit", icon="LINKED")
         if site_contours.contour_objects(root):
             layout.operator("ghosttown.save_contours", icon="EXPORT")
         box = layout.box()
