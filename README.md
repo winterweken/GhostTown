@@ -224,12 +224,12 @@ and Roof detail applied. It takes the site's visible objects, with the developme
 facade detail (tick **Street Look detail** to add it). OBJ writes the material names with underscores for
 spaces (`Context_-_Building`).
 
-**Send to Revit…** (a prototype) sends the same site, over the network, to a Revit open on this or another
-computer, where Ghost Town's pyRevit extension draws it as native elements: a toposolid from the contours with
+**Send to Revit…** (a prototype) sends the same site to a Revit open on the same Windows computer, where
+Ghost Town's pyRevit extension draws it as native elements: a toposolid from the contours with
 the ground pieces as its subdivisions, a Generic Model per building, planting for the trees, model lines for
-the contours and lot lines, and the site's survey grid as the project's shared coordinates. Set the Revit
-computer's host and port in Preferences › Add-ons › Ghost Town; the extension, its install steps and a
-checklist for trying it are in [`revit/GhostTown.extension`](revit/GhostTown.extension/README.md).
+the contours and lot lines, and the site's survey grid as the project's shared coordinates. Blender sends
+to 127.0.0.1:48884 (Preferences › Add-ons › Ghost Town has the port, for a second Revit open at once); the
+extension, its install steps and a checklist for trying it are in [`revit/GhostTown.extension`](revit/GhostTown.extension/README.md).
 
 To export by hand instead:
 

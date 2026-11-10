@@ -1,7 +1,8 @@
 # Ghost Town for Revit (prototype)
 
 A pyRevit extension that lets Ghost Town's **Send to Revit…** (in Blender's Site panel) draw a site in the open
-Revit project as native elements, over the network, instead of going through an OBJ and a DXF:
+Revit project as native elements, instead of going through an OBJ and a DXF. Blender and Revit run on the same
+Windows computer and talk over loopback (`127.0.0.1`):
 
 | From Ghost Town | In Revit |
 |---|---|
@@ -26,45 +27,64 @@ below is how to try it.
   subdivisions is drawn.
 - **pyRevit 5 or later**, with its default IronPython 2.7 engine. On the IronPython 3.4 engine use pyRevit
   6.5.0 or later, which fixed Routes for it.
-- Ghost Town with **Send to Revit…** (this branch) in Blender, on the same computer or one on the same network.
+- Ghost Town with **Send to Revit…** (this branch) in Blender, **on the same Windows computer**. Revit runs only
+  on Windows. If Revit runs in a Windows virtual machine on a Mac and Blender on the Mac, they aren't on the same
+  computer: the VM's loopback isn't the Mac's, and this setup doesn't cover that.
 
 ## Install
 
-1. Copy or clone the Ghost Town repository onto the Windows computer. This folder,
-   `revit\GhostTown.extension`, is the extension; pyRevit needs the folder **above** it.
+1. Copy or clone the Ghost Town repository onto the computer. This folder, `revit\GhostTown.extension`, is the
+   extension; pyRevit needs the folder **above** it.
 2. Add that folder to pyRevit: **pyRevit › Settings › Custom Extension Directories › Add folder**, pick
    `…\GhostTown\revit`, **Save Settings and Reload**. Or, in a terminal:
    `pyrevit extensions paths add "C:\path\to\GhostTown\revit"`, then reload pyRevit.
 3. Turn on Routes, pyRevit's web server, which is **off by default**: **pyRevit › Settings › Routes**, tick
    **Enable Routes Server**, keep the port at **48884**, **Save Settings and Reload**. Or
-   `pyrevit configs routes enable` and `pyrevit configs routes port 48884`. Revit may need a restart for
-   the server to start.
-4. Check it from a browser on the Windows computer: `http://localhost:48884/ghosttown/status` answers with
-   the Revit version and the open document's name.
-5. In Blender, **Preferences › Add-ons › Ghost Town**: set **Revit host** to `localhost` when Blender runs on
-   the same computer, else to the Windows computer's address (for example `192.168.1.20`), and **Revit
-   port** to 48884.
+   `pyrevit configs routes enable` and `pyrevit configs routes port 48884`.
+4. **Pin Routes to loopback** (next section), then restart Revit so the server starts on it.
+5. Check it from a browser: `http://127.0.0.1:48884/ghosttown/status` answers with the Revit version and the
+   open document's name.
+6. Blender needs nothing more: **Send to Revit…** posts to `127.0.0.1:48884`. **Preferences › Add-ons ›
+   Ghost Town** has **Revit host** and **Revit port** as a fallback; leave the host at `127.0.0.1`.
 
-### Security: Routes has no authentication
+### Keep Routes on loopback: it has no authentication
 
-Anyone who can reach port 48884 can draw into, and slow down, the open Revit model. Keep it to people you
-trust:
+Anything that can reach Routes' port can draw into, and slow down, the open Revit model, so it must listen on
+`127.0.0.1` only, where only programs on this computer reach it.
 
-- **Blender on the same computer:** allow no inbound connection at all. Windows Defender Firewall blocks
-  inbound connections by default; if it asks when Revit starts the server, choose **Cancel** (or untick both
-  networks), and use host `localhost`.
-- **Blender on another computer (the Mac):** add an inbound rule for TCP 48884 limited to that computer's
-  address and to the **Private** profile, never Public. In an administrator PowerShell:
+pyRevit binds its server to the `host` of the `[routes]` section of its configuration, passed straight to
+Python's `HTTPServer`. Left empty, which is the default, that means **every network interface** (pyRevit itself
+describes it as `0.0.0.0`): anyone on your network could reach it. Pin it:
 
-  ```
-  New-NetFirewallRule -DisplayName "pyRevit Routes (Ghost Town)" -Direction Inbound -Protocol TCP `
-      -LocalPort 48884 -RemoteAddress 192.168.1.30 -Profile Private -Action Allow
-  ```
+1. Close Revit. Open `%APPDATA%\pyRevit\pyRevit_config.ini` in Notepad.
+2. In the `[routes]` section, set the host to loopback, keeping the lines already there:
 
-  with your Mac's address for `192.168.1.30`. Delete the rule when you're done.
-- **Or tunnel and open nothing:** with Windows' OpenSSH Server on, run `ssh -N -L 48884:localhost:48884
-  you@windows-pc` on the Mac and leave Blender's host at `localhost`.
-- Never forward the port on your router, and turn Routes off when you aren't using it.
+   ```
+   [routes]
+   host = "127.0.0.1"
+   ```
+
+   Write the value the way the section's other values are written (pyRevit writes its strings in double quotes).
+3. Start Revit, then check in a Command Prompt that it listens on loopback only:
+
+   ```
+   netstat -ano | findstr :48884
+   ```
+
+   The line should read `TCP 127.0.0.1:48884 … LISTENING`. `0.0.0.0:48884` or `[::]:48884` means it is still
+   open to the network: check the ini (if the key is ignored, try `Host`, capitalised, as pyRevit's own code
+   names it) and restart Revit.
+
+Also: if Windows Defender Firewall asks whether Revit may accept connections, choose **Cancel** (untick both
+networks); loopback doesn't need it. Never add a firewall rule or a router forward for the port, and turn Routes
+off when you aren't using it.
+
+### A second Revit
+
+Each Revit open at the same time runs its own Routes server, and pyRevit gives each the first port not yet taken,
+starting from 48884: the second Revit listens on 48885, the third on 48886. Blender sends to the port in its
+preferences, 48884 unless changed; to send to another Revit, set **Revit port** to its port. Its status
+(`http://127.0.0.1:48885/ghosttown/status`) names its open document.
 
 ## What lands where
 
@@ -108,15 +128,16 @@ or delete the elements first. Everything it makes carries `Ghost Town` in its Co
 
 ## Test checklist
 
-Do these on the Windows computer, in order, and note what fails and what Blender's report said.
+Do these on the Windows computer, with Blender and Revit both on it, in order, and note what fails and what Blender's report said.
 
 1. [ ] Revit opens with pyRevit and no error mentioning Ghost Town or `startup.py` in pyRevit's output window.
-2. [ ] With Routes on, `http://localhost:48884/ghosttown/status` in a browser answers `"ok": true`, the Revit
+2. [ ] With Routes on, `http://127.0.0.1:48884/ghosttown/status` in a browser answers `"ok": true`, the Revit
    version, and `"document": null` with no project open.
 3. [ ] With a project open (a new one from the Architectural template is fine), the status answers its name and
    `"project": true`.
-4. [ ] From the Mac (if Blender is there), `curl http://<windows-address>:48884/ghosttown/status` answers the same
-   once the firewall rule is in; without the rule it times out.
+4. [ ] `netstat -ano | findstr :48884` shows Routes listening on `127.0.0.1:48884` only, and from another device on
+   the network `http://<this-computer's-address>:48884/ghosttown/status` doesn't answer. With a second Revit
+   open, its status answers on 48885, and Blender sends to it once **Revit port** is 48885.
 5. [ ] In Blender, build a hilly site (one with contour lines) and press **Send to Revit…** with Revit's project
    open and RPC Tree - Deciduous loaded. Blender reports what Revit drew, and any failures as warnings.
 6. [ ] Revit's undo list has one **Ghost Town site** entry, and undoing it removes everything.

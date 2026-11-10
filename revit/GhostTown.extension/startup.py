@@ -5,7 +5,8 @@
     POST /ghosttown/site     a site from Ghost Town's Send to Revit (JSON), drawn as native elements
 
 Routes must be turned on in pyRevit's settings (it is off by default) and listens on port 48884. It has no
-authentication: see README.md before opening that port beyond this computer.
+authentication, so it must listen on 127.0.0.1 only, where Blender on this computer reaches it: README.md says
+how to pin it there.
 """
 import os
 import sys

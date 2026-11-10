@@ -25,11 +25,12 @@ class GhostTownPreferences(bpy.types.AddonPreferences):
         description="A site with more triangles than this is flagged as heavy for Revit")
     revit_host: StringProperty(
         name="Revit host", default=DEFAULT_HOST,
-        description="The computer Revit runs on, with pyRevit's Routes server and Ghost Town's extension, for "
-                    "Send to Revit: localhost for this one, else its name or address on your network")
+        description="Where Send to Revit finds Revit, with pyRevit's Routes server and Ghost Town's extension: "
+                    "127.0.0.1, this computer, which is the setup. Routes has no authentication, so keep it here")
     revit_port: IntProperty(
         name="Revit port", default=DEFAULT_PORT, min=1, max=65535,
-        description="pyRevit Routes' port on that computer (48884 unless changed in pyRevit's settings)")
+        description="pyRevit Routes' port: 48884 unless changed in pyRevit's settings. A second Revit open at "
+                    "the same time takes the next free port, 48885")
     mapillary_token: StringProperty(
         name="Mapillary token", subtype="PASSWORD",
         description="Your Mapillary client token, for Street Look. Create one at mapillary.com/dashboard/developers")

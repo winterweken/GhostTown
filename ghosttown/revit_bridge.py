@@ -1,9 +1,11 @@
 """Send to Revit: the picked site as JSON to Ghost Town's pyRevit extension (revit/GhostTown.extension in the
-repository), which draws it in the open Revit project as native elements. The site is read as Export for
+repository), which draws it in the open Revit project as native elements. Blender and Revit run on the same
+Windows computer and talk over loopback: pyRevit's Routes server has no authentication, so it stays bound to
+127.0.0.1. The host preference is a fallback for anything else. The site is read as Export for
 Revit reads it (revit_export.plain_site): its visible objects, plain ground and roofs, modifiers applied.
 
 Format 1 (FORMAT below; the Revit side's ghosttown_revit/site.py has the same number). One JSON object, sent as
-POST http://<host>:<port>/ghosttown/site with Content-Type application/json. Lengths are metres in the site's
+POST http://127.0.0.1:48884/ghosttown/site (the host and port in the preferences) with Content-Type application/json. Lengths are metres in the site's
 frame, the OBJ export's: x east, y north, z up, the origin at the site centre on the ground, z 0 being
 ground_at_centre_m above sea level. Points are [x, y, z] (or [x, y] in plan), to the millimetre.
 
@@ -49,8 +51,8 @@ from . import georef, materials, revit_export, site_apps, site_contours
 from .ghosttown_fetch import BUILDING_KINDS, CIRCLE_QUAD_SEGS, GROUND_KINDS, TOOL
 
 FORMAT = 1
-DEFAULT_HOST = "localhost"
-DEFAULT_PORT = 48884             # pyRevit Routes' port
+DEFAULT_HOST = "127.0.0.1"       # not "localhost": on Windows that may try ::1 first, where Routes doesn't listen
+DEFAULT_PORT = 48884             # pyRevit Routes' port; a second Revit open at once takes the next free one
 PATH = "/ghosttown/site"
 TIMEOUT_S = 600                  # a big site takes Revit minutes
 EDGE_TOLERANCE_M = 0.05          # a ground vertex this close to the radius lies on the site's edge
@@ -378,15 +380,15 @@ def is_loopback(host):
 
 
 def refusal(host, port, online):
-    """Why the site can't be sent to this address, as a sentence, or None. Another computer is a network
-    connection, which Blender's Allow Online Access governs; this one isn't."""
+    """Why the site can't be sent to this address, as a sentence, or None. Revit on this computer is the setup;
+    another computer is a network connection, which Blender's Allow Online Access governs."""
     if not host.strip():
         return "Set the Revit host in Preferences › Add-ons › Ghost Town."
     if not 0 < int(port) < 65536:
         return "The Revit port must be from 1 to 65535."
     if not online and not is_loopback(host):
         return ("Online access is off, and Revit is on another computer. Turn on Preferences › System › "
-                "Network › Allow Online Access, or run Revit on this computer and send to localhost.")
+                "Network › Allow Online Access, or set the Revit host back to 127.0.0.1.")
     return None
 
 
@@ -399,7 +401,7 @@ def url(host, port):
 
 def send(data, host, port, timeout=TIMEOUT_S):
     """POST the payload to Revit and return its answer (a dict). BridgeError when Revit can't be reached or
-    doesn't answer with a JSON object. Never through a proxy: Revit is on this computer or this network."""
+    doesn't answer with a JSON object. Never through a proxy: Revit is on this computer."""
     request = urllib.request.Request(url(host, port), data=json.dumps(data, separators=(",", ":")).encode("utf-8"),
                                      method="POST", headers={"Content-Type": "application/json", "User-Agent": TOOL})
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -412,8 +414,8 @@ def send(data, host, port, timeout=TIMEOUT_S):
     except (urllib.error.URLError, OSError) as e:
         reason = getattr(e, "reason", None) or e
         raise BridgeError(f"Couldn't reach Revit at {where} ({reason}). Check that Revit is open with pyRevit's "
-                          "Routes server on and Ghost Town's extension loaded, and the host and port in "
-                          "Preferences › Add-ons › Ghost Town.") from None
+                          "Routes server on and Ghost Town's extension loaded, and the port in Preferences › "
+                          "Add-ons › Ghost Town: a second Revit open at once listens on the next port, 48885.") from None
     try:
         answer = json.loads(body.decode("utf-8"))
     except ValueError:

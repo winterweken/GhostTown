@@ -574,8 +574,8 @@ def send_to_revit(context, root, applications, report, online=None):
 class GHOSTTOWN_OT_send_revit(bpy.types.Operator):
     bl_idname = "ghosttown.send_revit"
     bl_label = "Send to Revit…"
-    bl_description = ("Send the picked site to Revit, open here or on another computer with pyRevit and Ghost "
-                      "Town's extension, which draws it as a toposolid, buildings, trees and lines")
+    bl_description = ("Send the picked site to Revit, open on this computer with pyRevit and Ghost Town's "
+                      "extension, which draws it as a toposolid, buildings, trees and lines")
 
     applications: BoolProperty(name="Development applications", default=True,
                                description="Include the site's development application boxes")

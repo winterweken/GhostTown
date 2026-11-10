@@ -294,11 +294,11 @@ def test_the_operator_reports_revits_error():
     assert reports == [("ERROR", "Revit couldn't draw the site: No Revit document is open.")]
 
 
-def test_the_operator_needs_a_picked_site_and_defaults_to_localhost():
+def test_the_operator_needs_a_picked_site_and_defaults_to_loopback():
     ghosttown.register()
     try:
         bpy.context.scene.ghosttown.site = None
         assert not bpy.ops.ghosttown.send_revit.poll()
-        assert prefs.revit_address(bpy.context) == ("localhost", 48884)
+        assert prefs.revit_address(bpy.context) == ("127.0.0.1", 48884)
     finally:
         ghosttown.unregister()
