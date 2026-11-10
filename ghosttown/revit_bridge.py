@@ -60,6 +60,7 @@ MAX_EDGE_POINTS = 4 * CIRCLE_QUAD_SEGS * 2
 WELD_DIGITS = 3                  # ground vertices are joined when they match to the millimetre in plan
 STRAIGHT_M = 0.01                # a loop point within this of the line through its neighbours is dropped
 CONTAINS_M = 0.01                # slack when a tree part's plan box sits inside another's
+TREE_CELL_M = 4.0                # tree parts are found by plan centre in cells this wide
 MAX_FAILURES_SHOWN = 5
 LINE_KINDS = ("parcel", "parcel_on_site")
 APPLICATION = "application"
@@ -215,9 +216,11 @@ def plan_pieces(verts, faces):
 
 
 def tree_parts(verts, faces):
-    """Trees from a merged tree mesh: its loose parts grouped by plan box, a part inside another's box (a
-    trunk in its crown) joining it. Each tree is (x, y) of its smallest part's box centre (the trunk), z its
-    lowest point and its height to its highest."""
+    """Trees from a merged tree mesh, whose trees are a trunk and a crown each. Every loose part is paired with
+    a part inside its plan box, the pairs whose plan centres lie closest together first, so where crowns
+    overlap each crown still gets the trunk at its own centre; a part left without a mate is a tree of its
+    own. Each tree is (x, y) of its smaller part's box centre (the trunk), z its lowest point and its height
+    to its highest."""
     sets = _components(len(verts), faces)
     boxes = {}
     for f in faces:
@@ -227,20 +230,36 @@ def tree_parts(verts, faces):
             b = boxes.setdefault(root, [x, y, z, x, y, z])
             b[0], b[1], b[2] = min(b[0], x), min(b[1], y), min(b[2], z)
             b[3], b[4], b[5] = max(b[3], x), max(b[4], y), max(b[5], z)
-    parts = sorted(boxes.values(), key=lambda b: -(b[3] - b[0]) * (b[4] - b[1]))
-    groups = []
-    for b in parts:
-        home = next((g for g in groups if g[0][0] - CONTAINS_M <= b[0] and g[0][1] - CONTAINS_M <= b[1]
-                     and b[3] <= g[0][3] + CONTAINS_M and b[4] <= g[0][4] + CONTAINS_M), None)
-        if home is None:
-            groups.append([b])
-        else:
-            home.append(b)
+    parts = list(boxes.values())
+    centres = [((b[0] + b[3]) / 2, (b[1] + b[4]) / 2) for b in parts]
+    size = [(b[3] - b[0]) * (b[4] - b[1]) for b in parts]
+    grid = {}
+    for i, (x, y) in enumerate(centres):
+        grid.setdefault((math.floor(x / TREE_CELL_M), math.floor(y / TREE_CELL_M)), []).append(i)
+    pairs = []
+    for i, b in enumerate(parts):
+        xs = range(math.floor((b[0] - CONTAINS_M) / TREE_CELL_M), math.floor((b[3] + CONTAINS_M) / TREE_CELL_M) + 1)
+        ys = range(math.floor((b[1] - CONTAINS_M) / TREE_CELL_M), math.floor((b[4] + CONTAINS_M) / TREE_CELL_M) + 1)
+        for gx in xs:
+            for gy in ys:
+                for j in grid.get((gx, gy), ()):
+                    c = parts[j]
+                    if (size[j] < size[i] and b[0] - CONTAINS_M <= c[0] and b[1] - CONTAINS_M <= c[1]
+                            and c[3] <= b[3] + CONTAINS_M and c[4] <= b[4] + CONTAINS_M):
+                        gap = math.hypot(centres[i][0] - centres[j][0], centres[i][1] - centres[j][1])
+                        pairs.append((gap, i, j))
+    mate = {}
+    for _gap, i, j in sorted(pairs):
+        if i not in mate and j not in mate:
+            mate[i], mate[j] = j, i
     trees = []
-    for g in groups:
-        trunk = g[-1]
-        low, high = min(b[2] for b in g), max(b[5] for b in g)
-        trees.append({"x": round((trunk[0] + trunk[3]) / 2, 3), "y": round((trunk[1] + trunk[4]) / 2, 3),
+    for i, b in enumerate(parts):
+        j = mate.get(i, i)
+        if size[j] > size[i]:
+            continue                                    # a trunk: its crown reports the tree
+        g = (b, parts[j])
+        low, high = min(p[2] for p in g), max(p[5] for p in g)
+        trees.append({"x": round(centres[j][0], 3), "y": round(centres[j][1], 3),
                       "z": round(low, 3), "height_m": round(high - low, 3)})
     trees.sort(key=lambda t: (t["x"], t["y"]))
     return trees

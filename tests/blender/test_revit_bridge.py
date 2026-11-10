@@ -10,7 +10,7 @@ import bpy
 import ghosttown
 from ghosttown import materials, ops, prefs, revit_bridge, scene_build, site_apps, site_realistic, site_use
 from ghosttown.ghosttown_fetch import context as ctx
-from helpers import closed_and_outward, drum_doc, load_fixture
+from helpers import closed_and_outward, drum_doc, fetch_tree_meshes, load_fixture
 
 OPEN = [[-10.0, -10.0, 0.3], [0.0, -5.0, 0.3], [10.0, -10.0, 0.3]]
 RING = [[20.0, 20.0, 0.8], [30.0, 20.0, 0.8], [30.0, 30.0, 0.8], [20.0, 30.0, 0.8], [20.0, 20.0, 0.8]]
@@ -163,6 +163,24 @@ def test_side_by_side_trees_stay_apart():
         verts += part[0]
     trees = revit_bridge.tree_parts(verts, faces)
     assert [(t["x"], t["z"], t["height_m"]) for t in trees] == [(0.0, 0.0, 9.0), (20.0, 1.0, 6.0)]
+
+
+def _merged_trees(*trees):
+    verts, faces = [], []
+    for x, y, height in trees:
+        for mesh in fetch_tree_meshes(x, y, 0.0, height):
+            faces += [tuple(i + len(verts) for i in f) for f in mesh["faces"]]
+            verts += [tuple(v) for v in mesh["verts"]]
+    return verts, faces
+
+
+def test_trees_whose_crowns_overlap_keep_their_own_trunks():
+    for big, small in ((20.0, 5.0), (8.0, 8.0)):
+        trees = revit_bridge.tree_parts(*_merged_trees((0, 0, big), (1, 0, small)))
+        assert [(t["x"], t["y"], t["z"]) for t in trees] == [(0.0, 0.0, -0.1), (1.0, 0.0, -0.1)], (big, small)
+        tops = [t["z"] + t["height_m"] for t in trees]
+        crowns = [max(v[2] for v in fetch_tree_meshes(x, 0, 0.0, h)[1]["verts"]) for x, h in ((0, big), (1, small))]
+        assert all(math.isclose(a, b, abs_tol=1e-3) for a, b in zip(tops, crowns)), (big, small, tops, crowns)
 
 
 # ---- sending ------------------------------------------------------------------------------------------------
