@@ -97,11 +97,11 @@ def _step(doc, name, answer, work, data):
     """Run one step in its own transaction; its counts reach the answer only once it commits."""
     t = Transaction(doc, "Ghost Town " + name)
     quiet = _Quiet()
+    t.Start()       # first: starting a transaction resets its failure handling options to Revit's defaults
     options = t.GetFailureHandlingOptions()
     options.SetFailuresPreprocessor(quiet)
     options.SetClearAfterRollback(True)
     t.SetFailureHandlingOptions(options)
-    t.Start()
     try:
         work(doc, data, answer)
         if t.Commit() == TransactionStatus.Committed:
