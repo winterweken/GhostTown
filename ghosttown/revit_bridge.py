@@ -10,7 +10,7 @@ frame, the OBJ export's: x east, y north, z up, the origin at the site centre on
 ground_at_centre_m above sea level. Points are [x, y, z] (or [x, y] in plan), to the millimetre.
 
     format       1
-    tool         "ghosttown 0.8.1"
+    tool         "ghosttown 0.9.0"
     site         label, address
                  lat, lon             the site centre, WGS 84 degrees
                  radius_m

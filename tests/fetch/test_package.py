@@ -2,8 +2,8 @@ import ghosttown_fetch as cf
 
 
 def test_version_and_tool():
-    assert cf.__version__ == "0.8.1"
-    assert cf.TOOL == "ghosttown 0.8.1"
+    assert cf.__version__ == "0.9.0"
+    assert cf.TOOL == "ghosttown 0.9.0"
     assert cf.SCHEMA == 1
 
 
