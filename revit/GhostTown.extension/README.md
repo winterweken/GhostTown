@@ -27,14 +27,15 @@ below is how to try it.
   subdivisions is drawn.
 - **pyRevit 5 or later**, with its default IronPython 2.7 engine. On the IronPython 3.4 engine use pyRevit
   6.5.0 or later, which fixed Routes for it.
-- Ghost Town with **Send to Revit…** (this branch) in Blender, **on the same Windows computer**. Revit runs only
+- Ghost Town **0.9.0 or later** in Blender (it has **Send to Revit…**), **on the same Windows computer**. Revit runs only
   on Windows. If Revit runs in a Windows virtual machine on a Mac and Blender on the Mac, they aren't on the same
   computer: the VM's loopback isn't the Mac's, and this setup doesn't cover that.
 
 ## Install
 
-1. Copy or clone the Ghost Town repository onto the computer. This folder, `revit\GhostTown.extension`, is the
-   extension; pyRevit needs the folder **above** it.
+1. Copy or clone the Ghost Town repository onto the computer, or download a release's **Source code (zip)**
+   and unzip it. This folder, `revit\GhostTown.extension`, is the extension; pyRevit needs the folder
+   **above** it.
 2. Add that folder to pyRevit: **pyRevit › Settings › Custom Extension Directories › Add folder**, pick
    `…\GhostTown\revit`, **Save Settings and Reload**. Or, in a terminal:
    `pyrevit extensions paths add "C:\path\to\GhostTown\revit"`, then reload pyRevit.
