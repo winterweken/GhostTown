@@ -172,9 +172,48 @@ def _straightened(points):
     return pts
 
 
+def _simple_loops(loop):
+    """A traced loop split where it passes a vertex twice (pieces touching at a corner) into loops that don't."""
+    path, at, out = [], {}, []
+    for v in loop:
+        if v in at:
+            i = at[v]
+            out.append(path[i:])
+            for u in path[i + 1:]:
+                del at[u]
+            del path[i + 1:]
+        else:
+            at[v] = len(path)
+            path.append(v)
+    out.append(path)
+    return [sub for sub in out if len(sub) >= 3]
+
+
+def _inside(point, ring):
+    x, y = point
+    hit = False
+    for (ax, ay), (bx, by) in zip(ring, ring[1:] + ring[:1]):
+        if (ay > y) != (by > y) and x < ax + (y - ay) * (bx - ax) / (by - ay):
+            hit = not hit
+    return hit
+
+
+def _box_within(box, other):
+    return other[0] <= box[0] and other[1] <= box[1] and box[2] <= other[2] and box[3] <= other[3]
+
+
+def _within(ring, other):
+    """Whether `ring` lies inside `other`, judged at one of its points that `other` doesn't share (rings touch
+    at shared corners)."""
+    shared = {tuple(p) for p in other}
+    point = next((p for p in ring if tuple(p) not in shared), None)
+    return point is not None and _inside(point, other)
+
+
 def plan_pieces(verts, faces):
-    """The connected pieces of a mesh in plan, each [outside, hole, ...] as lists of [x, y], the outside
-    counterclockwise and holes clockwise. Built from its boundary edges: those only one face uses."""
+    """The pieces of a mesh in plan, each [outside, hole, ...] as lists of [x, y], the outside counterclockwise
+    and holes clockwise. Built from its boundary edges, those only one face uses, as simple loops; a loop inside
+    an odd number of others is a hole of the smallest of them, so pieces that touch at a corner stay apart."""
     points, faces = weld_plan(verts, faces)
     uses = {}
     for f in faces:
@@ -199,19 +238,28 @@ def plan_pieces(verts, faces):
                 break
             loop.append(nxt)
             v = nxt
-        if len(loop) >= 3:
-            loops.append(loop)
-    sets = _components(len(points), faces)
-    pieces = {}
+        loops += _simple_loops(loop)
+    rings = []
     for loop in loops:
         xy = _straightened([list(points[i]) for i in loop])
         if len(xy) >= 3 and abs(_area(xy)) > 1e-6:
-            pieces.setdefault(sets.find(loop[0]), []).append(xy)
+            xs, ys = [p[0] for p in xy], [p[1] for p in xy]
+            rings.append((min(loop), xy, (min(xs), min(ys), max(xs), max(ys))))
+    rings.sort(key=lambda r: -abs(_area(r[1])))
+    pieces, owner = [], []          # owner[i]: the piece ring i is the outside of, or None for a hole
+    for i, (first, xy, box) in enumerate(rings):
+        around = [j for j in range(i) if _box_within(box, rings[j][2]) and _within(xy, rings[j][1])]
+        if len(around) % 2:
+            parent = around[-1]     # the smallest ring around it, since rings run largest first
+            if owner[parent] is not None:
+                pieces[owner[parent]][1].append(xy)
+            owner.append(None)
+        else:
+            owner.append(len(pieces))
+            pieces.append((first, [xy]))
     out = []
-    for key in sorted(pieces):
-        rings = sorted(pieces[key], key=lambda r: -abs(_area(r)))
-        rings = [r if (_area(r) > 0) == (i == 0) else r[::-1] for i, r in enumerate(rings)]
-        out.append(rings)
+    for _first, piece in sorted(pieces, key=lambda p: p[0]):
+        out.append([r if (_area(r) > 0) == (i == 0) else r[::-1] for i, r in enumerate(piece)])
     return out
 
 

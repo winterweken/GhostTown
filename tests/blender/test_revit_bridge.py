@@ -146,6 +146,44 @@ def test_a_piece_with_a_hole_has_its_outside_first_and_triangle_soup_is_welded()
     assert len(two) == 2
 
 
+def _squares(*corners):
+    """Plan squares from their lower-left corners and sizes, two counterclockwise triangles each."""
+    verts, faces = [], []
+    for x, y, size in corners:
+        n = len(verts)
+        verts += [(x, y, 0.0), (x + size, y, 0.0), (x + size, y + size, 0.0), (x, y + size, 0.0)]
+        faces += [(n, n + 1, n + 2), (n, n + 2, n + 3)]
+    return verts, faces
+
+
+def test_pieces_touching_at_one_corner_stay_two_simple_loops():
+    # The welder makes the shared corner one vertex; each piece must still be its own simple loop, not one ring
+    # through that corner twice, and neither may become the other's hole.
+    for order in ((0, 0, 1), (1, 1, 1)), ((1, 1, 1), (0, 0, 1)):
+        pieces = revit_bridge.plan_pieces(*_squares(*order))
+        assert len(pieces) == 2, pieces
+        for piece in pieces:
+            assert len(piece) == 1 and revit_bridge._area(piece[0]) == 1, piece
+            assert len({tuple(p) for p in piece[0]}) == len(piece[0]) == 4, piece
+
+
+def test_three_pieces_meeting_at_one_corner_stay_apart():
+    pieces = revit_bridge.plan_pieces(*_squares((0, 0, 1), (1, 1, 1), (1, -1, 1)))
+    assert sorted(revit_bridge._area(p[0]) for p in pieces) == [1, 1, 1] and all(len(p) == 1 for p in pieces)
+
+
+def test_an_island_in_a_hole_is_a_piece_of_its_own():
+    outer, inner = [(0, 0), (10, 0), (10, 10), (0, 10)], [(3, 3), (7, 3), (7, 7), (3, 7)]
+    verts = [(x, y, 0.0) for x, y in outer + inner]
+    faces = []
+    for i in range(4):
+        j = (i + 1) % 4
+        faces += [(i, j, 4 + j), (i, 4 + j, 4 + i)]
+    island_verts, island_faces = _squares((4, 4, 2))
+    pieces = revit_bridge.plan_pieces(verts + island_verts, faces + [tuple(8 + i for i in f) for f in island_faces])
+    assert sorted((len(p), revit_bridge._area(p[0])) for p in pieces) == [(1, 4), (2, 100)]
+
+
 def test_a_loop_drops_points_on_a_straight_edge():
     verts = [(0, 0, 0), (5, 0, 0), (10, 0, 0), (10, 10, 0), (0, 10, 0)]
     piece, = revit_bridge.plan_pieces(verts, [(0, 1, 4), (1, 2, 3), (1, 3, 4)])
