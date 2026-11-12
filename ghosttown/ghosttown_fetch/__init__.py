@@ -5,7 +5,7 @@ This file, request.py, context.py and look_schema.py use the standard library on
 Blender add-on can import them without shapely, numpy or Pillow.
 """
 
-__version__ = "0.8.1"
+__version__ = "0.9.0"
 SCHEMA = 1
 TOOL = "ghosttown " + __version__
 HOMEPAGE = "https://github.com/winterweken/GhostTown"

@@ -2,8 +2,8 @@ import ghosttown_fetch as cf
 
 
 def test_version_and_tool():
-    assert cf.__version__ == "0.8.1"
-    assert cf.TOOL == "ghosttown 0.8.1"
+    assert cf.__version__ == "0.9.0"
+    assert cf.TOOL == "ghosttown 0.9.0"
     assert cf.SCHEMA == 1
 
 
@@ -28,12 +28,13 @@ def test_city_of_toronto_and_nrcan_are_credited():
 
 
 def test_the_name_people_read_is_ghost_town():
-    # "GhostTown" as one word is only for identifiers: class names, the User-Agent token and the repo URL.
+    # "GhostTown" as one word is only for identifiers: class names, the User-Agent token, the repo URL and the
+    # pyRevit extension's folder.
     import re
     from pathlib import Path
 
     allowed = re.compile(r"class GhostTown|GhostTown(Settings|Result|Preferences)|USER_AGENT|winterweken/GhostTown"
-                         r"|cd GhostTown")
+                         r"|cd GhostTown|GhostTown\.extension")
     root = Path(__file__).resolve().parents[2]
     offenders = []
     for path in [*sorted((root / "ghosttown").rglob("*.py")), root / "ghosttown" / "blender_manifest.toml",
